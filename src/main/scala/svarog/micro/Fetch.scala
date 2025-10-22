@@ -26,8 +26,8 @@ class Fetch(xlen: Int) extends Module {
   val pc_plus_4 = pc_reg + 4.U
   val next_pc = Mux(io.branch_taken, io.branch_target, pc_plus_4)
 
-  when (!io.stall) {
-    when (io.flush || io.branch_taken) {
+  when(!io.stall) {
+    when(io.flush || io.branch_taken) {
       pc_reg := next_pc
     }.otherwise {
       pc_reg := pc_plus_4
