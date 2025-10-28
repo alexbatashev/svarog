@@ -6,13 +6,10 @@ import svarog.bits.ImmGen
 import svarog.bits.ImmFormat
 import svarog.bits.Opcodes
 import svarog.bits.ALUFunc3
+import svarog.bits.ALUOp
 
 object OpType extends ChiselEnum {
   val NOP, ALU, LOAD, STORE, BRANCH, JAL, JALR, LUI, AUIPC = Value
-}
-
-object ALUOp extends ChiselEnum {
-  val ADD, SUB, OR, XOR, AND, SLT, SLTU, SLL, SRL, SRA = Value
 }
 
 object MemWidth extends ChiselEnum {
@@ -68,7 +65,7 @@ class Decode(xlen: Int) extends Module {
   io.uop.memWidth := MemWidth.BYTE
   io.uop.memUnsigned := false.B
   io.uop.regWrite := false.B
-  io.uop.valid := io.valid && !io.stall
+  io.uop.valid := io.valid
   io.uop.pc := io.cur_pc
 
   immGen.io.format := ImmFormat.I

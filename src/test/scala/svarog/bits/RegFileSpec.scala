@@ -9,18 +9,18 @@ class RegFileSpec extends AnyFlatSpec with Matchers with ChiselSim {
   behavior of "RegFile"
 
   def testPort(dut: RegFile, addr: Int, data: BigInt) = {
-    dut.io.writeEn.poke(true.B)
-    dut.io.writeAddr.poke(addr.U)
-    dut.io.writeData.poke(data.U)
+    dut.writeIo.writeEn.poke(true.B)
+    dut.writeIo.writeAddr.poke(addr.U)
+    dut.writeIo.writeData.poke(data.U)
     dut.clock.step(1)
 
-    dut.io.writeEn.poke(false.B)
+    dut.writeIo.writeEn.poke(false.B)
 
-    dut.io.readAddr1.poke(addr.U)
-    dut.io.readAddr2.poke(addr.U)
+    dut.readIo.readAddr1.poke(addr.U)
+    dut.readIo.readAddr2.poke(addr.U)
 
-    dut.io.readData1.expect(data.U)
-    dut.io.readData2.expect(data.U)
+    dut.readIo.readData1.expect(data.U)
+    dut.readIo.readData2.expect(data.U)
   }
 
   it should "write and read a value" in {
@@ -33,13 +33,13 @@ class RegFileSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "not write to register x0" in {
     simulate(new RegFile(32)) { dut =>
-      dut.io.writeEn.poke(true.B)
-      dut.io.writeAddr.poke(0.U)
-      dut.io.writeData.poke(99.U)
+      dut.writeIo.writeEn.poke(true.B)
+      dut.writeIo.writeAddr.poke(0.U)
+      dut.writeIo.writeData.poke(99.U)
       dut.clock.step(1)
 
-      dut.io.readAddr1.poke(0.U)
-      dut.io.readData1.expect(0.U)
+      dut.readIo.readAddr1.poke(0.U)
+      dut.readIo.readData1.expect(0.U)
     }
   }
 
@@ -47,18 +47,18 @@ class RegFileSpec extends AnyFlatSpec with Matchers with ChiselSim {
     simulate(new RegFile(32)) { dut =>
       val testAddr = 10
 
-      dut.io.writeEn.poke(true.B)
-      dut.io.writeAddr.poke(testAddr.U)
-      dut.io.writeData.poke(100.U)
+      dut.writeIo.writeEn.poke(true.B)
+      dut.writeIo.writeAddr.poke(testAddr.U)
+      dut.writeIo.writeData.poke(100.U)
       dut.clock.step(1)
 
-      dut.io.writeData.poke(200.U)
+      dut.writeIo.writeData.poke(200.U)
       dut.clock.step(1)
 
-      dut.io.writeEn.poke(false.B)
+      dut.writeIo.writeEn.poke(false.B)
 
-      dut.io.readAddr1.poke(testAddr.U)
-      dut.io.readData1.expect(200.U)
+      dut.readIo.readAddr1.poke(testAddr.U)
+      dut.readIo.readData1.expect(200.U)
     }
   }
 }

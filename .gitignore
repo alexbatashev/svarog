@@ -1,4 +1,5 @@
 ### Project Specific stuff
+generated/*
 test_run_dir/*
 ### XilinxISE template
 # intermediate build files

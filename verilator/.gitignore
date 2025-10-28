@@ -1,0 +1,4 @@
+obj_dir/*
+out/*
+*.vcd
+*.sv
