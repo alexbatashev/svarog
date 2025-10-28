@@ -7,6 +7,7 @@ import svarog.micro.OpType
 import svarog.micro.MemWidth
 import svarog.bits.RegFileReadIO
 import svarog.bits.ALU
+import svarog.bits.BranchFunc3
 
 class ExecuteIO(xlen: Int) extends Bundle {
   val uop = Flipped(new DecoderUOp(xlen))
@@ -79,6 +80,53 @@ class Execute(xlen: Integer) extends Module {
     is(OpType.STORE) {
       io.memAddress := io.regFile.readData1 + io.uop.imm
       io.storeData := io.regFile.readData2
+    }
+
+    is(OpType.BRANCH) {
+      val rs1 = io.regFile.readData1
+      val rs2 = io.regFile.readData2
+
+      // Compute branch condition based on funct3
+      val taken = WireDefault(false.B)
+
+      switch(io.uop.branchFunc) {
+        is(BranchFunc3.BEQ) {
+          taken := (rs1 === rs2)
+        }
+        is(BranchFunc3.BNE) {
+          taken := (rs1 =/= rs2)
+        }
+        is(BranchFunc3.BLT) {
+          taken := (rs1.asSInt < rs2.asSInt)
+        }
+        is(BranchFunc3.BGE) {
+          taken := (rs1.asSInt >= rs2.asSInt)
+        }
+        is(BranchFunc3.BLTU) {
+          taken := (rs1 < rs2)
+        }
+        is(BranchFunc3.BGEU) {
+          taken := (rs1 >= rs2)
+        }
+      }
+
+      io.branchTaken := taken
+      io.targetPC := io.uop.pc + io.uop.imm
+    }
+
+    is(OpType.JAL) {
+      // Unconditional jump
+      io.branchTaken := true.B
+      io.targetPC := io.uop.pc + io.uop.imm
+      io.intResult := io.uop.pc + 4.U  // Save return address
+    }
+
+    is(OpType.JALR) {
+      // Indirect jump
+      io.branchTaken := true.B
+      val target = io.regFile.readData1 + io.uop.imm
+      io.targetPC := Cat(target(31, 1), 0.U(1.W))  // Clear LSB
+      io.intResult := io.uop.pc + 4.U  // Save return address
     }
   }
 }

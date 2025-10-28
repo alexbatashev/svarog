@@ -25,3 +25,12 @@ object ALUFunc3 extends ChiselEnum {
   val OR = "b110".U
   val AND = "b111".U
 }
+
+object BranchFunc3 extends ChiselEnum {
+  val BEQ = "b000".U   // Branch if Equal
+  val BNE = "b001".U   // Branch if Not Equal
+  val BLT = "b100".U   // Branch if Less Than (signed)
+  val BGE = "b101".U   // Branch if Greater or Equal (signed)
+  val BLTU = "b110".U  // Branch if Less Than Unsigned
+  val BGEU = "b111".U  // Branch if Greater or Equal Unsigned
+}

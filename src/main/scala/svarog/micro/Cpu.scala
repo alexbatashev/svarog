@@ -37,7 +37,7 @@ class Cpu(xlen: Int) extends Module {
   val insert_bubble = Wire(Bool())
   val memory_stall = Wire(Bool())
 
-  flush_pipeline := false.B
+  flush_pipeline := execute.io.branchTaken  // Flush when branch/jump is taken
   memory_stall := memory.io.stall
 
   // ===== FETCH STAGE =====
@@ -116,7 +116,7 @@ class Cpu(xlen: Int) extends Module {
   executeMemoryReg.io.execute_memUnsigned := execute.io.memUnsigned
   executeMemoryReg.io.execute_storeData := execute.io.storeData
   executeMemoryReg.io.stall := false.B  // Don't stall later stages during hazard
-  executeMemoryReg.io.flush := flush_pipeline  // Only flush on branch misprediction
+  executeMemoryReg.io.flush := false.B  // Don't flush - let branch/jump instruction complete
 
   // ===== MEMORY STAGE =====
   memory.io.opType := executeMemoryReg.io.memory_opType
@@ -137,7 +137,7 @@ class Cpu(xlen: Int) extends Module {
   memoryWritebackReg.io.memory_regWrite := memory.io.wbRegWrite
   memoryWritebackReg.io.memory_result := memory.io.wbResult
   memoryWritebackReg.io.stall := false.B  // Don't stall later stages during hazard
-  memoryWritebackReg.io.flush := flush_pipeline  // Only flush on branch misprediction
+  memoryWritebackReg.io.flush := false.B  // Don't flush - let branch/jump instruction complete
 
   // ===== WRITEBACK STAGE =====
   writeback.io.opType := memoryWritebackReg.io.writeback_opType

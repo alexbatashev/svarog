@@ -26,6 +26,7 @@ class DecoderUOp(xlen: Int) extends Bundle {
   val imm = Output(UInt(xlen.W))
   val memWidth = Output(MemWidth())
   val memUnsigned = Output(Bool())
+  val branchFunc = Output(UInt(3.W))  // funct3 for branch type
   val regWrite = Output(Bool())
   val valid = Output(Bool())
   val pc = Output(UInt(xlen.W))
@@ -64,6 +65,7 @@ class Decode(xlen: Int) extends Module {
   io.uop.imm := 0.U
   io.uop.memWidth := MemWidth.BYTE
   io.uop.memUnsigned := false.B
+  io.uop.branchFunc := 0.U
   io.uop.regWrite := false.B
   io.uop.valid := io.valid
   io.uop.pc := io.cur_pc
@@ -187,6 +189,28 @@ class Decode(xlen: Int) extends Module {
       io.uop.hasImm := true.B
       io.uop.regWrite := rd =/= 0.U
       immGen.io.format := ImmFormat.U
+    }
+
+    is(Opcodes.BRANCH) {
+      io.uop.opType := OpType.BRANCH
+      io.uop.hasImm := true.B
+      io.uop.regWrite := false.B
+      io.uop.branchFunc := funct3
+      immGen.io.format := ImmFormat.B
+    }
+
+    is(Opcodes.JAL) {
+      io.uop.opType := OpType.JAL
+      io.uop.hasImm := true.B
+      io.uop.regWrite := rd =/= 0.U  // Save return address if rd != x0
+      immGen.io.format := ImmFormat.J
+    }
+
+    is(Opcodes.JALR) {
+      io.uop.opType := OpType.JALR
+      io.uop.hasImm := true.B
+      io.uop.regWrite := rd =/= 0.U
+      immGen.io.format := ImmFormat.I  // JALR uses I-type immediate
     }
   }
 
