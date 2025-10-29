@@ -2,6 +2,7 @@ package svarog.memory
 
 import chisel3._
 import chisel3.util._
+import chisel3.util.experimental.loadMemoryFromFile
 import svarog.micro.MemWidth
 
 /**
@@ -15,7 +16,8 @@ import svarog.micro.MemWidth
  */
 class SimpleMemory(
   xlen: Int = 32,
-  memSizeBytes: Int = 4096  // 4KB default
+  memSizeBytes: Int = 4096,  // 4KB default
+  initFile: Option[String] = None
 ) extends Module {
   // Memory is the responder, so flip the interface (consumes req, produces resp)
   val io = IO(Flipped(new DataCacheIO(xlen)))
@@ -24,6 +26,7 @@ class SimpleMemory(
   // Using Mem (combinational) instead of SyncReadMem for faster testing
   val numWords = memSizeBytes / 4
   val mem = Mem(numWords, UInt(32.W))
+  initFile.foreach(loadMemoryFromFile(mem, _))
 
   // Simplified combinational memory for testing
   // Real implementation would have multi-cycle latency
