@@ -210,10 +210,7 @@ fn run_verilator_top_test(vh_path: &Path) -> Result<TestResult> {
     // Run simulation
     let max_cycles = 100_000;
     let mut failure_cycle = None;
-    let mut branch_dumped = false;
-    let mut branch_test3_dumped = false;
     let mut branch_trace_printed = 0u32;
-    let mut tp_loop_count = 0u32;
     for cycle in 0..max_cycles {
         dut.clock = 0;
         dut.eval();
@@ -239,78 +236,6 @@ fn run_verilator_top_test(vh_path: &Path) -> Result<TestResult> {
                 dut.debug_branchRs1,
                 dut.debug_branchRs2,
                 dut.debug_branchTaken
-            );
-        }
-
-        if dut.watch_decode_hit != 0 {
-            eprintln!(
-                "WATCH: decode valid={} rd=x{} regWrite={} opType={} imm=0x{:08x} reqValid={} respValid={} stall={}",
-                dut.watch_decode_valid,
-                dut.watch_decode_rd,
-                dut.watch_decode_regWrite,
-                dut.watch_decode_opType,
-                dut.watch_decode_imm,
-                dut.watch_decode_reqValid,
-                dut.watch_decode_respValid,
-                dut.watch_frontend_stall,
-            );
-        }
-        if dut.watch_execute_hit != 0 {
-            eprintln!(
-                "WATCH: execute valid={} rd=x{} regWrite={} opType={} intResult=0x{:08x}",
-                dut.watch_execute_valid,
-                dut.watch_execute_rd,
-                dut.watch_execute_regWrite,
-                dut.watch_execute_opType,
-                dut.watch_execute_intResult,
-            );
-        }
-        if dut.watch_memory_hit != 0 {
-            eprintln!(
-                "WATCH: memory rd=x{} regWrite={} intResult=0x{:08x}",
-                dut.watch_memory_rd,
-                dut.watch_memory_regWrite,
-                dut.watch_memory_intResult,
-            );
-        }
-        if dut.watch_writeback_hit != 0 {
-            eprintln!(
-                "WATCH: writeback rd=x{} regWrite={} result=0x{:08x}",
-                dut.watch_writeback_rd,
-                dut.watch_writeback_regWrite,
-                dut.watch_writeback_result,
-            );
-        }
-
-        if !branch_dumped && dut.debug_pc == 0x8000_01a0 {
-            branch_dumped = true;
-            let regs = capture_registers(&mut dut);
-            eprintln!(
-                "DEBUG: branch @0x800001a0 a4(x14)=0x{:08x} t2(x7)=0x{:08x} gp(x3)=0x{:08x}",
-                regs.get(14),
-                regs.get(7),
-                regs.get(3),
-            );
-        }
-        if !branch_test3_dumped && dut.debug_branchValid != 0 && dut.debug_branchPc == 0x8000_01b4 {
-            branch_test3_dumped = true;
-            let regs = capture_registers(&mut dut);
-            eprintln!(
-                "DEBUG: branch @0x800001b8 a4(x14)=0x{:08x} t2(x7)=0x{:08x} gp(x3)=0x{:08x}",
-                regs.get(14),
-                regs.get(7),
-                regs.get(3),
-            );
-        }
-        if dut.debug_pc == 0x8000_0388 && tp_loop_count < 4 {
-            tp_loop_count += 1;
-            let regs = capture_registers(&mut dut);
-            eprintln!(
-                "DEBUG: branch @0x80000388 tp(x4)=0x{:08x} t0(x5)=0x{:08x} gp(x3)=0x{:08x} iter={}",
-                regs.get(4),
-                regs.get(5),
-                regs.get(3),
-                tp_loop_count,
             );
         }
 

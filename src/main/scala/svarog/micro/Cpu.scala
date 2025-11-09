@@ -22,29 +22,6 @@ object CpuDebugTap {
   def branchRs2(id: String): String = s"${id}_debug_branchRs2"
   def branchTaken(id: String): String = s"${id}_debug_branchTaken"
   def branchPc(id: String): String = s"${id}_debug_branchPc"
-  def watchDecodeHit(id: String): String = s"${id}_watch_decode_hit"
-  def watchDecodeValid(id: String): String = s"${id}_watch_decode_valid"
-  def watchDecodeRd(id: String): String = s"${id}_watch_decode_rd"
-  def watchDecodeRegWrite(id: String): String = s"${id}_watch_decode_regWrite"
-  def watchDecodeOpType(id: String): String = s"${id}_watch_decode_opType"
-  def watchDecodeImm(id: String): String = s"${id}_watch_decode_imm"
-  def watchDecodeReqValid(id: String): String = s"${id}_watch_decode_reqValid"
-  def watchDecodeRespValid(id: String): String = s"${id}_watch_decode_respValid"
-  def watchFrontEndStall(id: String): String = s"${id}_watch_frontend_stall"
-  def watchExecuteHit(id: String): String = s"${id}_watch_execute_hit"
-  def watchExecuteValid(id: String): String = s"${id}_watch_execute_valid"
-  def watchExecuteRd(id: String): String = s"${id}_watch_execute_rd"
-  def watchExecuteRegWrite(id: String): String = s"${id}_watch_execute_regWrite"
-  def watchExecuteOpType(id: String): String = s"${id}_watch_execute_opType"
-  def watchExecuteIntResult(id: String): String = s"${id}_watch_execute_intResult"
-  def watchMemoryHit(id: String): String = s"${id}_watch_memory_hit"
-  def watchMemoryRd(id: String): String = s"${id}_watch_memory_rd"
-  def watchMemoryRegWrite(id: String): String = s"${id}_watch_memory_regWrite"
-  def watchMemoryIntResult(id: String): String = s"${id}_watch_memory_intResult"
-  def watchWritebackHit(id: String): String = s"${id}_watch_writeback_hit"
-  def watchWritebackRd(id: String): String = s"${id}_watch_writeback_rd"
-  def watchWritebackRegWrite(id: String): String = s"${id}_watch_writeback_regWrite"
-  def watchWritebackResult(id: String): String = s"${id}_watch_writeback_result"
 }
 
 class Cpu(
@@ -67,9 +44,6 @@ class Cpu(
   val writeback = Module(new Writeback(xlen))
   val hazardUnit = Module(new HazardUnit)
   val fetchDecodeBuf = Module(new FetchDecodeBuffer(xlen))
-
-  // Watchpoint for debugging the rv32ui-p-add failure (li t2, 2 @ 0x800001b4)
-  val watchPc = "h800001b4".U(xlen.W)
 
   val stall_pipeline = Wire(Bool())
   val flush_pipeline = Wire(Bool())
@@ -136,25 +110,6 @@ class Cpu(
   stall_pipeline := hazardUnit.io.stall || memory_stall
   insert_bubble := hazardUnit.io.bubble
 
-  val watchDecode = decode.io.uop.pc === watchPc
-  when(watchDecode) {
-    chisel3.printf(
-      "WATCH decode pc=0x%x rd=x%d rs1=x%d rs2=x%d imm=0x%x opType=%d hasImm=%d regWrite=%d stall=%d bubble=%d\n",
-      decode.io.uop.pc,
-      decode.io.uop.rd,
-      decode.io.uop.rs1,
-      decode.io.uop.rs2,
-      decode.io.uop.imm,
-      decode.io.uop.opType.asUInt,
-      decode.io.uop.hasImm,
-      decode.io.uop.regWrite,
-      frontEndStall,
-      insert_bubble
-    )
-  }
-
-
-
   // ===== DECODE -> EXECUTE REGISTER =====
   // When stalling due to hazard:
   // - Fetch and Decode are stalled (don't advance - hold the hazarded instruction)
@@ -204,23 +159,6 @@ class Cpu(
   execute.io.regFile.readData1 := forwardRs1
   execute.io.regFile.readData2 := forwardRs2
 
-  val watchExecute = decodeExecuteReg.io.execute_uop.pc === watchPc
-  when(watchExecute) {
-    val useImm = decodeExecuteReg.io.execute_uop.hasImm
-    val aluInput2 = Mux(useImm, decodeExecuteReg.io.execute_uop.imm, forwardRs2)
-    chisel3.printf(
-      "WATCH execute pc=0x%x rd=x%d rs1Val=0x%x rs2Val=0x%x imm=0x%x useImm=%d opType=%d intResult=0x%x\n",
-      decodeExecuteReg.io.execute_uop.pc,
-      decodeExecuteReg.io.execute_uop.rd,
-      forwardRs1,
-      forwardRs2,
-      decodeExecuteReg.io.execute_uop.imm,
-      useImm,
-      decodeExecuteReg.io.execute_uop.opType.asUInt,
-      execute.io.intResult
-    )
-  }
-
   // ===== EXECUTE -> MEMORY REGISTER =====
   executeMemoryReg.io.execute_opType := execute.io.opType
   executeMemoryReg.io.execute_rd := execute.io.rd
@@ -234,18 +172,6 @@ class Cpu(
   executeMemoryReg.io.execute_isEcall := decodeExecuteReg.io.execute_uop.isEcall
   executeMemoryReg.io.stall := false.B  // Don't stall later stages during hazard
   executeMemoryReg.io.flush := false.B  // Don't flush - let branch/jump instruction complete
-
-  val watchExeMem = (executeMemoryReg.io.memory_pc === watchPc) &&
-    (executeMemoryReg.io.memory_opType =/= OpType.NOP)
-  when(watchExeMem) {
-    chisel3.printf(
-      "WATCH exmem pc=0x%x rd=x%d regWrite=%d intResult=0x%x\n",
-      executeMemoryReg.io.memory_pc,
-      executeMemoryReg.io.memory_rd,
-      executeMemoryReg.io.memory_regWrite,
-      executeMemoryReg.io.memory_intResult
-    )
-  }
 
   // ===== MEMORY STAGE =====
   memory.io.opType := executeMemoryReg.io.memory_opType
@@ -269,18 +195,6 @@ class Cpu(
   memoryWritebackReg.io.memory_isEcall := executeMemoryReg.io.memory_isEcall
   memoryWritebackReg.io.stall := false.B  // Don't stall later stages during hazard
   memoryWritebackReg.io.flush := false.B  // Don't flush - let branch/jump instruction complete
-
-  val watchMemWb = (memoryWritebackReg.io.writeback_pc === watchPc) &&
-    (memoryWritebackReg.io.writeback_opType =/= OpType.NOP)
-  when(watchMemWb) {
-    chisel3.printf(
-      "WATCH memwb pc=0x%x rd=x%d regWrite=%d result=0x%x\n",
-      memoryWritebackReg.io.writeback_pc,
-      memoryWritebackReg.io.writeback_rd,
-      memoryWritebackReg.io.writeback_regWrite,
-      memoryWritebackReg.io.writeback_result
-    )
-  }
 
   // ===== WRITEBACK STAGE =====
   writeback.io.opType := memoryWritebackReg.io.writeback_opType
@@ -347,50 +261,6 @@ class Cpu(
     BoringUtils.addSource(branchPcWire, CpuDebugTap.branchPc(id))
 
     // Watchpoint signals (PC = 0x800001b4)
-    val watchDecodeHitWire = Wire(Bool())
-    watchDecodeHitWire := watchDecode
-    BoringUtils.addSource(watchDecodeHitWire, CpuDebugTap.watchDecodeHit(id))
-    BoringUtils.addSource(decode.io.uop.valid, CpuDebugTap.watchDecodeValid(id))
-    val watchDecodeOpTypeWire = Wire(UInt(OpType().getWidth.W))
-    watchDecodeOpTypeWire := decode.io.uop.opType.asUInt
-    BoringUtils.addSource(decode.io.uop.rd, CpuDebugTap.watchDecodeRd(id))
-    BoringUtils.addSource(decode.io.uop.regWrite, CpuDebugTap.watchDecodeRegWrite(id))
-    BoringUtils.addSource(watchDecodeOpTypeWire, CpuDebugTap.watchDecodeOpType(id))
-    BoringUtils.addSource(decode.io.uop.imm, CpuDebugTap.watchDecodeImm(id))
-    val watchReqValidWire = Wire(Bool())
-    watchReqValidWire := fetch.io.icache.reqValid
-    val watchRespValidWire = Wire(Bool())
-    watchRespValidWire := fetch.io.icache.respValid
-    val frontEndStallWire = Wire(Bool())
-    frontEndStallWire := frontEndStall
-    BoringUtils.addSource(watchReqValidWire, CpuDebugTap.watchDecodeReqValid(id))
-    BoringUtils.addSource(watchRespValidWire, CpuDebugTap.watchDecodeRespValid(id))
-    BoringUtils.addSource(frontEndStallWire, CpuDebugTap.watchFrontEndStall(id))
-
-    val watchExecuteHitWire = Wire(Bool())
-    watchExecuteHitWire := watchExecute
-    BoringUtils.addSource(watchExecuteHitWire, CpuDebugTap.watchExecuteHit(id))
-    BoringUtils.addSource(decodeExecuteReg.io.execute_uop.valid, CpuDebugTap.watchExecuteValid(id))
-    val watchExecuteOpTypeWire = Wire(UInt(OpType().getWidth.W))
-    watchExecuteOpTypeWire := decodeExecuteReg.io.execute_uop.opType.asUInt
-    BoringUtils.addSource(decodeExecuteReg.io.execute_uop.rd, CpuDebugTap.watchExecuteRd(id))
-    BoringUtils.addSource(decodeExecuteReg.io.execute_uop.regWrite, CpuDebugTap.watchExecuteRegWrite(id))
-    BoringUtils.addSource(watchExecuteOpTypeWire, CpuDebugTap.watchExecuteOpType(id))
-    BoringUtils.addSource(execute.io.intResult, CpuDebugTap.watchExecuteIntResult(id))
-
-    val watchMemoryHitWire = Wire(Bool())
-    watchMemoryHitWire := watchExeMem
-    BoringUtils.addSource(watchMemoryHitWire, CpuDebugTap.watchMemoryHit(id))
-    BoringUtils.addSource(executeMemoryReg.io.memory_rd, CpuDebugTap.watchMemoryRd(id))
-    BoringUtils.addSource(executeMemoryReg.io.memory_regWrite, CpuDebugTap.watchMemoryRegWrite(id))
-    BoringUtils.addSource(executeMemoryReg.io.memory_intResult, CpuDebugTap.watchMemoryIntResult(id))
-
-    val watchWritebackHitWire = Wire(Bool())
-    watchWritebackHitWire := watchMemWb
-    BoringUtils.addSource(watchWritebackHitWire, CpuDebugTap.watchWritebackHit(id))
-    BoringUtils.addSource(memoryWritebackReg.io.writeback_rd, CpuDebugTap.watchWritebackRd(id))
-    BoringUtils.addSource(memoryWritebackReg.io.writeback_regWrite, CpuDebugTap.watchWritebackRegWrite(id))
-    BoringUtils.addSource(memoryWritebackReg.io.writeback_result, CpuDebugTap.watchWritebackResult(id))
   }
 }
 

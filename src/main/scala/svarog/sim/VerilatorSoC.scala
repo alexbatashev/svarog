@@ -36,29 +36,6 @@ class VerilatorSoC(
     val debug_branchRs2 = Output(UInt(xlen.W))
     val debug_branchTaken = Output(Bool())
     val debug_branchPc = Output(UInt(xlen.W))
-    val watch_decode_hit = Output(Bool())
-    val watch_decode_rd = Output(UInt(5.W))
-    val watch_decode_regWrite = Output(Bool())
-    val watch_decode_opType = Output(UInt(xlen.W))
-    val watch_decode_imm = Output(UInt(xlen.W))
-    val watch_decode_valid = Output(Bool())
-    val watch_decode_reqValid = Output(Bool())
-    val watch_decode_respValid = Output(Bool())
-    val watch_frontend_stall = Output(Bool())
-    val watch_execute_hit = Output(Bool())
-    val watch_execute_rd = Output(UInt(5.W))
-    val watch_execute_regWrite = Output(Bool())
-    val watch_execute_opType = Output(UInt(xlen.W))
-    val watch_execute_intResult = Output(UInt(xlen.W))
-    val watch_execute_valid = Output(Bool())
-    val watch_memory_hit = Output(Bool())
-    val watch_memory_rd = Output(UInt(5.W))
-    val watch_memory_regWrite = Output(Bool())
-    val watch_memory_intResult = Output(UInt(xlen.W))
-    val watch_writeback_hit = Output(Bool())
-    val watch_writeback_rd = Output(UInt(5.W))
-    val watch_writeback_regWrite = Output(Bool())
-    val watch_writeback_result = Output(UInt(xlen.W))
 
     // ROM write port for testbench program loading
     val rom_write_en = Input(Bool())
@@ -115,29 +92,6 @@ class VerilatorSoC(
   private val debugBranchRs2 = Wire(UInt(xlen.W))
   private val debugBranchTaken = Wire(Bool())
   private val debugBranchPc = Wire(UInt(xlen.W))
-  private val watchDecodeHit = Wire(Bool())
-  private val watchDecodeRd = Wire(UInt(5.W))
-  private val watchDecodeRegWrite = Wire(Bool())
-  private val watchDecodeOpType = Wire(UInt(xlen.W))
-  private val watchDecodeImm = Wire(UInt(xlen.W))
-  private val watchDecodeValid = Wire(Bool())
-  private val watchExecuteHit = Wire(Bool())
-  private val watchExecuteRd = Wire(UInt(5.W))
-  private val watchExecuteRegWrite = Wire(Bool())
-  private val watchExecuteOpType = Wire(UInt(xlen.W))
-  private val watchExecuteIntResult = Wire(UInt(xlen.W))
-  private val watchExecuteValid = Wire(Bool())
-  private val watchMemoryHit = Wire(Bool())
-  private val watchMemoryRd = Wire(UInt(5.W))
-  private val watchMemoryRegWrite = Wire(Bool())
-  private val watchMemoryIntResult = Wire(UInt(xlen.W))
-  private val watchWritebackHit = Wire(Bool())
-  private val watchWritebackRd = Wire(UInt(5.W))
-  private val watchWritebackRegWrite = Wire(Bool())
-  private val watchWritebackResult = Wire(UInt(xlen.W))
-  private val watchDecodeReqValid = Wire(Bool())
-  private val watchDecodeRespValid = Wire(Bool())
-  private val watchFrontEndStall = Wire(Bool())
   BoringUtils.addSink(debugRegWrite, CpuDebugTap.regWrite(debugTapId))
   BoringUtils.addSink(debugWriteAddr, CpuDebugTap.writeAddr(debugTapId))
   BoringUtils.addSink(debugWriteData, CpuDebugTap.writeData(debugTapId))
@@ -147,29 +101,6 @@ class VerilatorSoC(
   BoringUtils.addSink(debugBranchRs2, CpuDebugTap.branchRs2(debugTapId))
   BoringUtils.addSink(debugBranchTaken, CpuDebugTap.branchTaken(debugTapId))
   BoringUtils.addSink(debugBranchPc, CpuDebugTap.branchPc(debugTapId))
-  BoringUtils.addSink(watchDecodeHit, CpuDebugTap.watchDecodeHit(debugTapId))
-  BoringUtils.addSink(watchDecodeRd, CpuDebugTap.watchDecodeRd(debugTapId))
-  BoringUtils.addSink(watchDecodeRegWrite, CpuDebugTap.watchDecodeRegWrite(debugTapId))
-  BoringUtils.addSink(watchDecodeOpType, CpuDebugTap.watchDecodeOpType(debugTapId))
-  BoringUtils.addSink(watchDecodeImm, CpuDebugTap.watchDecodeImm(debugTapId))
-  BoringUtils.addSink(watchDecodeValid, CpuDebugTap.watchDecodeValid(debugTapId))
-  BoringUtils.addSink(watchDecodeReqValid, CpuDebugTap.watchDecodeReqValid(debugTapId))
-  BoringUtils.addSink(watchDecodeRespValid, CpuDebugTap.watchDecodeRespValid(debugTapId))
-  BoringUtils.addSink(watchFrontEndStall, CpuDebugTap.watchFrontEndStall(debugTapId))
-  BoringUtils.addSink(watchExecuteHit, CpuDebugTap.watchExecuteHit(debugTapId))
-  BoringUtils.addSink(watchExecuteRd, CpuDebugTap.watchExecuteRd(debugTapId))
-  BoringUtils.addSink(watchExecuteRegWrite, CpuDebugTap.watchExecuteRegWrite(debugTapId))
-  BoringUtils.addSink(watchExecuteOpType, CpuDebugTap.watchExecuteOpType(debugTapId))
-  BoringUtils.addSink(watchExecuteIntResult, CpuDebugTap.watchExecuteIntResult(debugTapId))
-  BoringUtils.addSink(watchExecuteValid, CpuDebugTap.watchExecuteValid(debugTapId))
-  BoringUtils.addSink(watchMemoryHit, CpuDebugTap.watchMemoryHit(debugTapId))
-  BoringUtils.addSink(watchMemoryRd, CpuDebugTap.watchMemoryRd(debugTapId))
-  BoringUtils.addSink(watchMemoryRegWrite, CpuDebugTap.watchMemoryRegWrite(debugTapId))
-  BoringUtils.addSink(watchMemoryIntResult, CpuDebugTap.watchMemoryIntResult(debugTapId))
-  BoringUtils.addSink(watchWritebackHit, CpuDebugTap.watchWritebackHit(debugTapId))
-  BoringUtils.addSink(watchWritebackRd, CpuDebugTap.watchWritebackRd(debugTapId))
-  BoringUtils.addSink(watchWritebackRegWrite, CpuDebugTap.watchWritebackRegWrite(debugTapId))
-  BoringUtils.addSink(watchWritebackResult, CpuDebugTap.watchWritebackResult(debugTapId))
   io.debug_regWrite := debugRegWrite
   io.debug_writeAddr := debugWriteAddr
   io.debug_writeData := debugWriteData
@@ -179,27 +110,4 @@ class VerilatorSoC(
   io.debug_branchRs2 := debugBranchRs2
   io.debug_branchTaken := debugBranchTaken
   io.debug_branchPc := debugBranchPc
-  io.watch_decode_hit := watchDecodeHit
-  io.watch_decode_rd := watchDecodeRd
-  io.watch_decode_regWrite := watchDecodeRegWrite
-  io.watch_decode_opType := watchDecodeOpType
-  io.watch_decode_imm := watchDecodeImm
-  io.watch_decode_valid := watchDecodeValid
-  io.watch_decode_reqValid := watchDecodeReqValid
-  io.watch_decode_respValid := watchDecodeRespValid
-  io.watch_frontend_stall := watchFrontEndStall
-  io.watch_execute_hit := watchExecuteHit
-  io.watch_execute_rd := watchExecuteRd
-  io.watch_execute_regWrite := watchExecuteRegWrite
-  io.watch_execute_opType := watchExecuteOpType
-  io.watch_execute_intResult := watchExecuteIntResult
-  io.watch_execute_valid := watchExecuteValid
-  io.watch_memory_hit := watchMemoryHit
-  io.watch_memory_rd := watchMemoryRd
-  io.watch_memory_regWrite := watchMemoryRegWrite
-  io.watch_memory_intResult := watchMemoryIntResult
-  io.watch_writeback_hit := watchWritebackHit
-  io.watch_writeback_rd := watchWritebackRd
-  io.watch_writeback_regWrite := watchWritebackRegWrite
-  io.watch_writeback_result := watchWritebackResult
 }
