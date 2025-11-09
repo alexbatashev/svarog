@@ -43,6 +43,8 @@ class ExecuteMemoryStage(xlen: Int) extends Module {
     val execute_memWidth = Input(MemWidth())
     val execute_memUnsigned = Input(Bool())
     val execute_storeData = Input(UInt(xlen.W))
+    val execute_pc = Input(UInt(xlen.W))
+    val execute_isEcall = Input(Bool())
 
     // To Memory stage
     val memory_opType = Output(OpType())
@@ -53,6 +55,8 @@ class ExecuteMemoryStage(xlen: Int) extends Module {
     val memory_memWidth = Output(MemWidth())
     val memory_memUnsigned = Output(Bool())
     val memory_storeData = Output(UInt(xlen.W))
+    val memory_pc = Output(UInt(xlen.W))
+    val memory_isEcall = Output(Bool())
 
     // Pipeline control
     val stall = Input(Bool())
@@ -67,6 +71,8 @@ class ExecuteMemoryStage(xlen: Int) extends Module {
   val reg_memWidth = RegInit(MemWidth.WORD)
   val reg_memUnsigned = RegInit(false.B)
   val reg_storeData = RegInit(0.U(xlen.W))
+  val reg_pc = RegInit(0.U(xlen.W))
+  val reg_isEcall = RegInit(false.B)
 
   when(io.flush) {
     reg_opType := OpType.NOP
@@ -80,6 +86,8 @@ class ExecuteMemoryStage(xlen: Int) extends Module {
     reg_memWidth := io.execute_memWidth
     reg_memUnsigned := io.execute_memUnsigned
     reg_storeData := io.execute_storeData
+    reg_pc := io.execute_pc
+    reg_isEcall := io.execute_isEcall
   }
 
   io.memory_opType := reg_opType
@@ -90,6 +98,8 @@ class ExecuteMemoryStage(xlen: Int) extends Module {
   io.memory_memWidth := reg_memWidth
   io.memory_memUnsigned := reg_memUnsigned
   io.memory_storeData := reg_storeData
+  io.memory_pc := reg_pc
+  io.memory_isEcall := reg_isEcall
 }
 
 // Memory -> Writeback Pipeline Register
@@ -100,12 +110,16 @@ class MemoryWritebackStage(xlen: Int) extends Module {
     val memory_rd = Input(UInt(5.W))
     val memory_regWrite = Input(Bool())
     val memory_result = Input(UInt(xlen.W))
+    val memory_pc = Input(UInt(xlen.W))
+    val memory_isEcall = Input(Bool())
 
     // To Writeback stage
     val writeback_opType = Output(OpType())
     val writeback_rd = Output(UInt(5.W))
     val writeback_regWrite = Output(Bool())
     val writeback_result = Output(UInt(xlen.W))
+    val writeback_pc = Output(UInt(xlen.W))
+    val writeback_isEcall = Output(Bool())
 
     // Pipeline control
     val stall = Input(Bool())
@@ -116,6 +130,8 @@ class MemoryWritebackStage(xlen: Int) extends Module {
   val reg_rd = RegInit(0.U(5.W))
   val reg_regWrite = RegInit(false.B)
   val reg_result = RegInit(0.U(xlen.W))
+  val reg_pc = RegInit(0.U(xlen.W))
+  val reg_isEcall = RegInit(false.B)
 
   when(io.flush) {
     reg_opType := OpType.NOP
@@ -125,10 +141,14 @@ class MemoryWritebackStage(xlen: Int) extends Module {
     reg_rd := io.memory_rd
     reg_regWrite := io.memory_regWrite
     reg_result := io.memory_result
+    reg_pc := io.memory_pc
+    reg_isEcall := io.memory_isEcall
   }
 
   io.writeback_opType := reg_opType
   io.writeback_rd := reg_rd
   io.writeback_regWrite := reg_regWrite
   io.writeback_result := reg_result
+  io.writeback_pc := reg_pc
+  io.writeback_isEcall := reg_isEcall
 }

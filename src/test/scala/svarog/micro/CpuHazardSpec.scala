@@ -9,7 +9,7 @@ class CpuHazardSpec extends AnyFlatSpec with Matchers with ChiselSim {
   behavior of "CPU with hazard detection"
 
   it should "execute back-to-back dependent instructions with stalls" in {
-    simulate(new Cpu(32)) { dut =>
+    simulate(new CpuTestHarness(32)) { dut =>
       // Test program with RAW hazard:
       // ADDI x1, x0, 10   -> x1 = 10 (cycle 4 writeback)
       // ADD  x2, x1, x1   -> x2 = 20 (should stall until x1 is ready)
@@ -76,7 +76,7 @@ class CpuHazardSpec extends AnyFlatSpec with Matchers with ChiselSim {
   }
 
   it should "not stall when there's no hazard" in {
-    simulate(new Cpu(32)) { dut =>
+    simulate(new CpuTestHarness(32)) { dut =>
       // Test program without hazards:
       // ADDI x1, x0, 5    -> x1 = 5
       // ADDI x2, x0, 10   -> x2 = 10 (no dependency on x1)

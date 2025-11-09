@@ -9,7 +9,7 @@ class CpuSpec extends AnyFlatSpec with Matchers with ChiselSim {
   behavior of "CPU"
 
   it should "execute simple ALU instructions" in {
-    simulate(new Cpu(32)) { dut =>
+    simulate(new CpuTestHarness(32)) { dut =>
 
       // Simple test program:
       // 0x00: ADDI x1, x0, 5    -> x1 = 5
@@ -96,7 +96,7 @@ class CpuSpec extends AnyFlatSpec with Matchers with ChiselSim {
   }
 
   it should "execute LUI instruction" in {
-    simulate(new Cpu(32)) { dut =>
+    simulate(new CpuTestHarness(32)) { dut =>
 
       // Test program:
       // 0x00: LUI x7, 0x12345    -> x7 = 0x12345000
@@ -146,7 +146,7 @@ class CpuSpec extends AnyFlatSpec with Matchers with ChiselSim {
   }
 
   it should "execute AUIPC instruction" in {
-    simulate(new Cpu(32)) { dut =>
+    simulate(new CpuTestHarness(32)) { dut =>
 
       // Test program:
       // 0x00: AUIPC x1, 0x1000   -> x1 = 0x00 + 0x1000000 = 0x1000000

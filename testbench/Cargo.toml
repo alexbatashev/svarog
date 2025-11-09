@@ -1,0 +1,23 @@
+[package]
+name = "testbench"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libtest-mimic = "0.8.1"
+marlin = { version = "0.9.0", features = ["verilog"] }
+xshell = "0.2.7"
+anyhow = "1.0.100"
+camino = "1.1"
+
+[dev-dependencies]
+snafu = "0.8.9"
+
+[build-dependencies]
+anyhow = "1.0.100"
+xshell = "0.2.7"
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+harness = false

@@ -13,6 +13,7 @@ object Opcodes extends ChiselEnum {
   val BRANCH = "b1100011".U
   val LOAD = "b0000011".U
   val STORE = "b0100011".U
+  val SYSTEM = "b1110011".U
 }
 
 object ALUFunc3 extends ChiselEnum {

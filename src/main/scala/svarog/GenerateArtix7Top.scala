@@ -9,7 +9,11 @@ import svarog.util.HexLoader
 import java.nio.file.{Files, Paths}
 
 /** Hard-wired instruction ROM that satisfies the CPU's simple L1 cache interface. */
-class StaticInstructionRom(xlen: Int, program: Seq[BigInt]) extends Module {
+class StaticInstructionRom(
+  xlen: Int,
+  program: Seq[BigInt],
+  baseAddr: BigInt = 0
+) extends Module {
   require(program.nonEmpty, "Program must contain at least one instruction")
 
   val io = IO(new Bundle {
@@ -19,8 +23,10 @@ class StaticInstructionRom(xlen: Int, program: Seq[BigInt]) extends Module {
   private val romWords = program.map(word => word.U(32.W))
   private val rom = VecInit(romWords)
   private val depth = rom.length
-  private val pcWord = io.cpu.addr >> 2
-  private val inRange = pcWord < depth.U
+  private val base = baseAddr.U(xlen.W)
+  private val relAddr = io.cpu.addr - base
+  private val pcWord = relAddr >> 2
+  private val inRange = (io.cpu.addr >= base) && (pcWord < depth.U)
   private val readData =
     if (program.length == 1) rom.head
     else {

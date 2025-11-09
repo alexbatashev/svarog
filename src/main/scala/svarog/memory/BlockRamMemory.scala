@@ -4,6 +4,8 @@ import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.loadMemoryFromFileInline
 import svarog.micro.MemWidth
+import scala.math
+import scala.math
 
 /**
  * Synthesizable data memory that infers FPGA block RAM.
@@ -19,7 +21,8 @@ import svarog.micro.MemWidth
 class BlockRamMemory(
   xlen: Int = 32,
   memSizeBytes: Int = 4096,
-  initFile: Option[String] = None
+  initFile: Option[String] = None,
+  baseAddr: BigInt = 0
 ) extends Module {
   require(xlen == 32, "BlockRamMemory currently supports 32-bit XLEN only")
   require(memSizeBytes % (xlen / 8) == 0, "Memory size must be a multiple of word size")
@@ -28,6 +31,14 @@ class BlockRamMemory(
 
   private val bytesPerWord = xlen / 8
   private val numWords = memSizeBytes / bytesPerWord
+  private val loadAddrWidth = math.max(1, log2Ceil(numWords))
+
+  val preload = IO(new Bundle {
+    val en = Input(Bool())
+    val addr = Input(UInt(loadAddrWidth.W))
+    val data = Input(UInt(xlen.W))
+    val mask = Input(UInt(bytesPerWord.W))
+  })
 
   // SyncReadMem infers block RAM on Xilinx when the read data is registered.
   private val mem = SyncReadMem(numWords, Vec(bytesPerWord, UInt(8.W)))
@@ -45,15 +56,18 @@ class BlockRamMemory(
   io.req.ready := !loadPending
 
   // Split request handling for clarity
+  val base = baseAddr.U(xlen.W)
   val addr = io.req.bits.addr
-  val wordAddr = addr >> log2Ceil(bytesPerWord)
-  val byteOffset = addr(log2Ceil(bytesPerWord) - 1, 0)
+  val relAddr = addr - base
+  val addrInRange = (addr >= base) && (relAddr < memSizeBytes.U)
+  val wordAddr = relAddr >> log2Ceil(bytesPerWord)
+  val byteOffset = relAddr(log2Ceil(bytesPerWord) - 1, 0)
 
   val isLoad = !io.req.bits.write
   val isStore = io.req.bits.write
   val requestAccepted = io.req.fire
 
-  val doLoad = requestAccepted && isLoad
+  val doLoad = requestAccepted && isLoad && addrInRange
   val readVec = mem.read(wordAddr, doLoad)
   val readData = readVec.asUInt
   val loadByteOffsetReg = RegEnable(byteOffset, 0.U(log2Ceil(bytesPerWord).W), doLoad)
@@ -67,7 +81,15 @@ class BlockRamMemory(
   val loadDataWord = Mux(dataReady, readData, loadDataHold)
 
   // --- Store path (write with per-byte mask) ---
-  when(requestAccepted && isStore) {
+  when(preload.en) {
+    val loadDataVec = Wire(Vec(bytesPerWord, UInt(8.W)))
+    for (i <- 0 until bytesPerWord) {
+      val hi = (i + 1) * 8 - 1
+      val lo = i * 8
+      loadDataVec(i) := preload.data(hi, lo)
+    }
+    mem.write(preload.addr, loadDataVec, preload.mask.asBools)
+  }.elsewhen(requestAccepted && isStore && addrInRange) {
     val shiftAmount = (byteOffset << 3).asUInt
     val alignedData = (io.req.bits.data << shiftAmount)(xlen - 1, 0)
 

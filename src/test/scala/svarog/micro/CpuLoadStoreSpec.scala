@@ -11,7 +11,7 @@ class CpuLoadStoreSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "execute SW (store word) instruction" in {
     simulate(new Module {
-      val cpu = Module(new Cpu(32))
+      val cpu = Module(new CpuTestHarness(32))
       val dmem = Module(new SimpleMemory(32, 1024))  // 1KB data memory
 
       // Connect CPU to memory
@@ -90,7 +90,7 @@ class CpuLoadStoreSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "execute LW (load word) instruction" in {
     simulate(new Module {
-      val cpu = Module(new Cpu(32))
+      val cpu = Module(new CpuTestHarness(32))
       val dmem = Module(new SimpleMemory(32, 1024))
 
       cpu.io.dcache <> dmem.io
@@ -171,7 +171,7 @@ class CpuLoadStoreSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "handle byte access (LB/SB)" in {
     simulate(new Module {
-      val cpu = Module(new Cpu(32))
+      val cpu = Module(new CpuTestHarness(32))
       val dmem = Module(new SimpleMemory(32, 1024))
 
       cpu.io.dcache <> dmem.io

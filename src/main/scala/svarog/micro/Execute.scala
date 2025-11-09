@@ -64,6 +64,8 @@ class Execute(xlen: Integer) extends Module {
   alu.io.input1 := io.regFile.readData1
   alu.io.input2 := Mux(io.uop.hasImm, io.uop.imm, io.regFile.readData2)
 
+  val branchDebugCounter = RegInit(0.U(8.W))
+
   switch(io.uop.opType) {
     is(OpType.ALU) {
       io.intResult := alu.io.output
@@ -85,7 +87,6 @@ class Execute(xlen: Integer) extends Module {
     is(OpType.BRANCH) {
       val rs1 = io.regFile.readData1
       val rs2 = io.regFile.readData2
-
       // Compute branch condition based on funct3
       val taken = WireDefault(false.B)
 
@@ -108,6 +109,19 @@ class Execute(xlen: Integer) extends Module {
         is(BranchFunc3.BGEU) {
           taken := (rs1 >= rs2)
         }
+      }
+
+      when(branchDebugCounter < 32.U) {
+        branchDebugCounter := branchDebugCounter + 1.U
+        chisel3.printf("BRANCH pc=0x%x rs1=x%d val=0x%x rs2=x%d val=0x%x func=%d taken=%d\n",
+          io.uop.pc,
+          io.uop.rs1,
+          rs1,
+          io.uop.rs2,
+          rs2,
+          io.uop.branchFunc,
+          taken
+        )
       }
 
       io.branchTaken := taken

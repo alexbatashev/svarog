@@ -11,7 +11,8 @@ class SvarogSoC(
   memBytes: Int = 16384,
   clockHz: Int = 50_000_000,
   baud: Int = 115200,
-  program: Seq[BigInt]
+  program: Seq[BigInt],
+  ramInitFile: Option[String] = None
 ) extends Module {
   require(program.nonEmpty, "Instruction program must contain at least one word")
 
@@ -24,7 +25,7 @@ class SvarogSoC(
 
   private val cpu = Module(new Cpu(xlen))
   private val instrRom = Module(new StaticInstructionRom(xlen, program))
-  private val dmem = Module(new BlockRamMemory(xlen, memBytes))
+  private val dmem = Module(new BlockRamMemory(xlen, memBytes, ramInitFile, baseAddr = 0))
   private val periph = Module(new PeriphMux(xlen))
   private val uart = Module(new UART(xlen, clockHz, baud))
 
@@ -32,6 +33,11 @@ class SvarogSoC(
   periph.io.cpu <> cpu.io.dcache
   periph.io.ram <> dmem.io
   periph.io.uart <> uart.io.bus
+  cpu.io.bootHold := false.B
+  dmem.preload.en := false.B
+  dmem.preload.addr := 0.U
+  dmem.preload.data := 0.U
+  dmem.preload.mask := 0.U
 
   uart.io.rx := io.uart.rx
   io.uart.tx := uart.io.tx

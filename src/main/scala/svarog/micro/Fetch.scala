@@ -18,26 +18,30 @@ class FetchIO(xlen: Int) extends Bundle {
   val icache = Flipped(new L1CacheCpuIO(xlen, 32))
 }
 
-class Fetch(xlen: Int) extends Module {
+class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   val io = IO(new FetchIO(xlen))
 
-  val pc_reg = RegInit(0.U(xlen.W))
+  private val resetVec = resetVector.U(xlen.W)
+  val pc_reg = RegInit(resetVec)
+  val pc_out_reg = RegInit(resetVec)
 
   val pc_plus_4 = pc_reg + 4.U
   val next_pc = Mux(io.branch_taken, io.branch_target, pc_plus_4)
 
   when(!io.stall) {
-    when(io.flush || io.branch_taken) {
-      pc_reg := next_pc
-    }.otherwise {
-      pc_reg := pc_plus_4
-    }
+    pc_out_reg := pc_reg
+  }
+
+  when(io.branch_taken || io.flush) {
+    pc_reg := next_pc
+  }.elsewhen(!io.stall) {
+    pc_reg := pc_plus_4
   }
 
   io.icache.reqValid := !io.stall
   io.icache.addr := pc_reg
 
-  io.pc_out := pc_reg
+  io.pc_out := pc_out_reg
   io.instruction := io.icache.data
   io.valid := io.icache.respValid && !io.flush
 }

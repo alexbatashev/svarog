@@ -9,7 +9,7 @@ import svarog.bits.ALUFunc3
 import svarog.bits.ALUOp
 
 object OpType extends ChiselEnum {
-  val NOP, ALU, LOAD, STORE, BRANCH, JAL, JALR, LUI, AUIPC = Value
+  val NOP, ALU, LOAD, STORE, BRANCH, JAL, JALR, LUI, AUIPC, SYSTEM = Value
 }
 
 object MemWidth extends ChiselEnum {
@@ -30,6 +30,7 @@ class DecoderUOp(xlen: Int) extends Bundle {
   val regWrite = Output(Bool())
   val valid = Output(Bool())
   val pc = Output(UInt(xlen.W))
+  val isEcall = Output(Bool())
 }
 
 class DecoderIO(xlen: Int) extends Bundle {
@@ -69,8 +70,22 @@ class Decode(xlen: Int) extends Module {
   io.uop.regWrite := false.B
   io.uop.valid := io.valid
   io.uop.pc := io.cur_pc
+  io.uop.isEcall := false.B
 
   immGen.io.format := ImmFormat.I
+
+  when(io.valid && (io.cur_pc === "h800001b4".U || io.cur_pc === "h800001b0".U)) {
+    chisel3.printf(
+      "DECODE pc=0x%x opcode=0x%x rd=%d rs1=%d rs2=%d imm=0x%x opType(before)=%d\n",
+      io.cur_pc,
+      opcode,
+      rd,
+      rs1,
+      rs2,
+      immGen.io.immediate,
+      io.uop.opType.asUInt
+    )
+  }
 
   switch(opcode) {
     // R-type: ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND
@@ -211,6 +226,16 @@ class Decode(xlen: Int) extends Module {
       io.uop.hasImm := true.B
       io.uop.regWrite := rd =/= 0.U
       immGen.io.format := ImmFormat.I  // JALR uses I-type immediate
+    }
+
+    is(Opcodes.SYSTEM) {
+      when(inst === "h00000073".U) { // ECALL
+        io.uop.opType := OpType.SYSTEM
+        io.uop.isEcall := true.B
+        io.uop.regWrite := false.B
+      }.otherwise {
+        io.uop.opType := OpType.NOP
+      }
     }
   }
 

@@ -9,7 +9,7 @@ class CpuNoHazardSpec extends AnyFlatSpec with Matchers with ChiselSim {
   behavior of "CPU without hazards"
 
   it should "execute ADDI instructions" in {
-    simulate(new Cpu(32)) { dut =>
+    simulate(new CpuTestHarness(32)) { dut =>
       // Test program with NOPs to avoid hazards:
       // 0x00: ADDI x1, x0, 42   -> x1 = 42
       // 0x04: NOP (ADDI x0, x0, 0)
@@ -72,7 +72,7 @@ class CpuNoHazardSpec extends AnyFlatSpec with Matchers with ChiselSim {
   }
 
   it should "execute ADD with NOPs to avoid hazards" in {
-    simulate(new Cpu(32)) { dut =>
+    simulate(new CpuTestHarness(32)) { dut =>
       // Test program:
       // ADDI x1, x0, 10
       // NOP x 4 (wait for x1 to be written)
@@ -141,7 +141,7 @@ class CpuNoHazardSpec extends AnyFlatSpec with Matchers with ChiselSim {
   }
 
   it should "execute LUI instruction" in {
-    simulate(new Cpu(32)) { dut =>
+    simulate(new CpuTestHarness(32)) { dut =>
       // LUI x7, 0xABCDE -> x7 = 0xABCDE000
 
       val program = Seq(

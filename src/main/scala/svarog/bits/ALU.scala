@@ -18,13 +18,13 @@ class ALU(xlen: Int) extends Module {
 
   io.output := DontCare
 
-  switch (io.op) {
+  switch(io.op) {
     is(ALUOp.ADD) { io.output := io.input1 + io.input2 }
     is(ALUOp.SUB) { io.output := io.input1 - io.input2 }
     is(ALUOp.SLL) { io.output := io.input1 << io.input2(4, 0) }
     is(ALUOp.SRL) { io.output := io.input1 >> io.input2(4, 0) }
     is(ALUOp.SRA) { io.output := (io.input1.asSInt >> io.input2(4, 0)).asUInt }
-    is(ALUOp.OR)  { io.output := io.input1 | io.input2 }
+    is(ALUOp.OR) { io.output := io.input1 | io.input2 }
     is(ALUOp.AND) { io.output := io.input1 & io.input2 }
     is(ALUOp.XOR) { io.output := io.input1 ^ io.input2 }
     is(ALUOp.SLT) { io.output := (io.input1.asSInt < io.input2.asSInt).asUInt }
