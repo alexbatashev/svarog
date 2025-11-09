@@ -88,6 +88,11 @@ class VerilatorTop(
   val debug_branchRs2 = IO(Output(UInt(config.xlen.W)))
   val debug_branchTaken = IO(Output(Bool()))
   val debug_branchPc = IO(Output(UInt(config.xlen.W)))
+  val debug_flush = IO(Output(Bool()))
+  val debug_bootHold = IO(Output(Bool()))
+  val debug_decodeValid = IO(Output(Bool()))
+  val debug_decodeRegWrite = IO(Output(Bool()))
+  val debug_instruction = IO(Output(UInt(32.W)))
 
   val regfile_read_en = IO(Input(Bool()))
   val regfile_read_addr = IO(Input(UInt(5.W)))
@@ -130,6 +135,11 @@ class VerilatorTop(
   private val debugBranchRs2 = Wire(UInt(config.xlen.W))
   private val debugBranchTaken = Wire(Bool())
   private val debugBranchPc = Wire(UInt(config.xlen.W))
+  private val debugFlush = Wire(Bool())
+  private val debugBootHold = Wire(Bool())
+  private val debugDecodeValid = Wire(Bool())
+  private val debugDecodeRegWrite = Wire(Bool())
+  private val debugInstruction = Wire(UInt(32.W))
   BoringUtils.addSink(debugRegWrite, CpuDebugTap.regWrite(debugTapId))
   BoringUtils.addSink(debugWriteAddr, CpuDebugTap.writeAddr(debugTapId))
   BoringUtils.addSink(debugWriteData, CpuDebugTap.writeData(debugTapId))
@@ -139,6 +149,11 @@ class VerilatorTop(
   BoringUtils.addSink(debugBranchRs2, CpuDebugTap.branchRs2(debugTapId))
   BoringUtils.addSink(debugBranchTaken, CpuDebugTap.branchTaken(debugTapId))
   BoringUtils.addSink(debugBranchPc, CpuDebugTap.branchPc(debugTapId))
+  BoringUtils.addSink(debugFlush, CpuDebugTap.flush(debugTapId))
+  BoringUtils.addSink(debugBootHold, CpuDebugTap.bootHold(debugTapId))
+  BoringUtils.addSink(debugDecodeValid, CpuDebugTap.decodeValid(debugTapId))
+  BoringUtils.addSink(debugDecodeRegWrite, CpuDebugTap.decodeRegWrite(debugTapId))
+  BoringUtils.addSink(debugInstruction, CpuDebugTap.instruction(debugTapId))
   debug_regWrite := debugRegWrite
   debug_writeAddr := debugWriteAddr
   debug_writeData := debugWriteData
@@ -148,6 +163,11 @@ class VerilatorTop(
   debug_branchRs2 := debugBranchRs2
   debug_branchTaken := debugBranchTaken
   debug_branchPc := debugBranchPc
+  debug_flush := debugFlush
+  debug_bootHold := debugBootHold
+  debug_decodeValid := debugDecodeValid
+  debug_decodeRegWrite := debugDecodeRegWrite
+  debug_instruction := debugInstruction
 
   private val regfileData = Wire(UInt(config.xlen.W))
   BoringUtils.addSource(regfile_read_addr, RegFileProbe.addr(regfileProbeId))

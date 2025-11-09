@@ -24,6 +24,11 @@ object CpuDebugTap {
   def branchRs2(id: String): String = s"${id}_debug_branchRs2"
   def branchTaken(id: String): String = s"${id}_debug_branchTaken"
   def branchPc(id: String): String = s"${id}_debug_branchPc"
+  def flush(id: String): String = s"${id}_debug_flush"
+  def bootHold(id: String): String = s"${id}_debug_bootHold"
+  def decodeValid(id: String): String = s"${id}_debug_decodeValid"
+  def decodeRegWrite(id: String): String = s"${id}_debug_decodeRegWrite"
+  def instruction(id: String): String = s"${id}_debug_instruction"
 }
 
 class Cpu(
@@ -277,6 +282,27 @@ class Cpu(
     BoringUtils.addSource(branchRs2Wire, CpuDebugTap.branchRs2(id))
     BoringUtils.addSource(branchTakenWire, CpuDebugTap.branchTaken(id))
     BoringUtils.addSource(branchPcWire, CpuDebugTap.branchPc(id))
+
+    // Additional debug signals for pipeline flush diagnosis
+    val flushWire = Wire(Bool())
+    flushWire := flush_pipeline || io.bootHold
+    BoringUtils.addSource(flushWire, CpuDebugTap.flush(id))
+
+    val bootHoldWire = Wire(Bool())
+    bootHoldWire := io.bootHold
+    BoringUtils.addSource(bootHoldWire, CpuDebugTap.bootHold(id))
+
+    val decodeValidWire = Wire(Bool())
+    decodeValidWire := decode.io.uop.valid
+    BoringUtils.addSource(decodeValidWire, CpuDebugTap.decodeValid(id))
+
+    val decodeRegWriteWire = Wire(Bool())
+    decodeRegWriteWire := decode.io.uop.regWrite
+    BoringUtils.addSource(decodeRegWriteWire, CpuDebugTap.decodeRegWrite(id))
+
+    val instructionWire = Wire(UInt(32.W))
+    instructionWire := decode.io.instruction
+    BoringUtils.addSource(instructionWire, CpuDebugTap.instruction(id))
 
     // Watchpoint signals (PC = 0x800001b4)
   }

@@ -61,7 +61,7 @@ pub struct VerilatorTop;
 
 pub struct Simulator {
     runtime: &'static VerilatorRuntime,
-    model: RefCell<VerilatorTop<'static>>,
+    pub model: RefCell<VerilatorTop<'static>>,
 }
 
 impl Simulator {
@@ -94,16 +94,35 @@ impl Simulator {
 
         let start_addr = text_hdr.sh_addr as u32;
 
+        // IMPORTANT: Reset FIRST before loading ROM!
+        // ROM uses RegInit, so reset clears it to all zeros.
+        // We must reset first, then load ROM after.
         {
             let mut dut = self.model.borrow_mut();
+            dut.reset = 1;
             dut.boot_hold = 1;
+            dut.regfile_read_en = 0;
             dut.rom_write_en = 0;
-            dut.rom_write_mask = 0;
             dut.ram_write_en = 0;
+            dut.rom_write_mask = 0;
             dut.ram_write_mask = 0;
         }
 
-        // Write data word by word, converting address to ROM index
+        // Reset for a few cycles
+        for _ in 0..5 {
+            self.tick();
+        }
+
+        // Release reset
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.reset = 0;
+        }
+
+        // Wait a cycle after reset
+        self.tick();
+
+        // NOW write data word by word, converting address to ROM index
         eprintln!("Loading {} words starting at address 0x{:08x}", data.len(), start_addr);
         for (i, word) in data.iter().enumerate() {
             let addr = start_addr + (i as u32 * 4);
@@ -115,44 +134,24 @@ impl Simulator {
             self.write_rom_word(rom_idx, word, 0xF);
         }
 
-        // Release boot_hold after loading (CPU will stay in hold during run() reset sequence)
-        {
-            let mut dut = self.model.borrow_mut();
-            dut.boot_hold = 0;
-        }
+        // One more cycle after loading
+        self.tick();
+
+        // ROM is loaded, but keep boot_hold=1 for now (run() will release it)
 
         Ok(())
     }
 
     pub fn run(&self, max_cycles: usize) -> Result<TestResult> {
-        // Initialize the DUT
+        // NOTE: Reset is now done in load_binary(), not here!
+        // This ensures ROM is loaded AFTER reset (ROM uses RegInit)
+
+        // Just ensure write signals are disabled and release boot_hold to start execution
         {
             let mut dut = self.model.borrow_mut();
-            dut.reset = 1;
-            dut.boot_hold = 1;
-            dut.regfile_read_en = 0;
-            // Make sure ROM write is disabled
             dut.rom_write_en = 0;
             dut.ram_write_en = 0;
-        }
-
-        // Reset for a few cycles
-        for _ in 0..5 {
-            self.tick();
-        }
-
-        // Release reset first
-        {
-            let mut dut = self.model.borrow_mut();
-            dut.reset = 0;
-        }
-
-        // Wait a cycle, then release boot_hold
-        self.tick();
-
-        {
-            let mut dut = self.model.borrow_mut();
-            dut.boot_hold = 0;
+            dut.boot_hold = 0;  // Release boot hold to start CPU
         }
 
         // Run simulation
