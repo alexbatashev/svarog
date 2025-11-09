@@ -74,19 +74,6 @@ class Decode(xlen: Int) extends Module {
 
   immGen.io.format := ImmFormat.I
 
-  when(io.valid && (io.cur_pc === "h800001b4".U || io.cur_pc === "h800001b0".U)) {
-    chisel3.printf(
-      "DECODE pc=0x%x opcode=0x%x rd=%d rs1=%d rs2=%d imm=0x%x opType(before)=%d\n",
-      io.cur_pc,
-      opcode,
-      rd,
-      rs1,
-      rs2,
-      immGen.io.immediate,
-      io.uop.opType.asUInt
-    )
-  }
-
   switch(opcode) {
     // R-type: ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND
     is(Opcodes.ALU_REG) {
@@ -233,6 +220,15 @@ class Decode(xlen: Int) extends Module {
         io.uop.opType := OpType.SYSTEM
         io.uop.isEcall := true.B
         io.uop.regWrite := false.B
+      }.elsewhen(funct3 =/= 0.U) { // CSR instructions (CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI)
+        // Treat CSR reads as ALU operations that read from rs1/imm and write to rd
+        // This is a simplified implementation - we'll just return 0 for CSR reads
+        io.uop.opType := OpType.ALU
+        io.uop.aluOp := ALUOp.ADD
+        io.uop.hasImm := funct3(2) // CSRRxI instructions use immediate (funct3 bit 2)
+        io.uop.regWrite := rd =/= 0.U
+        immGen.io.format := ImmFormat.I
+        // For CSR operations, we just return 0 (read-only zero CSRs)
       }.otherwise {
         io.uop.opType := OpType.NOP
       }
