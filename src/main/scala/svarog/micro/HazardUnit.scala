@@ -21,6 +21,11 @@ class HazardUnitIO extends Bundle {
   val memory_regWrite = Input(Bool())
   val memory_valid = Input(Bool())
 
+  // Writeback stage
+  val writeback_rd = Input(UInt(5.W))
+  val writeback_regWrite = Input(Bool())
+  val writeback_valid = Input(Bool())
+
   // Outputs
   val stall = Output(Bool()) // Stall Fetch and Decode
   val bubble = Output(Bool()) // Insert bubble into Execute
@@ -55,18 +60,26 @@ class HazardUnit extends Module {
     (io.decode_rs2 =/= 0.U) &&
     io.decode_usesRs2 // Only check rs2 if instruction uses it
 
+  val writebackHazard_rs1 = io.writeback_regWrite && io.writeback_valid &&
+    (io.writeback_rd === io.decode_rs1) &&
+    (io.decode_rs1 =/= 0.U)
+
+  val writebackHazard_rs2 = io.writeback_regWrite && io.writeback_valid &&
+    (io.writeback_rd === io.decode_rs2) &&
+    (io.decode_rs2 =/= 0.U) &&
+    io.decode_usesRs2
+
   // Detect any hazard
   // Check both Execute and Memory stages. We need to stall until the producing
   // instruction reaches Writeback, because our register file doesn't have
   // internal forwarding (write-then-read in same cycle).
   val hasHazard = (executeHazard_rs1 || executeHazard_rs2 ||
-    memoryHazard_rs1 || memoryHazard_rs2) && io.decode_valid
+    memoryHazard_rs1 || memoryHazard_rs2 ||
+    writebackHazard_rs1 || writebackHazard_rs2) && io.decode_valid
 
   // Output signals
   io.stall := hasHazard // Stall Fetch and Decode stages
   io.bubble := hasHazard // Insert bubble (NOP) into Execute stage
 
-  // Note: We don't check Writeback stage because of register file design
-  // The register file is written in the first half of the cycle and read
-  // in the second half, so there's no hazard with Writeback stage
+  // Note: Writeback hazards are included to guarantee data is visible before read
 }

@@ -8,7 +8,14 @@ import org.scalatest.flatspec.AnyFlatSpec
 class RegFileSpec extends AnyFlatSpec with Matchers with ChiselSim {
   behavior of "RegFile"
 
+  private def disableExtraPort(dut: RegFile): Unit = {
+    dut.extraWriteEn.poke(false.B)
+    dut.extraWriteAddr.poke(0.U)
+    dut.extraWriteData.poke(0.U)
+  }
+
   def testPort(dut: RegFile, addr: Int, data: BigInt) = {
+    disableExtraPort(dut)
     dut.writeIo.writeEn.poke(true.B)
     dut.writeIo.writeAddr.poke(addr.U)
     dut.writeIo.writeData.poke(data.U)
@@ -25,6 +32,7 @@ class RegFileSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "write and read a value" in {
     simulate(new RegFile(32)) { dut =>
+      disableExtraPort(dut)
       val testAddr = 5
       val testData = 12345
       testPort(dut, testAddr, testData)
@@ -33,6 +41,7 @@ class RegFileSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "not write to register x0" in {
     simulate(new RegFile(32)) { dut =>
+      disableExtraPort(dut)
       dut.writeIo.writeEn.poke(true.B)
       dut.writeIo.writeAddr.poke(0.U)
       dut.writeIo.writeData.poke(99.U)
@@ -45,6 +54,7 @@ class RegFileSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "read the last written value" in {
     simulate(new RegFile(32)) { dut =>
+      disableExtraPort(dut)
       val testAddr = 10
 
       dut.writeIo.writeEn.poke(true.B)

@@ -64,9 +64,39 @@ class Execute(xlen: Integer) extends Module {
   alu.io.input1 := io.regFile.readData1
   alu.io.input2 := Mux(io.uop.hasImm, io.uop.imm, io.regFile.readData2)
 
+  val branchDebugCounter = RegInit(0.U(8.W))
+  val aluDebugCounter = RegInit(0.U(8.W))
+
+  // Debug: Print ALU operations in test 18 range
+  when(io.uop.pc >= "h80000334".U && io.uop.pc <= "h80000350".U && aluDebugCounter < 20.U) {
+    aluDebugCounter := aluDebugCounter + 1.U
+    chisel3.printf(
+      "EXE[%d]: pc=0x%x opType=%d aluOp=%d hasImm=%d rs1=%d rs2=%d rd=%d in1=0x%x in2=0x%x imm=0x%x\n",
+      aluDebugCounter,
+      io.uop.pc, io.uop.opType.asUInt, io.uop.aluOp.asUInt, io.uop.hasImm,
+      io.uop.rs1, io.uop.rs2, io.uop.rd,
+      io.regFile.readData1, io.regFile.readData2, io.uop.imm
+    )
+  }
+
   switch(io.uop.opType) {
     is(OpType.ALU) {
       io.intResult := alu.io.output
+
+      // Debug ALU operations around PC 0x80000334
+      when(io.uop.valid && io.uop.pc >= "h80000330".U && io.uop.pc <= "h80000350".U) {
+        chisel3.printf(
+          "ALU pc=0x%x op=%d rs1=x%d rs2=x%d rd=x%d in1=0x%x in2=0x%x out=0x%x\n",
+          io.uop.pc,
+          io.uop.aluOp.asUInt,
+          io.uop.rs1,
+          io.uop.rs2,
+          io.uop.rd,
+          alu.io.input1,
+          alu.io.input2,
+          alu.io.output
+        )
+      }
     }
     is(OpType.LUI) {
       io.intResult := io.uop.imm
@@ -85,7 +115,6 @@ class Execute(xlen: Integer) extends Module {
     is(OpType.BRANCH) {
       val rs1 = io.regFile.readData1
       val rs2 = io.regFile.readData2
-
       // Compute branch condition based on funct3
       val taken = WireDefault(false.B)
 
@@ -108,6 +137,19 @@ class Execute(xlen: Integer) extends Module {
         is(BranchFunc3.BGEU) {
           taken := (rs1 >= rs2)
         }
+      }
+
+      when(branchDebugCounter < 32.U) {
+        branchDebugCounter := branchDebugCounter + 1.U
+        chisel3.printf("BRANCH pc=0x%x rs1=x%d val=0x%x rs2=x%d val=0x%x func=%d taken=%d\n",
+          io.uop.pc,
+          io.uop.rs1,
+          rs1,
+          io.uop.rs2,
+          rs2,
+          io.uop.branchFunc,
+          taken
+        )
       }
 
       io.branchTaken := taken

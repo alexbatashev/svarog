@@ -9,7 +9,7 @@ class CpuAndSpec extends AnyFlatSpec with Matchers with ChiselSim {
   behavior of "CPU AND instruction"
 
   it should "execute AND correctly" in {
-    simulate(new Cpu(32)) { dut =>
+    simulate(new CpuTestHarness(32)) { dut =>
       // ADDI x1, x0, 5
       // ADDI x2, x0, 3
       // AND x3, x1, x2   -> should be 1 (5&3)

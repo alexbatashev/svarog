@@ -23,4 +23,5 @@ class Writeback(xlen: Int) extends Module {
   io.regFile.writeEn := io.regWrite
   io.regFile.writeAddr := io.rd
   io.regFile.writeData := io.result
+
 }

@@ -9,7 +9,7 @@ import svarog.bits.ALUFunc3
 import svarog.bits.ALUOp
 
 object OpType extends ChiselEnum {
-  val NOP, ALU, LOAD, STORE, BRANCH, JAL, JALR, LUI, AUIPC = Value
+  val NOP, ALU, LOAD, STORE, BRANCH, JAL, JALR, LUI, AUIPC, SYSTEM = Value
 }
 
 object MemWidth extends ChiselEnum {
@@ -30,6 +30,7 @@ class DecoderUOp(xlen: Int) extends Bundle {
   val regWrite = Output(Bool())
   val valid = Output(Bool())
   val pc = Output(UInt(xlen.W))
+  val isEcall = Output(Bool())
 }
 
 class DecoderIO(xlen: Int) extends Bundle {
@@ -69,6 +70,7 @@ class Decode(xlen: Int) extends Module {
   io.uop.regWrite := false.B
   io.uop.valid := io.valid
   io.uop.pc := io.cur_pc
+  io.uop.isEcall := false.B
 
   immGen.io.format := ImmFormat.I
 
@@ -82,8 +84,9 @@ class Decode(xlen: Int) extends Module {
 
       switch(funct3) {
         is(ALUFunc3.ADD_SUB) {
+          // Check inst(30) directly: 1=SUB, 0=ADD
           io.uop.aluOp := Mux(
-            funct7(5),
+            inst(30),
             ALUOp.SUB,
             ALUOp.ADD
           )
@@ -211,6 +214,25 @@ class Decode(xlen: Int) extends Module {
       io.uop.hasImm := true.B
       io.uop.regWrite := rd =/= 0.U
       immGen.io.format := ImmFormat.I  // JALR uses I-type immediate
+    }
+
+    is(Opcodes.SYSTEM) {
+      when(inst === "h00000073".U) { // ECALL
+        io.uop.opType := OpType.SYSTEM
+        io.uop.isEcall := true.B
+        io.uop.regWrite := false.B
+      }.elsewhen(funct3 =/= 0.U) { // CSR instructions (CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI)
+        // Treat CSR reads as ALU operations that read from rs1/imm and write to rd
+        // This is a simplified implementation - we'll just return 0 for CSR reads
+        io.uop.opType := OpType.ALU
+        io.uop.aluOp := ALUOp.ADD
+        io.uop.hasImm := funct3(2) // CSRRxI instructions use immediate (funct3 bit 2)
+        io.uop.regWrite := rd =/= 0.U
+        immGen.io.format := ImmFormat.I
+        // For CSR operations, we just return 0 (read-only zero CSRs)
+      }.otherwise {
+        io.uop.opType := OpType.NOP
+      }
     }
   }
 

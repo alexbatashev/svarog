@@ -2,7 +2,7 @@ package svarog.micro
 
 import chisel3._
 import chisel3.util._
-import svarog.memory.L1CacheCpuIO
+import svarog.memory.{MemoryRequest, MemoryIO}
 
 class FetchIO(xlen: Int) extends Bundle {
   val pc_out = Output(UInt(xlen.W))
@@ -14,30 +14,43 @@ class FetchIO(xlen: Int) extends Bundle {
   val branch_target = Input(UInt(xlen.W)) // New PC from execute stage
   val branch_taken = Input(Bool())
 
-  // I-Cache interface
-  val icache = Flipped(new L1CacheCpuIO(xlen, 32))
+  val mem = new MemoryIO(xlen, xlen)
 }
 
-class Fetch(xlen: Int) extends Module {
+class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   val io = IO(new FetchIO(xlen))
 
-  val pc_reg = RegInit(0.U(xlen.W))
+  private val resetVec = resetVector.U(xlen.W)
+  val pc_reg = RegInit(resetVec)
+  val pc_out_reg = RegInit(resetVec)
 
   val pc_plus_4 = pc_reg + 4.U
   val next_pc = Mux(io.branch_taken, io.branch_target, pc_plus_4)
 
   when(!io.stall) {
-    when(io.flush || io.branch_taken) {
-      pc_reg := next_pc
-    }.otherwise {
-      pc_reg := pc_plus_4
-    }
+    pc_out_reg := pc_reg
   }
 
-  io.icache.reqValid := !io.stall
-  io.icache.addr := pc_reg
+  when(io.branch_taken || io.flush) {
+    pc_reg := next_pc
+  }.elsewhen(!io.stall) {
+    pc_reg := pc_plus_4
+  }
 
-  io.pc_out := pc_reg
-  io.instruction := io.icache.data
-  io.valid := io.icache.respValid && !io.flush
+  io.mem.req.valid := !io.stall
+  io.mem.req.bits.address := pc_reg
+  io.mem.req.bits.reqWidth := 4.U
+  io.mem.req.bits.write := false.B
+  io.mem.req.bits.dataWrite := VecInit(Seq.fill(xlen / 8)(0.U(8.W)))
+  io.mem.resp.ready := true.B
+
+  io.pc_out := pc_out_reg
+
+  when(io.mem.resp.valid) {
+    io.instruction := io.mem.resp.bits.dataRead.asUInt
+    io.valid := io.mem.resp.bits.valid && !io.flush
+  }.otherwise {
+    io.instruction := 0.U
+    io.valid := false.B
+  }
 }

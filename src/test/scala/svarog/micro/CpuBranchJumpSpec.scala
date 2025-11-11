@@ -11,7 +11,7 @@ class CpuBranchJumpSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "execute BEQ (branch if equal) - taken" in {
     simulate(new Module {
-      val cpu = Module(new Cpu(32))
+      val cpu = Module(new CpuTestHarness(32))
       val dmem = Module(new SimpleMemory(32, 1024))
 
       cpu.io.dcache <> dmem.io
@@ -105,7 +105,7 @@ class CpuBranchJumpSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "execute BEQ (branch if equal) - not taken" in {
     simulate(new Module {
-      val cpu = Module(new Cpu(32))
+      val cpu = Module(new CpuTestHarness(32))
       val dmem = Module(new SimpleMemory(32, 1024))
 
       cpu.io.dcache <> dmem.io
@@ -184,7 +184,7 @@ class CpuBranchJumpSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "execute BNE (branch if not equal)" in {
     simulate(new Module {
-      val cpu = Module(new Cpu(32))
+      val cpu = Module(new CpuTestHarness(32))
       val dmem = Module(new SimpleMemory(32, 1024))
 
       cpu.io.dcache <> dmem.io
@@ -264,7 +264,7 @@ class CpuBranchJumpSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "execute BLT (branch if less than - signed)" in {
     simulate(new Module {
-      val cpu = Module(new Cpu(32))
+      val cpu = Module(new CpuTestHarness(32))
       val dmem = Module(new SimpleMemory(32, 1024))
 
       cpu.io.dcache <> dmem.io
@@ -344,7 +344,7 @@ class CpuBranchJumpSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "execute BGE (branch if greater or equal - signed)" in {
     simulate(new Module {
-      val cpu = Module(new Cpu(32))
+      val cpu = Module(new CpuTestHarness(32))
       val dmem = Module(new SimpleMemory(32, 1024))
 
       cpu.io.dcache <> dmem.io
@@ -424,7 +424,7 @@ class CpuBranchJumpSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "execute JAL (jump and link)" in {
     simulate(new Module {
-      val cpu = Module(new Cpu(32))
+      val cpu = Module(new CpuTestHarness(32))
       val dmem = Module(new SimpleMemory(32, 1024))
 
       cpu.io.dcache <> dmem.io
@@ -510,7 +510,7 @@ class CpuBranchJumpSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "execute JALR (jump and link register)" in {
     simulate(new Module {
-      val cpu = Module(new Cpu(32))
+      val cpu = Module(new CpuTestHarness(32))
       val dmem = Module(new SimpleMemory(32, 1024))
 
       cpu.io.dcache <> dmem.io
@@ -601,7 +601,7 @@ class CpuBranchJumpSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   it should "handle function call and return pattern" in {
     simulate(new Module {
-      val cpu = Module(new Cpu(32))
+      val cpu = Module(new CpuTestHarness(32))
       val dmem = Module(new SimpleMemory(32, 1024))
 
       cpu.io.dcache <> dmem.io

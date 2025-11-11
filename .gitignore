@@ -1,6 +1,6 @@
 ### Project Specific stuff
 generated/*
-test_run_dir/*
+target/*
 ### XilinxISE template
 # intermediate build files
 *.bgn
@@ -343,3 +343,12 @@ hs_err_pid*
 .metals
 mill.*
 .bloop
+
+# Testbench generated files
+testbench/riscv-tests/
+testbench/tests/*.bin
+testbench/tests/*.hex
+testbench/tests/*.vh
+testbench/out
+testbench/target/
+testbench/obj_dir/

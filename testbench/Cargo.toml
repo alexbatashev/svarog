@@ -1,0 +1,26 @@
+[package]
+name = "testbench"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libtest-mimic = "0.8.1"
+marlin = { version = "0.9.0", features = ["verilog"] }
+xshell = "0.2.7"
+anyhow = "1.0.100"
+elf = "0.8.0"
+camino = "1.1"
+snafu = "0.8.9"
+bytemuck = "1.24.0"
+
+[dev-dependencies]
+glob = "0.3.3"
+
+[build-dependencies]
+anyhow = "1.0.100"
+xshell = "0.2.7"
+
+[[test]]
+name = "riscv-tests"
+path = "tests/riscv-tests.rs"
+harness = false
