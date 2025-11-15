@@ -35,6 +35,8 @@ class Cpu(
   val memory = Module(new Memory(config.xlen))
   val writeback = Module(new Writeback(config.xlen))
 
+  val hazardUnit = Module(new HazardUnit)
+
   // Fetch memory
   fetch.io.mem <> io.instmem
 
@@ -77,4 +79,11 @@ class Cpu(
   val execFetchPipe = Module(new Pipe(new BranchFeedback(config.xlen)))
   fetch.io.branch <> execFetchPipe.io.deq
   execFetchPipe.io.enq <> execute.io.branch
+
+  // Hazard signals
+  hazardUnit.io.decode := decode.io.hazard
+  hazardUnit.io.exec := execute.io.hazard
+  hazardUnit.io.mem := memory.io.hazard
+  hazardUnit.io.wb := writeback.io.hazard
+  execute.io.stall := hazardUnit.io.stall
 }

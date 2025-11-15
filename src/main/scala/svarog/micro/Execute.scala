@@ -35,12 +35,20 @@ class Execute(xlen: Integer) extends Module {
     val branch = Valid(new BranchFeedback(xlen))
 
     val regFile = Flipped(new RegFileReadIO(xlen))
+
+    // Write register for hazard control
+    val hazard = Valid(UInt(5.W))
+    val stall = Input(Bool())
   })
+
   val alu = Module(new ALU(xlen))
 
   // FIXME always ready for a single-cycle EX
-  io.uop.ready := io.res.ready
+  io.uop.ready := io.res.ready && !io.stall
   io.res.valid := true.B
+
+  io.hazard.valid := io.uop.valid && io.uop.bits.regWrite && !(io.uop.bits.rd === 0.U)
+  io.hazard.bits := io.uop.bits.rd
 
   io.res.bits.opType := io.uop.bits.opType
 

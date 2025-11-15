@@ -16,6 +16,7 @@ class Memory(xlen: Int) extends Module {
   val io = IO(new Bundle {
     val ex = Flipped(Decoupled(new ExecuteResult(xlen)))
     val res = Decoupled(new MemResult(xlen))
+    val hazard = Valid(UInt(5.W))
   })
 
   val mem = IO(new MemIO(xlen, xlen))
@@ -45,6 +46,8 @@ class Memory(xlen: Int) extends Module {
   val pendingAddress = RegInit(0.U(xlen.W))
 
   io.ex.ready := !pendingLoad
+  io.hazard.valid := io.ex.valid && !pendingLoad
+  io.hazard.bits := io.ex.bits.rd
 
   val wbOpType = Wire(OpType())
   val wbRd = Wire(UInt(5.W))
