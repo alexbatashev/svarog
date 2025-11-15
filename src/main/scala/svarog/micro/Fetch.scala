@@ -6,12 +6,9 @@ import svarog.memory.{MemoryRequest, MemoryIO}
 import svarog.decoder.InstWord
 
 class FetchIO(xlen: Int) extends Bundle {
-  val inst_out = Decoupled(Vec(1, new InstWord(xlen)))
+  val inst_out = Decoupled(new InstWord(xlen))
 
-  val stall = Input(Bool()) // Stall from pipeline
-  val flush = Input(Bool()) // Flush on branch/jump
-  val branch_target = Input(UInt(xlen.W)) // New PC from execute stage
-  val branch_taken = Input(Bool())
+  val branch = Flipped(Valid(new BranchFeedback(xlen)))
 
   val mem = new MemoryIO(xlen, xlen)
 }
@@ -19,12 +16,15 @@ class FetchIO(xlen: Int) extends Bundle {
 class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   val io = IO(new FetchIO(xlen))
 
+  // For now we statically predict branches as not taken, so io.branch.valid is
+  // also the flush signal. In future we'll need to reconsider this decision.
+
   private val resetVec = resetVector.U(xlen.W)
   val pc_reg = RegInit(resetVec)
   val pc_out_reg = RegInit(resetVec)
 
   val pc_plus_4 = pc_reg + 4.U
-  val next_pc = Mux(io.branch_taken, io.branch_target, pc_plus_4)
+  val next_pc = Mux(io.branch.valid, io.branch.bits.targetPC, pc_plus_4)
 
   private val pending_response = RegInit(false.B)
   private val pending_data = Reg(UInt(32.W))
@@ -32,18 +32,18 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
 
   private val instruction_accepted = io.inst_out.valid && io.inst_out.ready
 
-  when(io.branch_taken || io.flush) {
+  when(io.branch.valid) {
     pc_reg := next_pc
     pending_response := false.B
-  }.elsewhen(!io.stall && instruction_accepted) {
+  }.elsewhen(!io.inst_out.ready && instruction_accepted) {
     pc_reg := pc_plus_4
   }
 
-  when(!io.stall && !pending_response) {
+  when(!io.inst_out.ready && !pending_response) {
     pc_out_reg := pc_reg
   }
 
-  io.mem.req.valid := !io.stall && !pending_response
+  io.mem.req.valid := !io.inst_out.ready && !pending_response
   io.mem.req.bits.address := pc_reg
   io.mem.req.bits.reqWidth := 4.U
   io.mem.req.bits.write := false.B
@@ -59,11 +59,13 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
     pending_response := false.B
   }
 
-  io.inst_out.bits(0).pc := Mux(pending_response, pending_pc, pc_out_reg)
-  io.inst_out.bits(0).word := Mux(
+  io.inst_out.bits.pc := Mux(pending_response, pending_pc, pc_out_reg)
+  io.inst_out.bits.word := Mux(
     pending_response,
     pending_data,
     io.mem.resp.bits.dataRead.asUInt
   )
-  io.inst_out.valid := (pending_response || io.mem.resp.valid) && !io.flush
+
+  // FIXME do we need to specially handle flush here??
+  io.inst_out.valid := (pending_response || io.mem.resp.valid)
 }

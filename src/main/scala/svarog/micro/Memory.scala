@@ -5,37 +5,26 @@ import chisel3.util._
 import svarog.memory.{MemoryRequest, MemoryIO => MemIO, MemWidth}
 import svarog.decoder.OpType
 
-class MemoryStageIO(xlen: Int) extends Bundle {
-  // Inputs from Execute stage
-  val opType = Input(OpType())
-  val rd = Input(UInt(5.W))
-  val regWrite = Input(Bool())
-  val intResult = Input(UInt(xlen.W))
-  val memAddress = Input(UInt(xlen.W))
-  val memWidth = Input(MemWidth())
-  val memUnsigned = Input(Bool())
-  val storeData = Input(UInt(xlen.W))
-
-  // Outputs to Writeback stage
-  val wbOpType = Output(OpType())
-  val wbRd = Output(UInt(5.W))
-  val wbRegWrite = Output(Bool())
-  val wbResult = Output(UInt(xlen.W))
-
-  // Stall signal for multi-cycle memory operations
-  val stall = Output(Bool())
+class MemResult(xlen: Int) extends Bundle {
+  val opType = Output(OpType())
+  val rd = Output(UInt(5.W))
+  val regWrite = Output(Bool())
+  val regData = Output(Bool())
 }
 
 class Memory(xlen: Int) extends Module {
-  val io = IO(new MemoryStageIO(xlen))
+  val io = IO(new Bundle {
+    val ex = Flipped(Decoupled(new ExecuteResult(xlen)))
+    val res = Decoupled(new MemResult(xlen))
+  })
 
   val mem = IO(new MemIO(xlen, xlen))
 
   mem.req.valid := false.B
 
-  val byteOffset = io.memAddress(1, 0)
+  val byteOffset = io.ex.bits.memAddress(1, 0)
   val shiftAmount = Cat(byteOffset, 0.U(3.W))
-  val shiftedStoreData = (io.storeData << shiftAmount)(xlen - 1, 0)
+  val shiftedStoreData = (io.ex.bits.storeData << shiftAmount)(xlen - 1, 0)
   val alignedStoreData = Wire(Vec(xlen / 8, UInt(8.W)))
   for (i <- 0 until (xlen / 8)) {
     alignedStoreData(i) := shiftedStoreData(8 * (i + 1) - 1, 8 * i)
@@ -43,8 +32,9 @@ class Memory(xlen: Int) extends Module {
 
   mem.req.bits.dataWrite := alignedStoreData
   mem.req.bits.write := false.B
-  mem.req.bits.reqWidth := io.memWidth.asUInt
+  mem.req.bits.reqWidth := io.ex.bits.memWidth.asUInt
   mem.resp.ready := true.B
+  mem.req.bits.address := 0.U
 
   val pendingLoad = RegInit(false.B)
   val pendingRd = RegInit(0.U(5.W))
@@ -54,16 +44,18 @@ class Memory(xlen: Int) extends Module {
   val pendingByteOffset = RegInit(0.U(2.W))
   val pendingAddress = RegInit(0.U(xlen.W))
 
+  io.ex.ready := !pendingLoad
+
   val wbOpType = Wire(OpType())
   val wbRd = Wire(UInt(5.W))
   val wbRegWrite = Wire(Bool())
   val wbResult = Wire(UInt(xlen.W))
   val stallSignal = WireDefault(false.B)
 
-  wbOpType := io.opType
-  wbRd := io.rd
-  wbRegWrite := io.regWrite
-  wbResult := io.intResult
+  wbOpType := io.ex.bits.opType
+  wbRd := io.ex.bits.rd
+  wbRegWrite := io.ex.bits.regWrite
+  wbResult := io.ex.bits.intResult
 
   def extractData(
       bytes: Vec[UInt],
@@ -121,19 +113,19 @@ class Memory(xlen: Int) extends Module {
     }.otherwise {
       wbResult := 0.U
     }
-  }.otherwise {
-    mem.req.bits.address := io.memAddress
-    switch(io.opType) {
+  }.elsewhen(io.ex.valid) {
+    mem.req.bits.address := io.ex.bits.memAddress
+    switch(io.ex.bits.opType) {
       is(OpType.LOAD) {
         mem.req.valid := true.B
         mem.req.bits.write := false.B
         pendingLoad := true.B
-        pendingRd := io.rd
-        pendingRegWrite := io.regWrite
-        pendingUnsigned := io.memUnsigned
-        pendingWidth := io.memWidth
-        pendingByteOffset := io.memAddress(1, 0)
-        pendingAddress := io.memAddress
+        pendingRd := io.ex.bits.rd
+        pendingRegWrite := io.ex.bits.regWrite
+        pendingUnsigned := io.ex.bits.memUnsigned
+        pendingWidth := io.ex.bits.memWidth
+        pendingByteOffset := io.ex.bits.memAddress(1, 0)
+        pendingAddress := io.ex.bits.memAddress
         wbOpType := OpType.NOP
         wbRegWrite := false.B
         stallSignal := true.B
@@ -148,9 +140,9 @@ class Memory(xlen: Int) extends Module {
     }
   }
 
-  io.wbOpType := wbOpType
-  io.wbRd := wbRd
-  io.wbRegWrite := wbRegWrite
-  io.wbResult := wbResult
-  io.stall := stallSignal
+  io.res.bits.opType := wbOpType
+  io.res.bits.rd := wbRd
+  io.res.bits.regWrite := wbRegWrite
+  io.res.bits.regData := wbResult
+  io.res.valid := stallSignal
 }

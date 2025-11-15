@@ -8,23 +8,15 @@ import svarog.decoder.BranchOp
 import svarog.decoder.{MicroOp, OpType}
 import svarog.memory.MemWidth
 
-class ExecuteIO(xlen: Int) extends Bundle {
-  val uop = Flipped(new MicroOp(xlen))
-  val regFile = Flipped(new RegFileReadIO(xlen))
-
-  // Control signal for other stages
+class ExecuteResult(xlen: Int) extends Bundle {
   val opType = Output(OpType())
 
   val rd = Output(UInt(5.W))
-
   val regWrite = Output(Bool())
 
-  // ALU result
   val intResult = Output(UInt(xlen.W))
-  // Branch/jump target address
-  val targetPC = Output(UInt(xlen.W))
-  val branchTaken = Output(Bool())
-  // Load/store address
+
+  // TODO can we re-use intResult here with a better naming?
   val memAddress = Output(UInt(xlen.W))
   val memWidth = Output(MemWidth())
   val memUnsigned = Output(Bool())
@@ -32,102 +24,119 @@ class ExecuteIO(xlen: Int) extends Bundle {
   val storeData = Output(UInt(xlen.W))
 }
 
+class BranchFeedback(xlen: Int) extends Bundle {
+  val targetPC = Output(UInt(xlen.W))
+}
+
 class Execute(xlen: Integer) extends Module {
-  val io = IO(new ExecuteIO(xlen))
+  val io = IO(new Bundle {
+    val uop = Flipped(Decoupled(new MicroOp(xlen)))
+    val res = Decoupled(new ExecuteResult(xlen))
+    val branch = Valid(new BranchFeedback(xlen))
+
+    val regFile = Flipped(new RegFileReadIO(xlen))
+  })
   val alu = Module(new ALU(xlen))
 
-  io.opType := io.uop.opType
+  // FIXME always ready for a single-cycle EX
+  io.uop.ready := io.res.ready
+  io.res.valid := true.B
+
+  io.res.bits.opType := io.uop.bits.opType
 
   // ALU result
-  io.intResult := 0.U
+  io.res.bits.intResult := 0.U
 
   // Branch/jump target address
-  io.targetPC := 0.U
-  io.branchTaken := false.B
+  io.branch.bits.targetPC := 0.U
+  io.branch.valid := false.B
 
   // Load/store address
-  io.memAddress := 0.U
-  io.memWidth := io.uop.memWidth
-  io.memUnsigned := io.uop.memUnsigned
+  io.res.bits.memAddress := 0.U
+  io.res.bits.memWidth := io.uop.bits.memWidth
+  io.res.bits.memUnsigned := io.uop.bits.memUnsigned
 
   // Store data
-  io.storeData := 0.U
+  io.res.bits.storeData := 0.U
 
-  io.rd := io.uop.rd
-  io.regWrite := io.uop.regWrite
+  io.res.bits.rd := io.uop.bits.rd
+  io.res.bits.regWrite := io.uop.bits.regWrite
 
-  io.regFile.readAddr1 := io.uop.rs1
-  io.regFile.readAddr2 := io.uop.rs2
+  io.regFile.readAddr1 := io.uop.bits.rs1
+  io.regFile.readAddr2 := io.uop.bits.rs2
 
-  alu.io.op := io.uop.aluOp
+  alu.io.op := io.uop.bits.aluOp
   alu.io.input1 := io.regFile.readData1
-  alu.io.input2 := Mux(io.uop.hasImm, io.uop.imm, io.regFile.readData2)
+  alu.io.input2 := Mux(
+    io.uop.bits.hasImm,
+    io.uop.bits.imm,
+    io.regFile.readData2
+  )
 
-  val branchDebugCounter = RegInit(0.U(8.W))
-  val aluDebugCounter = RegInit(0.U(8.W))
-
-  switch(io.uop.opType) {
-    is(OpType.ALU) {
-      io.intResult := alu.io.output
-    }
-    is(OpType.LUI) {
-      io.intResult := io.uop.imm
-    }
-    is(OpType.AUIPC) {
-      io.intResult := io.uop.pc + io.uop.imm
-    }
-    is(OpType.LOAD) {
-      io.memAddress := io.regFile.readData1 + io.uop.imm
-    }
-    is(OpType.STORE) {
-      io.memAddress := io.regFile.readData1 + io.uop.imm
-      io.storeData := io.regFile.readData2
-    }
-
-    is(OpType.BRANCH) {
-      val rs1 = io.regFile.readData1
-      val rs2 = io.regFile.readData2
-      // Compute branch condition based on funct3
-      val taken = WireDefault(false.B)
-
-      switch(io.uop.branchFunc) {
-        is("b000".U) { // BEQ
-          taken := (rs1 === rs2)
-        }
-        is("b001".U) { // BNE
-          taken := (rs1 =/= rs2)
-        }
-        is("b100".U) { // BLT
-          taken := (rs1.asSInt < rs2.asSInt)
-        }
-        is("b101".U) { // BGE
-          taken := (rs1.asSInt >= rs2.asSInt)
-        }
-        is("b110".U) { // BLTU
-          taken := (rs1 < rs2)
-        }
-        is("b111".U) { // BGEU
-          taken := (rs1 >= rs2)
-        }
+  when(io.uop.valid && io.res.ready) {
+    switch(io.uop.bits.opType) {
+      is(OpType.ALU) {
+        io.res.bits.intResult := alu.io.output
+      }
+      is(OpType.LUI) {
+        io.res.bits.intResult := io.uop.bits.imm
+      }
+      is(OpType.AUIPC) {
+        io.res.bits.intResult := io.uop.bits.pc + io.uop.bits.imm
+      }
+      is(OpType.LOAD) {
+        io.res.bits.memAddress := io.regFile.readData1 + io.uop.bits.imm
+      }
+      is(OpType.STORE) {
+        io.res.bits.memAddress := io.regFile.readData1 + io.uop.bits.imm
+        io.res.bits.storeData := io.regFile.readData2
       }
 
-      io.branchTaken := taken
-      io.targetPC := io.uop.pc + io.uop.imm
-    }
+      is(OpType.BRANCH) {
+        val rs1 = io.regFile.readData1
+        val rs2 = io.regFile.readData2
+        // Compute branch condition based on funct3
+        val taken = WireDefault(false.B)
 
-    is(OpType.JAL) {
-      // Unconditional jump
-      io.branchTaken := true.B
-      io.targetPC := io.uop.pc + io.uop.imm
-      io.intResult := io.uop.pc + 4.U // Save return address
-    }
+        switch(io.uop.bits.branchFunc) {
+          is("b000".U) { // BEQ
+            taken := (rs1 === rs2)
+          }
+          is("b001".U) { // BNE
+            taken := (rs1 =/= rs2)
+          }
+          is("b100".U) { // BLT
+            taken := (rs1.asSInt < rs2.asSInt)
+          }
+          is("b101".U) { // BGE
+            taken := (rs1.asSInt >= rs2.asSInt)
+          }
+          is("b110".U) { // BLTU
+            taken := (rs1 < rs2)
+          }
+          is("b111".U) { // BGEU
+            taken := (rs1 >= rs2)
+          }
+        }
 
-    is(OpType.JALR) {
-      // Indirect jump
-      io.branchTaken := true.B
-      val target = io.regFile.readData1 + io.uop.imm
-      io.targetPC := Cat(target(31, 1), 0.U(1.W)) // Clear LSB
-      io.intResult := io.uop.pc + 4.U // Save return address
+        io.branch.valid := taken
+        io.branch.bits.targetPC := io.uop.bits.pc + io.uop.bits.imm
+      }
+
+      is(OpType.JAL) {
+        // Unconditional jump
+        io.branch.valid := true.B
+        io.branch.bits.targetPC := io.uop.bits.pc + io.uop.bits.imm
+        io.res.bits.intResult := io.uop.bits.pc + 4.U // Save return address
+      }
+
+      is(OpType.JALR) {
+        // Indirect jump
+        io.branch.valid := true.B
+        val target = io.regFile.readData1 + io.uop.bits.imm
+        io.branch.bits.targetPC := Cat(target(31, 1), 0.U(1.W)) // Clear LSB
+        io.res.bits.intResult := io.uop.bits.pc + 4.U // Save return address
+      }
     }
   }
 }
