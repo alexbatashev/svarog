@@ -2,7 +2,8 @@ package svarog.micro
 
 import chisel3._
 import chisel3.util._
-import svarog.memory.{MemoryRequest, MemoryIO => MemIO}
+import svarog.memory.{MemoryRequest, MemoryIO => MemIO, MemWidth}
+import svarog.decoder.OpType
 
 class MemoryStageIO(xlen: Int) extends Bundle {
   // Inputs from Execute stage
@@ -49,7 +50,7 @@ class Memory(xlen: Int) extends Module {
   val pendingRd = RegInit(0.U(5.W))
   val pendingRegWrite = RegInit(false.B)
   val pendingUnsigned = RegInit(false.B)
-  val pendingWidth = RegInit(MemWidth.BYTE)
+  val pendingWidth = RegInit(MemWidth.WORD)
   val pendingByteOffset = RegInit(0.U(2.W))
   val pendingAddress = RegInit(0.U(xlen.W))
 
@@ -100,6 +101,8 @@ class Memory(xlen: Int) extends Module {
   }
 
   when(pendingLoad) {
+    mem.req.valid := true.B
+    mem.req.bits.write := false.B
     mem.req.bits.address := pendingAddress
     wbOpType := OpType.LOAD
     wbRd := pendingRd
@@ -107,7 +110,12 @@ class Memory(xlen: Int) extends Module {
     stallSignal := true.B
     when(mem.resp.valid && mem.resp.bits.valid) {
       val loadedBytes = mem.resp.bits.dataRead
-      wbResult := extractData(loadedBytes, pendingWidth, pendingUnsigned, pendingByteOffset)
+      wbResult := extractData(
+        loadedBytes,
+        pendingWidth,
+        pendingUnsigned,
+        pendingByteOffset
+      )
       stallSignal := false.B
       pendingLoad := false.B
     }.otherwise {

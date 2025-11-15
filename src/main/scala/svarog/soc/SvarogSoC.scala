@@ -22,7 +22,6 @@ class SvarogSoC(
   private val cpu = Module(
     new Cpu(
       config,
-      debugTapId = Some("verilator"),
       regfileProbeId = Some("verilator"),
       resetVector = config.programEntryPoint
     )

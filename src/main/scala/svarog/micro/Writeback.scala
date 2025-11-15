@@ -3,6 +3,7 @@ package svarog.micro
 import chisel3._
 import chisel3.util._
 import svarog.bits.RegFileWriteIO
+import svarog.decoder.OpType
 
 class WritebackIO(xlen: Int) extends Bundle {
   // Inputs from Memory stage

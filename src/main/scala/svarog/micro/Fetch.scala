@@ -3,11 +3,10 @@ package svarog.micro
 import chisel3._
 import chisel3.util._
 import svarog.memory.{MemoryRequest, MemoryIO}
+import svarog.decoder.InstWord
 
 class FetchIO(xlen: Int) extends Bundle {
-  val pc_out = Output(UInt(xlen.W))
-  val instruction = Output(UInt(32.W))
-  val valid = Output(Bool())
+  val inst_out = Decoupled(Vec(1, new InstWord(xlen)))
 
   val stall = Input(Bool()) // Stall from pipeline
   val flush = Input(Bool()) // Flush on branch/jump
@@ -27,30 +26,44 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   val pc_plus_4 = pc_reg + 4.U
   val next_pc = Mux(io.branch_taken, io.branch_target, pc_plus_4)
 
-  when(!io.stall) {
-    pc_out_reg := pc_reg
-  }
+  private val pending_response = RegInit(false.B)
+  private val pending_data = Reg(UInt(32.W))
+  private val pending_pc = Reg(UInt(xlen.W))
+
+  private val instruction_accepted = io.inst_out.valid && io.inst_out.ready
 
   when(io.branch_taken || io.flush) {
     pc_reg := next_pc
-  }.elsewhen(!io.stall) {
+    pending_response := false.B
+  }.elsewhen(!io.stall && instruction_accepted) {
     pc_reg := pc_plus_4
   }
 
-  io.mem.req.valid := !io.stall
+  when(!io.stall && !pending_response) {
+    pc_out_reg := pc_reg
+  }
+
+  io.mem.req.valid := !io.stall && !pending_response
   io.mem.req.bits.address := pc_reg
   io.mem.req.bits.reqWidth := 4.U
   io.mem.req.bits.write := false.B
   io.mem.req.bits.dataWrite := VecInit(Seq.fill(xlen / 8)(0.U(8.W)))
   io.mem.resp.ready := true.B
 
-  io.pc_out := pc_out_reg
-
-  when(io.mem.resp.valid) {
-    io.instruction := io.mem.resp.bits.dataRead.asUInt
-    io.valid := io.mem.resp.bits.valid && !io.flush
-  }.otherwise {
-    io.instruction := 0.U
-    io.valid := false.B
+  when(io.mem.resp.valid && !pending_response && !io.inst_out.ready) {
+    // Only latch if buffer can't accept immediately
+    pending_response := true.B
+    pending_data := io.mem.resp.bits.dataRead.asUInt
+    pending_pc := pc_out_reg
+  }.elsewhen(io.inst_out.valid && io.inst_out.ready) {
+    pending_response := false.B
   }
+
+  io.inst_out.bits(0).pc := Mux(pending_response, pending_pc, pc_out_reg)
+  io.inst_out.bits(0).word := Mux(
+    pending_response,
+    pending_data,
+    io.mem.resp.bits.dataRead.asUInt
+  )
+  io.inst_out.valid := (pending_response || io.mem.resp.valid) && !io.flush
 }

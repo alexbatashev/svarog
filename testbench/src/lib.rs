@@ -43,7 +43,6 @@ impl Default for RegisterFile {
 #[derive(Debug)]
 pub struct TestResult {
     pub regs: RegisterFile,
-    pub cycles: usize,
     pub exit_code: Option<u32>,
 }
 
@@ -182,103 +181,12 @@ impl Simulator {
             self.tick(&mut None);
         }
 
-        // Run simulation
-        let mut failure_cycle = None;
-        let mut completion_detected_cycle = None;
-        let mut regwrite_count = 0;
-        let mut alu_print_count = 0;
-        let mut pc_print_count = 0;
-
         let mut vcd = { self.model.borrow_mut().open_vcd(vcd_path) };
 
         for cycle in 0..max_cycles {
             self.tick(&mut Some(&mut vcd));
 
-            let dut = self.model.borrow();
-
-            // Debug: Print PC progression for first 50 cycles and during test 18
-            if (cycle < 50 || (dut.debug_pc >= 0x80000330 && dut.debug_pc <= 0x80000360))
-                && pc_print_count < 100
-            {
-                pc_print_count += 1;
-                eprintln!(
-                    "PC[{}]: cycle {} pc=0x{:08x}",
-                    pc_print_count, cycle, dut.debug_pc
-                );
-            }
-
-            // Debug: Print ALU operations in test 18 range (PC 0x80000334-0x80000350)
-            if dut.debug_aluValid != 0
-                && dut.debug_aluPc >= 0x80000334
-                && dut.debug_aluPc <= 0x80000350
-                && alu_print_count < 20
-            {
-                alu_print_count += 1;
-                eprintln!(
-                    "ALU[{}]: cycle {} EXE[pc=0x{:08x} rd={} rw={}] MEM[pc=0x{:08x} rd={} rw={}] WB[pc=0x{:08x} rd={} rw={}]",
-                    alu_print_count,
-                    cycle,
-                    dut.debug_aluPc,
-                    dut.debug_aluRd,
-                    dut.debug_aluRegWrite,
-                    dut.debug_memPc,
-                    dut.debug_memRd,
-                    dut.debug_memRegWrite,
-                    dut.debug_wbPc,
-                    dut.debug_wbRd,
-                    dut.debug_wbRegWrite
-                );
-            }
-
-            // Debug: Print ALL register writes (including zeros) for first 30
-            if dut.debug_regWrite != 0 {
-                regwrite_count += 1;
-                // Print first 30, cycles 350-400, and all x3 writes
-                if regwrite_count <= 30
-                    || (cycle >= 350 && cycle <= 400)
-                    || dut.debug_writeAddr == 3
-                    || matches!(
-                        dut.debug_writeAddr,
-                        1 | 2 | 4 | 7 | 11 | 12 | 14 | 30
-                    )
-                {
-                    eprintln!(
-                        "REGWRITE[{}]: cycle {} x{} = 0x{:08x} wbPc=0x{:08x}",
-                        regwrite_count,
-                        cycle,
-                        dut.debug_writeAddr,
-                        dut.debug_writeData,
-                        dut.debug_wbPc
-                    );
-                }
-            }
-
-            // Check for test completion by detecting when x3 (gp) is written to 1 (pass)
-            // All RISC-V tests write x3=1 in the pass handler
-            if completion_detected_cycle.is_none()
-                && dut.debug_regWrite != 0
-                && dut.debug_writeAddr == 3
-                && dut.debug_writeData == 1
-            {
-                completion_detected_cycle = Some(cycle);
-                failure_cycle = Some(cycle);
-                eprintln!("TRACE: detected PASS (x3=1) at cycle {}", cycle);
-            }
-
-            // Also check for fail by detecting ecall with x3 != 1 after many cycles
-            // (This is a fallback - we'll hit max_cycles if the test really fails)
-            if completion_detected_cycle.is_none() && cycle > 10000 {
-                eprintln!("TRACE: test timeout at cycle {}", cycle);
-                break;
-            }
-
-            // Break 10 cycles after detecting completion to let pending writes finish
-            // (including ECALL extra writes which take 2 cycles)
-            if let Some(detected_cycle) = completion_detected_cycle {
-                if cycle >= detected_cycle + 10 {
-                    break;
-                }
-            }
+            // let dut = self.model.borrow();
         }
 
         let regs = self.capture_registers()?;
@@ -286,7 +194,6 @@ impl Simulator {
 
         Ok(TestResult {
             regs,
-            cycles: failure_cycle.unwrap_or(max_cycles),
             exit_code: Some(exit_code),
         })
     }
@@ -358,7 +265,6 @@ pub fn run_spike_test(elf_path: &Path) -> Result<TestResult> {
 
     Ok(TestResult {
         regs,
-        cycles: 0, // Spike doesn't report cycles in the same way
         exit_code: None,
     })
 }

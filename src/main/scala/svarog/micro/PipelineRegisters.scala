@@ -2,28 +2,80 @@ package svarog.micro
 
 import chisel3._
 import chisel3.util._
+import svarog.decoder.InstWord
+import svarog.memory._
+
+class FetchDecodeBuffer(xlen: Int) extends Module {
+  val io = IO(new Bundle {
+    val enq = Flipped(Decoupled(new InstWord(xlen)))
+    val deq = Decoupled(Vec(1, new InstWord(xlen)))
+
+    // Pipeline control
+    val flush = Input(Bool())
+
+    // Debug signals
+    val debugStoredValid = Output(Bool())
+    val debugStoredPc = Output(UInt(xlen.W))
+    val debugStoredWord = Output(UInt(32.W))
+  })
+
+  val storedInst = Reg(new InstWord(xlen))
+  val storedValid = RegInit(false.B)
+
+  val outputInst = Wire(new InstWord(xlen))
+  outputInst := 0.U.asTypeOf(new InstWord(xlen))
+  when(storedValid) {
+    outputInst := storedInst
+  }.otherwise {
+    outputInst := io.enq.bits
+  }
+
+  io.deq.bits(0) := outputInst
+  io.deq.valid := (storedValid || io.enq.valid) && !io.flush
+
+  val deqReady = io.deq.ready
+  val canAccept = !storedValid || deqReady
+  io.enq.ready := (canAccept && !io.flush) || io.flush
+
+  when(io.flush) {
+    storedValid := false.B
+  }.elsewhen(storedValid && deqReady) {
+    when(io.enq.valid && io.enq.ready) {
+      storedInst := io.enq.bits
+      storedValid := true.B
+    }.otherwise {
+      storedValid := false.B
+    }
+  }.elsewhen(!storedValid && io.enq.valid && !deqReady) {
+    storedInst := io.enq.bits
+    storedValid := true.B
+  }
+
+  io.debugStoredValid := storedValid
+  io.debugStoredPc := storedInst.pc
+  io.debugStoredWord := storedInst.word
+}
 
 // Decode -> Execute Pipeline Register
 class DecodeExecuteStage(xlen: Int) extends Module {
   val io = IO(new Bundle {
     // From Decode stage
-    val decode_uop = Input(new DecoderUOp(xlen))
+    val decode_uop = Input(new svarog.decoder.MicroOp(xlen))
 
     // To Execute stage
-    val execute_uop = Output(new DecoderUOp(xlen))
+    val execute_uop = Output(new svarog.decoder.MicroOp(xlen))
 
     // Pipeline control
     val stall = Input(Bool())
     val flush = Input(Bool())
   })
 
-  val reg = RegInit(0.U.asTypeOf(new DecoderUOp(xlen)))
+  val reg = RegInit(0.U.asTypeOf(new svarog.decoder.MicroOp(xlen)))
 
   when(io.flush) {
     // Insert a NOP/bubble
-    reg.valid := false.B
     reg.regWrite := false.B
-    reg.opType := OpType.NOP
+    reg.opType := svarog.decoder.OpType.NOP
   }.elsewhen(!io.stall) {
     reg := io.decode_uop
   }
@@ -35,7 +87,7 @@ class DecodeExecuteStage(xlen: Int) extends Module {
 class ExecuteMemoryStage(xlen: Int) extends Module {
   val io = IO(new Bundle {
     // From Execute stage
-    val execute_opType = Input(OpType())
+    val execute_opType = Input(svarog.decoder.OpType())
     val execute_rd = Input(UInt(5.W))
     val execute_regWrite = Input(Bool())
     val execute_intResult = Input(UInt(xlen.W))
@@ -47,7 +99,7 @@ class ExecuteMemoryStage(xlen: Int) extends Module {
     val execute_isEcall = Input(Bool())
 
     // To Memory stage
-    val memory_opType = Output(OpType())
+    val memory_opType = Output(svarog.decoder.OpType())
     val memory_rd = Output(UInt(5.W))
     val memory_regWrite = Output(Bool())
     val memory_intResult = Output(UInt(xlen.W))
@@ -63,7 +115,7 @@ class ExecuteMemoryStage(xlen: Int) extends Module {
     val flush = Input(Bool())
   })
 
-  val reg_opType = RegInit(OpType.NOP)
+  val reg_opType = RegInit(svarog.decoder.OpType.NOP)
   val reg_rd = RegInit(0.U(5.W))
   val reg_regWrite = RegInit(false.B)
   val reg_intResult = RegInit(0.U(xlen.W))
@@ -75,7 +127,7 @@ class ExecuteMemoryStage(xlen: Int) extends Module {
   val reg_isEcall = RegInit(false.B)
 
   when(io.flush) {
-    reg_opType := OpType.NOP
+    reg_opType := svarog.decoder.OpType.NOP
     reg_regWrite := false.B
   }.elsewhen(!io.stall) {
     reg_opType := io.execute_opType
@@ -106,7 +158,7 @@ class ExecuteMemoryStage(xlen: Int) extends Module {
 class MemoryWritebackStage(xlen: Int) extends Module {
   val io = IO(new Bundle {
     // From Memory stage
-    val memory_opType = Input(OpType())
+    val memory_opType = Input(svarog.decoder.OpType())
     val memory_rd = Input(UInt(5.W))
     val memory_regWrite = Input(Bool())
     val memory_result = Input(UInt(xlen.W))
@@ -114,7 +166,7 @@ class MemoryWritebackStage(xlen: Int) extends Module {
     val memory_isEcall = Input(Bool())
 
     // To Writeback stage
-    val writeback_opType = Output(OpType())
+    val writeback_opType = Output(svarog.decoder.OpType())
     val writeback_rd = Output(UInt(5.W))
     val writeback_regWrite = Output(Bool())
     val writeback_result = Output(UInt(xlen.W))
@@ -126,7 +178,7 @@ class MemoryWritebackStage(xlen: Int) extends Module {
     val flush = Input(Bool())
   })
 
-  val reg_opType = RegInit(OpType.NOP)
+  val reg_opType = RegInit(svarog.decoder.OpType.NOP)
   val reg_rd = RegInit(0.U(5.W))
   val reg_regWrite = RegInit(false.B)
   val reg_result = RegInit(0.U(xlen.W))
@@ -134,7 +186,7 @@ class MemoryWritebackStage(xlen: Int) extends Module {
   val reg_isEcall = RegInit(false.B)
 
   when(io.flush) {
-    reg_opType := OpType.NOP
+    reg_opType := svarog.decoder.OpType.NOP
     reg_regWrite := false.B
   }.elsewhen(!io.stall) {
     reg_opType := io.memory_opType

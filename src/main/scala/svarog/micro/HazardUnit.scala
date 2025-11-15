@@ -29,6 +29,12 @@ class HazardUnitIO extends Bundle {
   // Outputs
   val stall = Output(Bool()) // Stall Fetch and Decode
   val bubble = Output(Bool()) // Insert bubble into Execute
+  val executeHazardRs1 = Output(Bool())
+  val executeHazardRs2 = Output(Bool())
+  val memoryHazardRs1 = Output(Bool())
+  val memoryHazardRs2 = Output(Bool())
+  val writebackHazardRs1 = Output(Bool())
+  val writebackHazardRs2 = Output(Bool())
 }
 
 class HazardUnit extends Module {
@@ -74,12 +80,18 @@ class HazardUnit extends Module {
   // instruction reaches Writeback, because our register file doesn't have
   // internal forwarding (write-then-read in same cycle).
   val hasHazard = (executeHazard_rs1 || executeHazard_rs2 ||
-    memoryHazard_rs1 || memoryHazard_rs2 ||
-    writebackHazard_rs1 || writebackHazard_rs2) && io.decode_valid
+    memoryHazard_rs1 || memoryHazard_rs2) && io.decode_valid
 
   // Output signals
   io.stall := hasHazard // Stall Fetch and Decode stages
   io.bubble := hasHazard // Insert bubble (NOP) into Execute stage
+
+  io.executeHazardRs1 := executeHazard_rs1
+  io.executeHazardRs2 := executeHazard_rs2
+  io.memoryHazardRs1 := memoryHazard_rs1
+  io.memoryHazardRs2 := memoryHazard_rs2
+  io.writebackHazardRs1 := writebackHazard_rs1
+  io.writebackHazardRs2 := writebackHazard_rs2
 
   // Note: Writeback hazards are included to guarantee data is visible before read
 }

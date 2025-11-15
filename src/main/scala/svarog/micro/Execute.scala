@@ -2,15 +2,14 @@ package svarog.micro
 
 import chisel3._
 import chisel3.util._
-import svarog.micro.DecoderUOp
-import svarog.micro.OpType
-import svarog.micro.MemWidth
 import svarog.bits.RegFileReadIO
 import svarog.bits.ALU
-import svarog.bits.BranchFunc3
+import svarog.decoder.BranchOp
+import svarog.decoder.{MicroOp, OpType}
+import svarog.memory.MemWidth
 
 class ExecuteIO(xlen: Int) extends Bundle {
-  val uop = Flipped(new DecoderUOp(xlen))
+  val uop = Flipped(new MicroOp(xlen))
   val regFile = Flipped(new RegFileReadIO(xlen))
 
   // Control signal for other stages
@@ -67,36 +66,9 @@ class Execute(xlen: Integer) extends Module {
   val branchDebugCounter = RegInit(0.U(8.W))
   val aluDebugCounter = RegInit(0.U(8.W))
 
-  // Debug: Print ALU operations in test 18 range
-  when(io.uop.pc >= "h80000334".U && io.uop.pc <= "h80000350".U && aluDebugCounter < 20.U) {
-    aluDebugCounter := aluDebugCounter + 1.U
-    chisel3.printf(
-      "EXE[%d]: pc=0x%x opType=%d aluOp=%d hasImm=%d rs1=%d rs2=%d rd=%d in1=0x%x in2=0x%x imm=0x%x\n",
-      aluDebugCounter,
-      io.uop.pc, io.uop.opType.asUInt, io.uop.aluOp.asUInt, io.uop.hasImm,
-      io.uop.rs1, io.uop.rs2, io.uop.rd,
-      io.regFile.readData1, io.regFile.readData2, io.uop.imm
-    )
-  }
-
   switch(io.uop.opType) {
     is(OpType.ALU) {
       io.intResult := alu.io.output
-
-      // Debug ALU operations around PC 0x80000334
-      when(io.uop.valid && io.uop.pc >= "h80000330".U && io.uop.pc <= "h80000350".U) {
-        chisel3.printf(
-          "ALU pc=0x%x op=%d rs1=x%d rs2=x%d rd=x%d in1=0x%x in2=0x%x out=0x%x\n",
-          io.uop.pc,
-          io.uop.aluOp.asUInt,
-          io.uop.rs1,
-          io.uop.rs2,
-          io.uop.rd,
-          alu.io.input1,
-          alu.io.input2,
-          alu.io.output
-        )
-      }
     }
     is(OpType.LUI) {
       io.intResult := io.uop.imm
@@ -119,37 +91,24 @@ class Execute(xlen: Integer) extends Module {
       val taken = WireDefault(false.B)
 
       switch(io.uop.branchFunc) {
-        is(BranchFunc3.BEQ) {
+        is("b000".U) { // BEQ
           taken := (rs1 === rs2)
         }
-        is(BranchFunc3.BNE) {
+        is("b001".U) { // BNE
           taken := (rs1 =/= rs2)
         }
-        is(BranchFunc3.BLT) {
+        is("b100".U) { // BLT
           taken := (rs1.asSInt < rs2.asSInt)
         }
-        is(BranchFunc3.BGE) {
+        is("b101".U) { // BGE
           taken := (rs1.asSInt >= rs2.asSInt)
         }
-        is(BranchFunc3.BLTU) {
+        is("b110".U) { // BLTU
           taken := (rs1 < rs2)
         }
-        is(BranchFunc3.BGEU) {
+        is("b111".U) { // BGEU
           taken := (rs1 >= rs2)
         }
-      }
-
-      when(branchDebugCounter < 32.U) {
-        branchDebugCounter := branchDebugCounter + 1.U
-        chisel3.printf("BRANCH pc=0x%x rs1=x%d val=0x%x rs2=x%d val=0x%x func=%d taken=%d\n",
-          io.uop.pc,
-          io.uop.rs1,
-          rs1,
-          io.uop.rs2,
-          rs2,
-          io.uop.branchFunc,
-          taken
-        )
       }
 
       io.branchTaken := taken
@@ -160,15 +119,15 @@ class Execute(xlen: Integer) extends Module {
       // Unconditional jump
       io.branchTaken := true.B
       io.targetPC := io.uop.pc + io.uop.imm
-      io.intResult := io.uop.pc + 4.U  // Save return address
+      io.intResult := io.uop.pc + 4.U // Save return address
     }
 
     is(OpType.JALR) {
       // Indirect jump
       io.branchTaken := true.B
       val target = io.regFile.readData1 + io.uop.imm
-      io.targetPC := Cat(target(31, 1), 0.U(1.W))  // Clear LSB
-      io.intResult := io.uop.pc + 4.U  // Save return address
+      io.targetPC := Cat(target(31, 1), 0.U(1.W)) // Clear LSB
+      io.intResult := io.uop.pc + 4.U // Save return address
     }
   }
 }

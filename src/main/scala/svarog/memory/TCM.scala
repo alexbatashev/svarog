@@ -2,6 +2,7 @@ package svarog.memory
 
 import chisel3._
 import chisel3.util._
+import chisel3.util.experimental.BoringUtils
 import svarog.soc.SvarogConfig
 
 // Tightly Coupled Memory (TCM)
@@ -47,8 +48,11 @@ class TCM(
   when(io.instr.req.valid && instrInRange && io.instr.req.bits.write) {
     mem.write(instrAddr / (xlen / 8).U, io.instr.req.bits.dataWrite)
   }
-  io.instr.resp.bits.dataRead := mem.read(instrAddr / (xlen / 8).U)
-  io.instr.resp.bits.valid := RegNext(instrInRange, false.B)
+  val instrWordIdx = instrAddr / (xlen / 8).U
+  val instrWord = mem.read(instrWordIdx)
+  io.instr.resp.bits.dataRead := instrWord
+  val instrRespValidReg = RegNext(io.instr.req.valid && instrInRange, false.B)
+  io.instr.resp.bits.valid := instrRespValidReg
 
   // Data memory access
   val dataInRange = io.data.req.bits.address >= baseAddr.U &&
@@ -64,7 +68,9 @@ class TCM(
     // Generate write mask: enable only the bytes that should be written
     val writeMask = WireDefault(VecInit(Seq.fill(xlen / 8)(false.B)))
     for (i <- 0 until (xlen / 8)) {
-      writeMask(i) := (i.U >= dataByteOffset) && (i.U < (dataByteOffset + dataNumBytes))
+      writeMask(
+        i
+      ) := (i.U >= dataByteOffset) && (i.U < (dataByteOffset + dataNumBytes))
     }
     mem.write(dataWordIdx, io.data.req.bits.dataWrite, writeMask)
   }
