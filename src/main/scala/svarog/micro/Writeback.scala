@@ -10,13 +10,17 @@ class Writeback(xlen: Int) extends Module {
     val in = Flipped(Decoupled(new MemResult(xlen)))
     val regFile = Flipped(new RegFileWriteIO(xlen))
     val hazard = Valid(UInt(5.W))
+    val debugPC = Valid(UInt(xlen.W))
+    val halt = Input(Bool())
   })
 
   // Always ready to accept new input
-  io.in.ready := true.B
+  io.in.ready := !io.halt
 
   io.hazard.valid := io.in.valid
   io.hazard.bits := io.in.bits.rd
+
+  io.debugPC.bits := io.in.bits.pc
 
   io.regFile.writeEn := false.B
   io.regFile.writeAddr := 0.U

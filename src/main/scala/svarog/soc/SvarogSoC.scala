@@ -38,8 +38,6 @@ class SvarogSoC(
 
   cpu.io.instmem <> mem.io.instr
   cpu.io.datamem <> mem.io.data
-  cpu.io.halt := io.halt
-  cpu.io.tohostAddr := io.tohostAddr
 
   // Connect debug interface if enabled
   mem.debug.foreach { dbg =>

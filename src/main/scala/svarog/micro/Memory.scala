@@ -10,6 +10,7 @@ class MemResult(xlen: Int) extends Bundle {
   val rd = Output(UInt(5.W))
   val regWrite = Output(Bool())
   val regData = Output(Bool())
+  val pc = Output(UInt(xlen.W))
 }
 
 class Memory(xlen: Int) extends Module {
@@ -39,6 +40,7 @@ class Memory(xlen: Int) extends Module {
 
   val pendingLoad = RegInit(false.B)
   val pendingRd = RegInit(0.U(5.W))
+  val pendingPC = RegInit(0.U(xlen.W))
   val pendingRegWrite = RegInit(false.B)
   val pendingUnsigned = RegInit(false.B)
   val pendingWidth = RegInit(MemWidth.WORD)
@@ -54,11 +56,13 @@ class Memory(xlen: Int) extends Module {
   val wbRegWrite = Wire(Bool())
   val wbResult = Wire(UInt(xlen.W))
   val stallSignal = WireDefault(false.B)
+  val wbPC = Wire(UInt(xlen.W))
 
   wbOpType := io.ex.bits.opType
   wbRd := io.ex.bits.rd
   wbRegWrite := io.ex.bits.regWrite
   wbResult := io.ex.bits.intResult
+  wbPC := io.ex.bits.pc
 
   def extractData(
       bytes: Vec[UInt],
@@ -101,6 +105,7 @@ class Memory(xlen: Int) extends Module {
     mem.req.bits.address := pendingAddress
     wbOpType := OpType.LOAD
     wbRd := pendingRd
+    wbPC := pendingPC
     wbRegWrite := pendingRegWrite
     stallSignal := true.B
     when(mem.resp.valid && mem.resp.bits.valid) {
@@ -124,6 +129,7 @@ class Memory(xlen: Int) extends Module {
         mem.req.bits.write := false.B
         pendingLoad := true.B
         pendingRd := io.ex.bits.rd
+        pendingPC := io.ex.bits.pc
         pendingRegWrite := io.ex.bits.regWrite
         pendingUnsigned := io.ex.bits.memUnsigned
         pendingWidth := io.ex.bits.memWidth
@@ -148,4 +154,5 @@ class Memory(xlen: Int) extends Module {
   io.res.bits.regWrite := wbRegWrite
   io.res.bits.regData := wbResult
   io.res.valid := stallSignal
+  io.res.bits.pc := wbPC
 }

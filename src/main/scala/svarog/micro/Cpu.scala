@@ -9,12 +9,13 @@ import svarog.memory.{MemoryRequest, MemoryIO}
 import svarog.decoder.SimpleDecoder
 import svarog.decoder.InstWord
 import svarog.decoder.MicroOp
+import svarog.debug.HartDebugModule
+import svarog.debug.HartDebugIO
 
 class CpuIO(xlen: Int) extends Bundle {
   val instmem = new MemoryIO(xlen, xlen)
   val datamem = new MemoryIO(xlen, xlen)
-  val halt = Input(Bool()) // Hold pipeline while external ROM is programmed
-  val tohostAddr = Input(UInt(xlen.W))
+  val debug = new HartDebugIO(xlen)
 }
 
 class Cpu(
@@ -24,6 +25,10 @@ class Cpu(
 ) extends Module {
   // Public interface
   val io = IO(new CpuIO(config.xlen))
+
+  val debug = Module(new HartDebugModule(config.xlen))
+  val halt = RegInit(false.B)
+  halt := debug.io.halt
 
   // Memories
   val regFile = Module(new RegFile(config.xlen, regfileProbeId))
@@ -44,8 +49,10 @@ class Cpu(
   memory.mem <> io.datamem
 
   // Register file connection
-  execute.io.regFile <> regFile.readIo
-  writeback.io.regFile <> regFile.writeIo
+  regFile.readIo <> Mux(halt, debug.io.regRead, execute.io.regFile)
+  regFile.writeIo <> Mux(halt, debug.io.regWrite, writeback.io.regFile)
+  // execute.io.regFile <> regFile.readIo
+  // writeback.io.regFile <> regFile.writeIo
 
   regFile.extraWriteEn := false.B
   regFile.extraWriteAddr := 0.U
@@ -85,5 +92,6 @@ class Cpu(
   hazardUnit.io.exec := execute.io.hazard
   hazardUnit.io.mem := memory.io.hazard
   hazardUnit.io.wb := writeback.io.hazard
-  execute.io.stall := hazardUnit.io.stall
+  execute.io.stall := hazardUnit.io.stall || halt
+  writeback.io.halt := halt
 }

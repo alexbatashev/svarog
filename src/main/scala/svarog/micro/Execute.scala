@@ -22,6 +22,8 @@ class ExecuteResult(xlen: Int) extends Bundle {
   val memUnsigned = Output(Bool())
 
   val storeData = Output(UInt(xlen.W))
+
+  val pc = Output(UInt(xlen.W))
 }
 
 class BranchFeedback(xlen: Int) extends Bundle {
@@ -51,6 +53,7 @@ class Execute(xlen: Integer) extends Module {
   io.hazard.bits := io.uop.bits.rd
 
   io.res.bits.opType := io.uop.bits.opType
+  io.res.bits.pc := io.uop.bits.pc
 
   // ALU result
   io.res.bits.intResult := 0.U
