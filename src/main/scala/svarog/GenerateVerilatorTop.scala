@@ -68,34 +68,9 @@ object GenerateVerilatorTop extends App {
 class VerilatorTop(
     config: SvarogConfig
 ) extends Module {
-  private val regfileProbeId = "verilator"
-  private val debugTapId = "verilator"
-
-  val mem_write_en = IO(Input(Bool()))
-  val mem_write_addr = IO(Input(UInt(config.xlen.W)))
-  val mem_write_data = IO(Input(UInt(8.W)))
-  val halt = IO(Input(Bool()))
-  val tohost_addr = IO(Input(UInt(config.xlen.W)))
-
-  val regfile_read_en = IO(Input(Bool()))
-  val regfile_read_addr = IO(Input(UInt(5.W)))
-  val regfile_read_data = IO(Output(UInt(config.xlen.W)))
-
   private val soc = Module(
     new SvarogSoC(
       config
     )
   )
-
-  soc.io.mem_write_en := mem_write_en
-  soc.io.mem_write_addr := mem_write_addr
-  soc.io.mem_write_data := mem_write_data
-  soc.io.halt := halt
-  soc.io.tohostAddr := tohost_addr
-
-  private val regfileData = Wire(UInt(config.xlen.W))
-  BoringUtils.addSource(regfile_read_addr, RegFileProbe.addr(regfileProbeId))
-  BoringUtils.addSource(regfile_read_en, RegFileProbe.en(regfileProbeId))
-  BoringUtils.addSink(regfileData, RegFileProbe.data(regfileProbeId))
-  regfile_read_data := regfileData
 }

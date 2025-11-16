@@ -20,6 +20,7 @@ class Writeback(xlen: Int) extends Module {
   io.hazard.valid := io.in.valid
   io.hazard.bits := io.in.bits.rd
 
+  io.debugPC.valid := io.in.valid
   io.debugPC.bits := io.in.bits.pc
 
   io.regFile.writeEn := false.B

@@ -17,7 +17,7 @@ import svarog.bits.RegFileWriteIO
 class CpuIO(xlen: Int) extends Bundle {
   val instmem = new MemoryIO(xlen, xlen)
   val datamem = new MemoryIO(xlen, xlen)
-  val debug = new HartDebugIO(xlen)
+  val debug = Flipped(new HartDebugIO(xlen))
 }
 
 class Cpu(
@@ -31,6 +31,9 @@ class Cpu(
   val debug = Module(new HartDebugModule(config.xlen))
   val halt = RegInit(false.B)
   halt := debug.io.halt
+
+  // Connect debug interface
+  debug.io.hart <> io.debug
 
   // Memories
   val regFile = Module(new RegFile(config.xlen, regfileProbeId))
@@ -50,22 +53,19 @@ class Cpu(
   // Data memory
   memory.mem <> io.datamem
 
-  // Register file connection
-  when(halt) {
-    regFile.readIo <> debug.io.regRead
-    regFile.writeIo <> debug.io.regWrite
+  // Register file connection - multiplex between normal execution and debug
+  // Read side
+  regFile.readIo.readAddr1 := Mux(halt, debug.io.regRead.readAddr1, execute.io.regFile.readAddr1)
+  regFile.readIo.readAddr2 := Mux(halt, debug.io.regRead.readAddr2, execute.io.regFile.readAddr2)
+  execute.io.regFile.readData1 := regFile.readIo.readData1
+  execute.io.regFile.readData2 := regFile.readIo.readData2
+  debug.io.regRead.readData1 := regFile.readIo.readData1
+  debug.io.regRead.readData2 := regFile.readIo.readData2
 
-    // execute.io.regFile := 0.U.asTypeOf(new RegFileReadIO(config.xlen))
-    // writeback.io.regFile := 0.U.asTypeOf(new RegFileWriteIO(config.xlen))
-  }.otherwise {
-    regFile.readIo <> execute.io.regFile
-    regFile.writeIo <> writeback.io.regFile
-
-    // debug.io.regRead := 0.U.asTypeOf(new RegFileReadIO(config.xlen))
-    // debug.io.regWrite := 0.U.asTypeOf(new RegFileWriteIO(config.xlen))
-  }
-  // execute.io.regFile <> regFile.readIo
-  // writeback.io.regFile <> regFile.writeIo
+  // Write side
+  regFile.writeIo.writeEn := Mux(halt, debug.io.regWrite.writeEn, writeback.io.regFile.writeEn)
+  regFile.writeIo.writeAddr := Mux(halt, debug.io.regWrite.writeAddr, writeback.io.regFile.writeAddr)
+  regFile.writeIo.writeData := Mux(halt, debug.io.regWrite.writeData, writeback.io.regFile.writeData)
 
   regFile.extraWriteEn := false.B
   regFile.extraWriteAddr := 0.U
@@ -94,6 +94,9 @@ class Cpu(
   val memWbQueue = Module(new Queue(new MemResult(config.xlen), 1))
   memWbQueue.io.enq <> memory.io.res
   writeback.io.in <> memWbQueue.io.deq
+
+  // Debug connections
+  debug.io.wbPC <> writeback.io.debugPC
 
   // Backprop pipes
   val execFetchPipe = Module(new Pipe(new BranchFeedback(config.xlen)))
