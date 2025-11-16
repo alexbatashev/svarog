@@ -41,20 +41,9 @@ class MemoryIO(xlen: Int, maxReqWidth: Int) extends Bundle {
   val resp = Flipped(Decoupled(new MemoryResponse(maxReqWidth)))
 }
 
-// Debug memory request - only request fields
-class DebugMemoryRequest(xlen: Int) extends Bundle {
-  val address = UInt(xlen.W)
-  val dataWrite = UInt(8.W)
-  val write = Bool()
-}
-
-// Debug memory response - only response fields
-class DebugMemoryResponse extends Bundle {
-  val dataRead = UInt(8.W)
-}
-
-// Full debug memory interface with separate request/response
-class DebugMemoryIO(xlen: Int) extends Bundle {
-  val req = Decoupled(new DebugMemoryRequest(xlen))
-  val resp = Flipped(Decoupled(new DebugMemoryResponse))
+abstract class CpuMemoryInterface(xlen: Int, maxReqWidth: Int) extends Module {
+  val io = IO(new Bundle {
+    val inst = Flipped(new MemoryIO(xlen, maxReqWidth))
+    val data = Flipped(new MemoryIO(xlen, maxReqWidth))
+  })
 }
