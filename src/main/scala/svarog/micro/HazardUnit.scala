@@ -18,10 +18,12 @@ class HazardUnit extends Module {
 
   io.stall := mustStall
 
-  when(io.exec.valid && io.decode.valid) {
-    when(
-      (io.exec.bits === io.decode.bits.rs1 && !(io.decode.bits.rs1 === 0.U)) || (io.exec.bits === io.decode.bits.rs2 && !(io.decode.bits.rs2 === 0.U))
-    ) {
+  when(io.exec.valid && io.decode.valid && io.exec.bits =/= 0.U) {
+    val hazardOnRs1 =
+      io.exec.bits === io.decode.bits.rs1 && io.decode.bits.rs1 =/= 0.U
+    val hazardOnRs2 =
+      io.exec.bits === io.decode.bits.rs2 && io.decode.bits.rs2 =/= 0.U
+    when(hazardOnRs1 || hazardOnRs2) {
       mustStall := true.B
       // Immediately stall the pipeline
       io.stall := true.B
@@ -29,10 +31,12 @@ class HazardUnit extends Module {
     }
   }
 
-  when(io.mem.valid && io.decode.valid) {
-    when(
-      (io.mem.bits === io.decode.bits.rs1 && !(io.decode.bits.rs1 === 0.U)) || (io.exec.bits === io.decode.bits.rs2 && !(io.decode.bits.rs2 === 0.U))
-    ) {
+  when(io.mem.valid && io.decode.valid && io.mem.bits =/= 0.U) {
+    val hazardOnRs1 =
+      io.mem.bits === io.decode.bits.rs1 && io.decode.bits.rs1 =/= 0.U
+    val hazardOnRs2 =
+      io.mem.bits === io.decode.bits.rs2 && io.decode.bits.rs2 =/= 0.U
+    when(hazardOnRs1 || hazardOnRs2) {
       mustStall := true.B
       // Immediately stall the pipeline
       io.stall := true.B
@@ -40,7 +44,7 @@ class HazardUnit extends Module {
     }
   }
 
-  when(mustStall && io.wb.valid) {
+  when(mustStall && io.wb.valid && io.wb.bits =/= 0.U) {
     when(io.wb.bits === stallReg) {
       // Release stall on next cycle since reg file has no bypass
       mustStall := false.B

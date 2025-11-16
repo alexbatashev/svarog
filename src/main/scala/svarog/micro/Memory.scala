@@ -9,7 +9,7 @@ class MemResult(xlen: Int) extends Bundle {
   val opType = Output(OpType())
   val rd = Output(UInt(5.W))
   val regWrite = Output(Bool())
-  val regData = Output(Bool())
+  val regData = Output(UInt(xlen.W))
   val pc = Output(UInt(xlen.W))
 }
 
@@ -55,7 +55,7 @@ class Memory(xlen: Int) extends Module {
   val wbRd = Wire(UInt(5.W))
   val wbRegWrite = Wire(Bool())
   val wbResult = Wire(UInt(xlen.W))
-  val stallSignal = WireDefault(false.B)
+  val resValid = WireDefault(false.B)
   val wbPC = Wire(UInt(xlen.W))
 
   wbOpType := io.ex.bits.opType
@@ -107,7 +107,6 @@ class Memory(xlen: Int) extends Module {
     wbRd := pendingRd
     wbPC := pendingPC
     wbRegWrite := pendingRegWrite
-    stallSignal := true.B
     when(mem.resp.valid && mem.resp.bits.valid) {
       val loadedBytes = mem.resp.bits.dataRead
       wbResult := extractData(
@@ -116,13 +115,14 @@ class Memory(xlen: Int) extends Module {
         pendingUnsigned,
         pendingByteOffset
       )
-      stallSignal := false.B
       pendingLoad := false.B
+      resValid := true.B
     }.otherwise {
       wbResult := 0.U
     }
   }.elsewhen(io.ex.valid) {
     mem.req.bits.address := io.ex.bits.memAddress
+    resValid := true.B
     switch(io.ex.bits.opType) {
       is(OpType.LOAD) {
         mem.req.valid := true.B
@@ -137,7 +137,7 @@ class Memory(xlen: Int) extends Module {
         pendingAddress := io.ex.bits.memAddress
         wbOpType := OpType.NOP
         wbRegWrite := false.B
-        stallSignal := true.B
+        resValid := false.B
       }
 
       is(OpType.STORE) {
@@ -153,6 +153,6 @@ class Memory(xlen: Int) extends Module {
   io.res.bits.rd := wbRd
   io.res.bits.regWrite := wbRegWrite
   io.res.bits.regData := wbResult
-  io.res.valid := stallSignal
+  io.res.valid := resValid
   io.res.bits.pc := wbPC
 }
