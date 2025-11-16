@@ -18,6 +18,7 @@ class CpuIO(xlen: Int) extends Bundle {
   val instmem = new MemoryIO(xlen, xlen)
   val datamem = new MemoryIO(xlen, xlen)
   val debug = Flipped(new HartDebugIO(xlen))
+  val debugRegData = Valid(UInt(xlen.W))
 }
 
 class Cpu(
@@ -34,9 +35,10 @@ class Cpu(
 
   // Connect debug interface
   debug.io.hart <> io.debug
+  io.debugRegData <> debug.io.regData
 
   // Memories
-  val regFile = Module(new RegFile(config.xlen, regfileProbeId))
+  val regFile = Module(new RegFile(config.xlen))
 
   // Stages
   val fetch = Module(new Fetch(config.xlen, resetVector))
@@ -55,17 +57,37 @@ class Cpu(
 
   // Register file connection - multiplex between normal execution and debug
   // Read side
-  regFile.readIo.readAddr1 := Mux(halt, debug.io.regRead.readAddr1, execute.io.regFile.readAddr1)
-  regFile.readIo.readAddr2 := Mux(halt, debug.io.regRead.readAddr2, execute.io.regFile.readAddr2)
+  regFile.readIo.readAddr1 := Mux(
+    halt,
+    debug.io.regRead.readAddr1,
+    execute.io.regFile.readAddr1
+  )
+  regFile.readIo.readAddr2 := Mux(
+    halt,
+    debug.io.regRead.readAddr2,
+    execute.io.regFile.readAddr2
+  )
   execute.io.regFile.readData1 := regFile.readIo.readData1
   execute.io.regFile.readData2 := regFile.readIo.readData2
   debug.io.regRead.readData1 := regFile.readIo.readData1
   debug.io.regRead.readData2 := regFile.readIo.readData2
 
   // Write side
-  regFile.writeIo.writeEn := Mux(halt, debug.io.regWrite.writeEn, writeback.io.regFile.writeEn)
-  regFile.writeIo.writeAddr := Mux(halt, debug.io.regWrite.writeAddr, writeback.io.regFile.writeAddr)
-  regFile.writeIo.writeData := Mux(halt, debug.io.regWrite.writeData, writeback.io.regFile.writeData)
+  regFile.writeIo.writeEn := Mux(
+    halt,
+    debug.io.regWrite.writeEn,
+    writeback.io.regFile.writeEn
+  )
+  regFile.writeIo.writeAddr := Mux(
+    halt,
+    debug.io.regWrite.writeAddr,
+    writeback.io.regFile.writeAddr
+  )
+  regFile.writeIo.writeData := Mux(
+    halt,
+    debug.io.regWrite.writeData,
+    writeback.io.regFile.writeData
+  )
 
   regFile.extraWriteEn := false.B
   regFile.extraWriteAddr := 0.U

@@ -43,10 +43,6 @@ class TCM(
 
     val enable =
       addrInRange && io.ports(i).req.bits.write && io.ports(i).req.valid
-    // val mask = Wire(Vec(wordSize, Bool()))
-    // for (i <- 0 until wordSize) {
-    //   mask(i) := true.B
-    // }
     val mask = MemWidth.mask(xlen)(io.ports(i).req.bits.reqWidth)
     val size = MemWidth.size(io.ports(i).req.bits.reqWidth)
     val readData = mem.readWrite(

@@ -56,6 +56,29 @@ pub struct Simulator {
 }
 
 impl Simulator {
+    fn init_debug_interface(dut: &mut VerilatorTop) {
+        // Initialize all debug interface signals to safe defaults
+        dut.io_debug_hart_in_id_valid = 0;
+        dut.io_debug_hart_in_id_bits = 0;
+        dut.io_debug_hart_in_bits_halt_valid = 0;
+        dut.io_debug_hart_in_bits_halt_bits = 0;
+        dut.io_debug_hart_in_bits_breakpoint_valid = 0;
+        dut.io_debug_hart_in_bits_breakpoint_bits_pc = 0;
+        dut.io_debug_hart_in_bits_register_valid = 0;
+        dut.io_debug_hart_in_bits_register_bits_reg = 0;
+        dut.io_debug_hart_in_bits_register_bits_write = 0;
+        dut.io_debug_hart_in_bits_register_bits_data = 0;
+
+        dut.io_debug_mem_in_valid = 0;
+        dut.io_debug_mem_in_bits_addr = 0;
+        dut.io_debug_mem_in_bits_write = 0;
+        dut.io_debug_mem_in_bits_data = 0;
+        dut.io_debug_mem_in_bits_reqWidth = 0; // BYTE
+        dut.io_debug_mem_in_bits_instr = 0;
+
+        dut.io_debug_mem_res_ready = 1; // Always ready to receive results
+    }
+
     pub fn new(out_dir: &str) -> Result<Self, Whatever> {
         // Leak the runtime to get a 'static reference
         // This is necessary because the model needs to borrow from the runtime
@@ -76,10 +99,13 @@ impl Simulator {
                 ..Default::default()
             },
         )?);
+
+        // Initialize debug interface to safe defaults
         {
             let mut dut = model.borrow_mut();
-            dut.tohost_addr = 0;
+            Self::init_debug_interface(&mut dut);
         }
+
         Ok(Simulator {
             runtime,
             model,
@@ -98,9 +124,12 @@ impl Simulator {
         {
             let mut dut = self.model.borrow_mut();
             dut.reset = 1;
-            dut.halt = 1;
-            dut.regfile_read_en = 0;
-            dut.mem_write_en = 0;
+
+            // Set halt through debug interface
+            dut.io_debug_hart_in_bits_halt_valid = 1;
+            dut.io_debug_hart_in_bits_halt_bits = 1;
+
+            Self::init_debug_interface(&mut dut);
         }
 
         // Reset for a few cycles
@@ -127,15 +156,6 @@ impl Simulator {
             } else {
                 eprintln!("Warning: Section {} not found in ELF file", section_name);
             }
-        }
-
-        let tohost_addr = file
-            .section_header_by_name(".tohost")?
-            .map(|hdr| hdr.sh_addr as u32)
-            .unwrap_or(0);
-        {
-            let mut dut = self.model.borrow_mut();
-            dut.tohost_addr = tohost_addr;
         }
 
         // One more cycle after loading
@@ -168,11 +188,12 @@ impl Simulator {
     }
 
     pub fn run(&self, vcd_path: &Path, max_cycles: usize) -> Result<TestResult> {
-        // Just ensure write signals are disabled and release halt to start execution
+        // Release halt to start execution
         {
             let mut dut = self.model.borrow_mut();
-            dut.mem_write_en = 0;
-            dut.halt = 0; // Release halt to start CPU
+            dut.io_debug_mem_in_valid = 0; // Disable memory writes
+            dut.io_debug_hart_in_bits_halt_valid = 1;
+            dut.io_debug_hart_in_bits_halt_bits = 0; // Release halt
             eprintln!("CPU halt released, starting execution");
         }
 
@@ -201,20 +222,57 @@ impl Simulator {
     fn capture_registers(&self) -> Result<RegisterFile> {
         let mut regs = RegisterFile::new();
 
-        let mut dut = self.model.borrow_mut();
-
-        // Hold clock low while sampling register file (combinational read)
-        dut.clock = 0;
-        dut.eval();
-
-        dut.regfile_read_en = 1;
-        for idx in 0..32 {
-            dut.regfile_read_addr = idx as u8;
-            dut.eval();
-            let val = dut.regfile_read_data;
-            regs.set(idx as u8, val);
+        // Ensure CPU is halted
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.io_debug_hart_in_bits_halt_valid = 1;
+            dut.io_debug_hart_in_bits_halt_bits = 1;
+            dut.io_debug_reg_res_ready = 1; // Ready to receive results
         }
-        dut.regfile_read_en = 0;
+
+        // Tick to apply halt
+        self.tick(&mut None);
+
+        // Read each register through debug interface
+        for idx in 0..32 {
+            {
+                let mut dut = self.model.borrow_mut();
+                dut.io_debug_hart_in_id_valid = 1;
+                dut.io_debug_hart_in_id_bits = 0; // Hart 0
+                dut.io_debug_hart_in_bits_register_valid = 1;
+                dut.io_debug_hart_in_bits_register_bits_reg = idx;
+                dut.io_debug_hart_in_bits_register_bits_write = 0; // Read
+                dut.io_debug_hart_in_bits_register_bits_data = 0;
+            }
+
+            // Tick to process request
+            self.tick(&mut None);
+
+            // Wait for result
+            let mut attempts = 0;
+            let val = loop {
+                let dut = self.model.borrow();
+                if dut.io_debug_reg_res_valid != 0 {
+                    break dut.io_debug_reg_res_bits;
+                }
+                drop(dut);
+
+                attempts += 1;
+                if attempts > 10 {
+                    eprintln!("Warning: Timeout waiting for register {} read result", idx);
+                    break 0;
+                }
+                self.tick(&mut None);
+            };
+
+            regs.set(idx, val);
+
+            // Clear register request
+            {
+                let mut dut = self.model.borrow_mut();
+                dut.io_debug_hart_in_bits_register_valid = 0;
+            }
+        }
 
         Ok(regs)
     }
@@ -222,14 +280,17 @@ impl Simulator {
     fn write_mem_byte(&self, addr: u32, data: u8) {
         {
             let mut dut = self.model.borrow_mut();
-            dut.mem_write_en = 1;
-            dut.mem_write_addr = addr;
-            dut.mem_write_data = data;
+            dut.io_debug_mem_in_valid = 1;
+            dut.io_debug_mem_in_bits_addr = addr;
+            dut.io_debug_mem_in_bits_write = 1;
+            dut.io_debug_mem_in_bits_data = data as u32;
+            dut.io_debug_mem_in_bits_reqWidth = 0; // BYTE
+            dut.io_debug_mem_in_bits_instr = 0;
         }
         self.tick(&mut None);
         {
             let mut dut = self.model.borrow_mut();
-            dut.mem_write_en = 0;
+            dut.io_debug_mem_in_valid = 0;
         }
     }
 

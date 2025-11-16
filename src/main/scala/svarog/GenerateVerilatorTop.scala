@@ -1,8 +1,8 @@
 package svarog
 
 import chisel3._
+import chisel3.util.{Decoupled, log2Ceil}
 import circt.stage.FirtoolOption
-import chisel3.util.log2Ceil
 import svarog.soc.SvarogSoC
 import svarog.bits.RegFileProbe
 import chisel3.util.experimental.BoringUtils
@@ -68,9 +68,29 @@ object GenerateVerilatorTop extends App {
 class VerilatorTop(
     config: SvarogConfig
 ) extends Module {
+  val io = IO(new Bundle {
+    // Expose debug interface directly if enabled
+    val debug = if (config.enableDebugInterface) {
+      Some(new Bundle {
+        val hart_in = Flipped(new svarog.debug.ChipHartDebugIO(config.xlen))
+        val mem_in = Flipped(Decoupled(new svarog.debug.ChipMemoryDebugIO(config.xlen)))
+        val mem_res = Decoupled(UInt(config.xlen.W))
+        val reg_res = Decoupled(UInt(config.xlen.W))
+      })
+    } else None
+  })
+
   private val soc = Module(
     new SvarogSoC(
       config
     )
   )
+
+  // Connect debug interface if enabled
+  if (config.enableDebugInterface) {
+    soc.io.debug.hart_in <> io.debug.get.hart_in
+    soc.io.debug.mem_in <> io.debug.get.mem_in
+    soc.io.debug.mem_res <> io.debug.get.mem_res
+    soc.io.debug.reg_res <> io.debug.get.reg_res
+  }
 }

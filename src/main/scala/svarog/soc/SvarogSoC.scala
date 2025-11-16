@@ -19,6 +19,7 @@ class SvarogSoC(
       val hart_in = Flipped(new ChipHartDebugIO(config.xlen))
       val mem_in = Flipped(Decoupled(new ChipMemoryDebugIO(config.xlen)))
       val mem_res = Decoupled(UInt(config.xlen.W))
+      val reg_res = Decoupled(UInt(config.xlen.W))
     }
   })
 
@@ -51,9 +52,11 @@ class SvarogSoC(
     debug.get.io.dmem_iface <> mem.io.ports(2)
     debug.get.io.imem_iface <> mem.io.ports(3)
     debug.get.io.harts(0) <> cpu.io.debug
+    debug.get.io.cpuRegData <> cpu.io.debugRegData
     debug.get.io.hart_in <> io.debug.hart_in
     debug.get.io.mem_in <> io.debug.mem_in
-    io.debug.mem_res := debug.get.io.mem_res
+    io.debug.mem_res <> debug.get.io.mem_res
+    io.debug.reg_res <> debug.get.io.reg_res
   } else {
     // Default debug inputs (no external debugger connected)
     cpu.io.debug.halt.valid := false.B

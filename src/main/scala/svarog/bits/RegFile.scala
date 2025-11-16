@@ -24,7 +24,7 @@ class RegFileWriteIO(xlen: Int) extends Bundle {
   val writeData = Input(UInt(xlen.W))
 }
 
-class RegFile(xlen: Int, probeId: Option[String] = None) extends Module {
+class RegFile(xlen: Int) extends Module {
   val readIo = IO(new RegFileReadIO(xlen))
   val writeIo = IO(new RegFileWriteIO(xlen))
   val extraWriteEn = IO(Input(Bool()))
@@ -43,15 +43,4 @@ class RegFile(xlen: Int, probeId: Option[String] = None) extends Module {
 
   readIo.readData1 := Mux(readIo.readAddr1 === 0.U, 0.U, regs(readIo.readAddr1))
   readIo.readData2 := Mux(readIo.readAddr2 === 0.U, 0.U, regs(readIo.readAddr2))
-
-  probeId.foreach { id =>
-    val probeAddr = WireDefault(0.U(5.W))
-    val probeEnable = WireDefault(false.B)
-    BoringUtils.addSink(probeAddr, RegFileProbe.addr(id))
-    BoringUtils.addSink(probeEnable, RegFileProbe.en(id))
-
-    val probeData = Wire(UInt(xlen.W))
-    probeData := Mux(probeEnable, regs(probeAddr), 0.U)
-    BoringUtils.addSource(probeData, RegFileProbe.data(id))
-  }
 }
