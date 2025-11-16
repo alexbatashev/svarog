@@ -36,27 +36,34 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   when(io.branch.valid) {
     pc_reg := next_pc
     pending_response := false.B
-  }.elsewhen(!io.inst_out.ready && instruction_accepted) {
+  }.elsewhen(instruction_accepted && !pending_response) {
     pc_reg := pc_plus_4
   }
 
-  when(!io.inst_out.ready && !pending_response) {
+  when(!pending_response) {
     pc_out_reg := pc_reg
   }
 
-  io.mem.req.valid := !io.inst_out.ready && !pending_response
+  // Always request unless we have a pending response
+  io.mem.req.valid := !pending_response
   io.mem.req.bits.address := pc_reg
   io.mem.req.bits.reqWidth := MemWidth.WORD
   io.mem.req.bits.write := false.B
   io.mem.req.bits.dataWrite := VecInit(Seq.fill(xlen / 8)(0.U(8.W)))
   io.mem.resp.ready := true.B
 
-  when(io.mem.resp.valid && !pending_response && !io.inst_out.ready) {
-    // Only latch if buffer can't accept immediately
-    pending_response := true.B
-    pending_data := io.mem.resp.bits.dataRead.asUInt
-    pending_pc := pc_out_reg
-  }.elsewhen(io.inst_out.valid && io.inst_out.ready) {
+  // Latch response when we get it but can't immediately forward
+  when(io.mem.resp.valid && !pending_response) {
+    when(!io.inst_out.ready) {
+      // Buffer the response
+      pending_response := true.B
+      pending_data := io.mem.resp.bits.dataRead.asUInt
+      pending_pc := pc_out_reg
+    }
+  }
+
+  // Clear pending when we have data to send and output accepts it
+  when(pending_response && io.inst_out.ready) {
     pending_response := false.B
   }
 

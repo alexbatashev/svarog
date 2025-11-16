@@ -7,12 +7,14 @@ object ImmFormat extends ChiselEnum {
   val I, S, B, U, J = Value
 }
 
+class ImmGenIO(xlen: Int) extends Bundle {
+  val instruction = Input(UInt(32.W))
+  val format = Input(ImmFormat())
+  val immediate = Output(UInt(xlen.W))
+}
+
 class ImmGen(xlen: Int) extends Module {
-  val io = IO(new Bundle {
-    val instruction = Input(UInt(32.W))
-    val format = Input(ImmFormat())
-    val immediate = Output(UInt(xlen.W))
-  })
+  val io = IO(new ImmGenIO(xlen))
 
   io.immediate := 0.U
 

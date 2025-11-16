@@ -123,13 +123,24 @@ impl Simulator {
         // We must reset first, then load memory after.
         {
             let mut dut = self.model.borrow_mut();
+
+            // Establish initial state: clock low, then apply reset
+            dut.clock = 0;
             dut.reset = 1;
 
+            // Initialize debug interface first, THEN set halt
+            // (init_debug_interface clears all signals including halt)
+            Self::init_debug_interface(&mut dut);
+
             // Set halt through debug interface
+            // IMPORTANT: Must set id_valid and id_bits to route commands to hart 0
+            dut.io_debug_hart_in_id_valid = 1;
+            dut.io_debug_hart_in_id_bits = 0; // Hart 0
             dut.io_debug_hart_in_bits_halt_valid = 1;
             dut.io_debug_hart_in_bits_halt_bits = 1;
 
-            Self::init_debug_interface(&mut dut);
+            // Evaluate to apply reset before first clock edge
+            dut.eval();
         }
 
         // Reset for a few cycles
@@ -192,6 +203,8 @@ impl Simulator {
         {
             let mut dut = self.model.borrow_mut();
             dut.io_debug_mem_in_valid = 0; // Disable memory writes
+            dut.io_debug_hart_in_id_valid = 1;
+            dut.io_debug_hart_in_id_bits = 0; // Hart 0
             dut.io_debug_hart_in_bits_halt_valid = 1;
             dut.io_debug_hart_in_bits_halt_bits = 0; // Release halt
             eprintln!("CPU halt released, starting execution");
@@ -225,6 +238,8 @@ impl Simulator {
         // Ensure CPU is halted
         {
             let mut dut = self.model.borrow_mut();
+            dut.io_debug_hart_in_id_valid = 1;
+            dut.io_debug_hart_in_id_bits = 0; // Hart 0
             dut.io_debug_hart_in_bits_halt_valid = 1;
             dut.io_debug_hart_in_bits_halt_bits = 1;
             dut.io_debug_reg_res_ready = 1; // Ready to receive results

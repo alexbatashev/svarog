@@ -5,186 +5,195 @@ import chisel3.util._
 import svarog.bits.ALUOp
 import svarog.memory.MemWidth
 
-case class BaseInstructions(xlen: Int) {
-  require(xlen >= 32, "BaseInstructions requires XLEN >= 32")
+case class BaseInstructions(xlen: Int) extends Module {
+  // require(xlen >= 32, "BaseInstructions requires XLEN >= 32")
 
-  def decode(instruction: UInt, immGen: ImmGen): MicroOp = {
-    val opcode = instruction(6, 0)
-    val rd = instruction(11, 7)
-    val rs1 = instruction(19, 15)
-    val rs2 = instruction(24, 20)
-    val funct3 = instruction(14, 12)
-    val funct7 = instruction(31, 25)
-    val inst = instruction
+  val io = IO(new Bundle {
+    val immGen = Flipped(new ImmGenIO(xlen))
+    val decoded = new MicroOp(xlen)
+    val pc = Input(UInt(xlen.W))
+    val instruction = Input(UInt(32.W))
+  })
 
-    immGen.io.instruction := instruction
-    immGen.io.format := ImmFormat.I // Default format
+  // def decode(instruction: UInt, immGen: ImmGen): MicroOp = {
+  val opcode = io.instruction(6, 0)
+  val rd = io.instruction(11, 7)
+  val rs1 = io.instruction(19, 15)
+  val rs2 = io.instruction(24, 20)
+  val funct3 = io.instruction(14, 12)
+  val funct7 = io.instruction(31, 25)
+  val inst = io.instruction
 
-    val decoded = Wire(new MicroOp(xlen))
-    decoded.rd := rd
-    decoded.rs1 := rs1
-    decoded.rs2 := rs2
-    decoded.hasImm := false.B
-    decoded.imm := 0.U
-    decoded.memWidth := MemWidth.WORD
-    decoded.memUnsigned := false.B
-    decoded.branchFunc := 0.U
-    decoded.regWrite := false.B
-    decoded.valid := true.B  // Mark as valid by default
-    decoded.pc := 0.U
-    decoded.isEcall := false.B
-    decoded.aluOp := ALUOp.ADD
-    decoded.opType := OpType.NOP
+  io.immGen.instruction := io.instruction
+  io.immGen.format := ImmFormat.I // Default format
+  // Always assign immediate from immGen output (used when hasImm is true)
+  io.decoded.imm := io.immGen.immediate
 
-    switch(opcode) {
-      is(Opcodes.ALU_REG) {
-        decoded.opType := OpType.ALU
-        decoded.hasImm := false.B
-        decoded.regWrite := rd =/= 0.U
-        immGen.io.format := ImmFormat.I
+  io.decoded.rd := rd
+  io.decoded.rs1 := rs1
+  io.decoded.rs2 := rs2
+  io.decoded.hasImm := false.B
+  io.decoded.memWidth := MemWidth.WORD
+  io.decoded.memUnsigned := false.B
+  io.decoded.branchFunc := 0.U
+  io.decoded.regWrite := false.B
+  io.decoded.pc := io.pc
+  io.decoded.isEcall := false.B
+  io.decoded.aluOp := ALUOp.ADD
+  io.decoded.opType := OpType.INVALID
 
-        switch(funct3) {
-          is(ALUFunc3.ADD_SUB) {
-            // Use inst(30) which is funct7(5) to distinguish ADD/SUB
-            decoded.aluOp := Mux(inst(30), ALUOp.SUB, ALUOp.ADD)
-          }
-          is(ALUFunc3.SLL) { decoded.aluOp := ALUOp.SLL }
-          is(ALUFunc3.SLT) { decoded.aluOp := ALUOp.SLT }
-          is(ALUFunc3.SLTU) { decoded.aluOp := ALUOp.SLTU }
-          is(ALUFunc3.XOR) { decoded.aluOp := ALUOp.XOR }
-          is(ALUFunc3.SRL_SRA) {
-            // Use funct7(5) to distinguish SRL/SRA
-            decoded.aluOp := Mux(funct7(5), ALUOp.SRA, ALUOp.SRL)
-          }
-          is(ALUFunc3.OR) { decoded.aluOp := ALUOp.OR }
-          is(ALUFunc3.AND) { decoded.aluOp := ALUOp.AND }
+  switch(opcode) {
+    is(Opcodes.ALU_REG) {
+      io.decoded.opType := OpType.ALU
+      io.decoded.hasImm := false.B
+      io.decoded.regWrite := rd =/= 0.U
+      io.immGen.format := ImmFormat.I
+
+      switch(funct3) {
+        is(ALUFunc3.ADD_SUB) {
+          // Use inst(30) which is funct7(5) to distinguish ADD/SUB
+          io.decoded.aluOp := Mux(inst(30), ALUOp.SUB, ALUOp.ADD)
+        }
+        is(ALUFunc3.SLL) {
+          io.decoded.aluOp := ALUOp.SLL
+        }
+        is(ALUFunc3.SLT) {
+          io.decoded.aluOp := ALUOp.SLT
+        }
+        is(ALUFunc3.SLTU) {
+          io.decoded.aluOp := ALUOp.SLTU
+        }
+        is(ALUFunc3.XOR) {
+          io.decoded.aluOp := ALUOp.XOR
+        }
+        is(ALUFunc3.SRL_SRA) {
+          // Use funct7(5) to distinguish SRL/SRA
+          io.decoded.aluOp := Mux(funct7(5), ALUOp.SRA, ALUOp.SRL)
+        }
+        is(ALUFunc3.OR) {
+          io.decoded.aluOp := ALUOp.OR
+        }
+        is(ALUFunc3.AND) {
+          io.decoded.aluOp := ALUOp.AND
         }
       }
-      is(Opcodes.ALU_IMM) {
-        decoded.opType := OpType.ALU
-        decoded.hasImm := true.B
-        decoded.regWrite := rd =/= 0.U
-        immGen.io.format := ImmFormat.I
+    }
+    is(Opcodes.ALU_IMM) {
+      io.decoded.opType := OpType.ALU
+      io.decoded.hasImm := true.B
+      io.decoded.regWrite := rd =/= 0.U
+      io.immGen.format := ImmFormat.I
 
-        switch(funct3) {
-          is(ALUFunc3.ADD_SUB) { decoded.aluOp := ALUOp.ADD }
-          is(ALUFunc3.SLT) { decoded.aluOp := ALUOp.SLT }
-          is(ALUFunc3.SLTU) { decoded.aluOp := ALUOp.SLTU }
-          is(ALUFunc3.XOR) { decoded.aluOp := ALUOp.XOR }
-          is(ALUFunc3.OR) { decoded.aluOp := ALUOp.OR }
-          is(ALUFunc3.AND) { decoded.aluOp := ALUOp.AND }
-          is(ALUFunc3.SLL) { decoded.aluOp := ALUOp.SLL }
-          is(ALUFunc3.SRL_SRA) {
-            // SRLI/SRAI: use funct7(5) to distinguish
-            decoded.aluOp := Mux(funct7(5), ALUOp.SRA, ALUOp.SRL)
-          }
+      switch(funct3) {
+        is(ALUFunc3.ADD_SUB) { io.decoded.aluOp := ALUOp.ADD }
+        is(ALUFunc3.SLT) { io.decoded.aluOp := ALUOp.SLT }
+        is(ALUFunc3.SLTU) { io.decoded.aluOp := ALUOp.SLTU }
+        is(ALUFunc3.XOR) { io.decoded.aluOp := ALUOp.XOR }
+        is(ALUFunc3.OR) { io.decoded.aluOp := ALUOp.OR }
+        is(ALUFunc3.AND) { io.decoded.aluOp := ALUOp.AND }
+        is(ALUFunc3.SLL) { io.decoded.aluOp := ALUOp.SLL }
+        is(ALUFunc3.SRL_SRA) {
+          // SRLI/SRAI: use funct7(5) to distinguish
+          io.decoded.aluOp := Mux(funct7(5), ALUOp.SRA, ALUOp.SRL)
         }
       }
-      is(Opcodes.LOAD) {
-        decoded.opType := OpType.LOAD
-        decoded.hasImm := true.B
-        decoded.regWrite := rd =/= 0.U
-        immGen.io.format := ImmFormat.I
+    }
+    is(Opcodes.LOAD) {
+      io.decoded.opType := OpType.LOAD
+      io.decoded.hasImm := true.B
+      io.decoded.regWrite := rd =/= 0.U
+      io.immGen.format := ImmFormat.I
 
-        switch(funct3) {
-          is("b000".U) { // LB
-            decoded.memWidth := MemWidth.BYTE
-            decoded.memUnsigned := false.B
-          }
-          is("b001".U) { // LH
-            decoded.memWidth := MemWidth.HALF
-            decoded.memUnsigned := false.B
-          }
-          is("b010".U) { // LW
-            decoded.memWidth := MemWidth.WORD
-            decoded.memUnsigned := false.B
-          }
-          is("b100".U) { // LBU
-            decoded.memWidth := MemWidth.BYTE
-            decoded.memUnsigned := true.B
-          }
-          is("b101".U) { // LHU
-            decoded.memWidth := MemWidth.HALF
-            decoded.memUnsigned := true.B
-          }
+      switch(funct3) {
+        is("b000".U) { // LB
+          io.decoded.memWidth := MemWidth.BYTE
+          io.decoded.memUnsigned := false.B
         }
-      }
-
-      is(Opcodes.STORE) {
-        decoded.opType := OpType.STORE
-        decoded.hasImm := true.B
-        decoded.regWrite := false.B
-        immGen.io.format := ImmFormat.S
-
-        switch(funct3) {
-          is("b000".U) { decoded.memWidth := MemWidth.BYTE } // SB
-          is("b001".U) { decoded.memWidth := MemWidth.HALF } // SH
-          is("b010".U) { decoded.memWidth := MemWidth.WORD } // SW
+        is("b001".U) { // LH
+          io.decoded.memWidth := MemWidth.HALF
+          io.decoded.memUnsigned := false.B
         }
-      }
-
-      is(Opcodes.LUI) {
-        decoded.opType := OpType.LUI
-        decoded.hasImm := true.B
-        decoded.regWrite := rd =/= 0.U
-        immGen.io.format := ImmFormat.U
-      }
-
-      is(Opcodes.AUIPC) {
-        decoded.opType := OpType.AUIPC
-        decoded.hasImm := true.B
-        decoded.regWrite := rd =/= 0.U
-        immGen.io.format := ImmFormat.U
-      }
-
-      is(Opcodes.BRANCH) {
-        decoded.opType := OpType.BRANCH
-        decoded.hasImm := true.B
-        decoded.regWrite := false.B
-        immGen.io.format := ImmFormat.B
-        decoded.branchFunc := funct3
-      }
-
-      is(Opcodes.JAL) {
-        decoded.opType := OpType.JAL
-        decoded.hasImm := true.B
-        decoded.regWrite := rd =/= 0.U
-        immGen.io.format := ImmFormat.J
-      }
-
-      is(Opcodes.JALR) {
-        decoded.opType := OpType.JALR
-        decoded.hasImm := true.B
-        decoded.regWrite := rd =/= 0.U
-        immGen.io.format := ImmFormat.I
-      }
-
-      is(Opcodes.SYSTEM) {
-        when(inst === "h00000073".U) { // ECALL
-          decoded.opType := OpType.SYSTEM
-          decoded.regWrite := false.B
-          decoded.isEcall := true.B
-        }.elsewhen(funct3 =/= 0.U) { // CSR instructions (Zicsr extension)
-          // Note: CSR is not part of base RV32I but commonly supported
-          // Treat CSR reads as ALU operations
-          decoded.opType := OpType.ALU
-          decoded.aluOp := ALUOp.ADD
-          decoded.hasImm := funct3(2) // CSRRxI instructions use immediate
-          decoded.regWrite := rd =/= 0.U
-          immGen.io.format := ImmFormat.I
-        }.otherwise {
-          decoded.opType := OpType.NOP
+        is("b010".U) { // LW
+          io.decoded.memWidth := MemWidth.WORD
+          io.decoded.memUnsigned := false.B
+        }
+        is("b100".U) { // LBU
+          io.decoded.memWidth := MemWidth.BYTE
+          io.decoded.memUnsigned := true.B
+        }
+        is("b101".U) { // LHU
+          io.decoded.memWidth := MemWidth.HALF
+          io.decoded.memUnsigned := true.B
         }
       }
     }
 
-    // Always assign immediate from immGen output (used when hasImm is true)
-    decoded.imm := immGen.io.immediate
+    is(Opcodes.STORE) {
+      io.decoded.opType := OpType.STORE
+      io.decoded.hasImm := true.B
+      io.decoded.regWrite := false.B
+      io.immGen.format := ImmFormat.S
 
-    decoded
+      switch(funct3) {
+        is("b000".U) { io.decoded.memWidth := MemWidth.BYTE } // SB
+        is("b001".U) { io.decoded.memWidth := MemWidth.HALF } // SH
+        is("b010".U) { io.decoded.memWidth := MemWidth.WORD } // SW
+      }
+    }
+
+    is(Opcodes.LUI) {
+      io.decoded.opType := OpType.LUI
+      io.decoded.hasImm := true.B
+      io.decoded.regWrite := rd =/= 0.U
+      io.immGen.format := ImmFormat.U
+    }
+
+    is(Opcodes.AUIPC) {
+      io.decoded.opType := OpType.AUIPC
+      io.decoded.hasImm := true.B
+      io.decoded.regWrite := rd =/= 0.U
+      io.immGen.format := ImmFormat.U
+    }
+
+    is(Opcodes.BRANCH) {
+      io.decoded.opType := OpType.BRANCH
+      io.decoded.hasImm := true.B
+      io.decoded.regWrite := false.B
+      io.immGen.format := ImmFormat.B
+      io.decoded.branchFunc := funct3
+    }
+
+    is(Opcodes.JAL) {
+      io.decoded.opType := OpType.JAL
+      io.decoded.hasImm := true.B
+      io.decoded.regWrite := rd =/= 0.U
+      io.immGen.format := ImmFormat.J
+    }
+
+    is(Opcodes.JALR) {
+      io.decoded.opType := OpType.JALR
+      io.decoded.hasImm := true.B
+      io.decoded.regWrite := rd =/= 0.U
+      io.immGen.format := ImmFormat.I
+    }
+
+    is(Opcodes.SYSTEM) {
+      when(inst === "h00000073".U) { // ECALL
+        io.decoded.opType := OpType.SYSTEM
+        io.decoded.regWrite := false.B
+        io.decoded.isEcall := true.B
+      }.elsewhen(funct3 =/= 0.U) { // CSR instructions (Zicsr extension)
+        // Note: CSR is not part of base RV32I but commonly supported
+        // Treat CSR reads as ALU operations
+        io.decoded.opType := OpType.ALU
+        io.decoded.aluOp := ALUOp.ADD
+        io.decoded.hasImm := funct3(2) // CSRRxI instructions use immediate
+        io.decoded.regWrite := rd =/= 0.U
+        io.immGen.format := ImmFormat.I
+      }.otherwise {
+        io.decoded.opType := OpType.NOP
+      }
+    }
   }
-}
 
-object BaseInstructions {
-  def apply(xlen: Int): BaseInstructions = new BaseInstructions(xlen)
 }

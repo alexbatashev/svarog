@@ -20,7 +20,7 @@ class HazardUnit extends Module {
 
   when(io.exec.valid && io.decode.valid) {
     when(
-      io.exec.bits === io.decode.bits.rs1 || io.exec.bits === io.decode.bits.rs2
+      (io.exec.bits === io.decode.bits.rs1 && !(io.decode.bits.rs1 === 0.U)) || (io.exec.bits === io.decode.bits.rs2 && !(io.decode.bits.rs2 === 0.U))
     ) {
       mustStall := true.B
       // Immediately stall the pipeline
@@ -31,7 +31,7 @@ class HazardUnit extends Module {
 
   when(io.mem.valid && io.decode.valid) {
     when(
-      io.mem.bits === io.decode.bits.rs1 || io.exec.bits === io.decode.bits.rs2
+      (io.mem.bits === io.decode.bits.rs1 && !(io.decode.bits.rs1 === 0.U)) || (io.exec.bits === io.decode.bits.rs2 && !(io.decode.bits.rs2 === 0.U))
     ) {
       mustStall := true.B
       // Immediately stall the pipeline

@@ -24,15 +24,18 @@ class SimpleDecoder(xlen: Int) extends Module {
   io.decoded.valid := io.inst.valid
 
   // Decode the instruction
-  val decodedMicroOp = BaseInstructions(xlen)
-    .decode(io.inst.bits.word, immGen)
+  val baseDecoder = Module(new BaseInstructions(xlen))
+  baseDecoder.io.immGen <> immGen.io
+  baseDecoder.io.instruction := io.inst.bits.word
+  baseDecoder.io.pc := io.inst.bits.pc
 
-  // Copy PC
-  decodedMicroOp.pc := io.inst.bits.pc
+  io.decoded.bits := MicroOp.getInvalid(xlen)
 
-  io.decoded.bits := decodedMicroOp
+  when(baseDecoder.io.decoded.opType =/= OpType.INVALID) {
+    io.decoded.bits := baseDecoder.io.decoded
+  }
 
   io.hazard.valid := io.inst.valid
-  io.hazard.bits.rs1 := decodedMicroOp.rs1
-  io.hazard.bits.rs2 := Mux(decodedMicroOp.hasImm, 0.U, decodedMicroOp.rs2)
+  io.hazard.bits.rs1 := io.decoded.bits.rs1
+  io.hazard.bits.rs2 := Mux(io.decoded.bits.hasImm, 0.U, io.decoded.bits.rs2)
 }

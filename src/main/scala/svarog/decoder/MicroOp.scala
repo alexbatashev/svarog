@@ -5,7 +5,8 @@ import svarog.bits.ALUOp
 import svarog.memory.MemWidth
 
 object OpType extends ChiselEnum {
-  val NOP, ALU, LOAD, STORE, BRANCH, JAL, JALR, LUI, AUIPC, SYSTEM = Value
+  val INVALID, NOP, ALU, LOAD, STORE, BRANCH, JAL, JALR, LUI, AUIPC, SYSTEM =
+    Value
 }
 
 class MicroOp(xlen: Int) extends Bundle {
@@ -20,7 +21,6 @@ class MicroOp(xlen: Int) extends Bundle {
   val memUnsigned = Output(Bool())
   val branchFunc = Output(UInt(3.W)) // Changed back to UInt for compatibility
   val regWrite = Output(Bool())
-  val valid = Output(Bool()) // Added back for compatibility
   val pc = Output(UInt(xlen.W))
   val isEcall = Output(Bool())
 }
@@ -39,7 +39,6 @@ object MicroOp {
     invalid.memUnsigned := false.B
     invalid.branchFunc := 0.U
     invalid.regWrite := false.B
-    invalid.valid := false.B
     invalid.pc := 0.U
     invalid.isEcall := false.B
     invalid
