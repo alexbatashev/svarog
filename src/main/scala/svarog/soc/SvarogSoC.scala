@@ -4,6 +4,7 @@ import chisel3._
 import svarog.micro.Cpu
 import svarog.memory.TCM
 import chisel3.util.log2Ceil
+import svarog.debug.ChipDebugModule
 
 class SvarogSoC(
     config: SvarogConfig,
@@ -32,19 +33,14 @@ class SvarogSoC(
       config.xlen,
       config.memSizeBytes,
       baseAddr = config.programEntryPoint,
-      debugEnabled = config.enableDebugInterface
+      numPorts = 2
     )
   )
 
-  cpu.io.instmem <> mem.io.instr
-  cpu.io.datamem <> mem.io.data
+  // private val debug = Module(new ChipDebugModule(config.xlen, numHarts = 1))
 
-  // Connect debug interface if enabled
-  mem.debug.foreach { dbg =>
-    dbg.req.valid := io.mem_write_en
-    dbg.req.bits.address := io.mem_write_addr
-    dbg.req.bits.dataWrite := io.mem_write_data
-    dbg.req.bits.write := true.B // Always write for now
-    dbg.resp.ready := true.B
-  }
+  cpu.io.instmem <> mem.io.ports(0)
+  cpu.io.datamem <> mem.io.ports(1)
+  // debug.io.dmem_iface <> mem.io.ports(2)
+  // debug.io.imem_iface <> mem.io.ports(3)
 }

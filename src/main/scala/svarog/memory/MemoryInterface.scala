@@ -18,6 +18,34 @@ object MemWidth extends ChiselEnum {
     (width, !unsigned)
   }
 
+  def size(w: MemWidth.Type): UInt = {
+    MuxCase(
+      1.U,
+      Seq(
+        (w === MemWidth.BYTE) -> 1.U,
+        (w === MemWidth.HALF) -> 2.U,
+        (w === MemWidth.WORD) -> 4.U,
+        (w === MemWidth.DWORD) -> 8.U
+      )
+    )
+  }
+
+  def mask(maxReqWidth: Int)(w: MemWidth.Type): Vec[Bool] = {
+    val numBytes = maxReqWidth / 8
+
+    val m = Wire(Vec(numBytes, Bool()))
+
+    for (i <- 0 until numBytes) {
+      m(i) :=
+        ((i < 1).B && w === MemWidth.BYTE) ||
+          ((i < 2).B && w === MemWidth.HALF) ||
+          ((i < 4).B && w === MemWidth.WORD) ||
+          (w === MemWidth.DWORD)
+    }
+
+    m
+  }
+
   def apply(value: UInt): MemWidth.Type = value.asTypeOf(MemWidth())
 }
 
@@ -26,13 +54,13 @@ class MemoryRequest(xlen: Int, maxReqWidth: Int) extends Bundle {
   val address = UInt(xlen.W)
   val dataWrite = Vec(maxReqWidth / 8, UInt(8.W))
   val write = Bool()
-  val reqWidth = UInt(log2Ceil(maxReqWidth / 8).W)
+  val reqWidth = MemWidth.Type()
 }
 
 // Memory response - only response fields
 class MemoryResponse(maxReqWidth: Int) extends Bundle {
   val dataRead = Vec(maxReqWidth / 8, UInt(8.W))
-  val valid = Bool()
+  val valid = Input(Bool())
 }
 
 // Full memory interface with separate request/response

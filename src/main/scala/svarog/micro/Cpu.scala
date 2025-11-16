@@ -11,6 +11,8 @@ import svarog.decoder.InstWord
 import svarog.decoder.MicroOp
 import svarog.debug.HartDebugModule
 import svarog.debug.HartDebugIO
+import svarog.bits.RegFileReadIO
+import svarog.bits.RegFileWriteIO
 
 class CpuIO(xlen: Int) extends Bundle {
   val instmem = new MemoryIO(xlen, xlen)
@@ -49,8 +51,19 @@ class Cpu(
   memory.mem <> io.datamem
 
   // Register file connection
-  regFile.readIo <> Mux(halt, debug.io.regRead, execute.io.regFile)
-  regFile.writeIo <> Mux(halt, debug.io.regWrite, writeback.io.regFile)
+  when(halt) {
+    regFile.readIo <> debug.io.regRead
+    regFile.writeIo <> debug.io.regWrite
+
+    // execute.io.regFile := 0.U.asTypeOf(new RegFileReadIO(config.xlen))
+    // writeback.io.regFile := 0.U.asTypeOf(new RegFileWriteIO(config.xlen))
+  }.otherwise {
+    regFile.readIo <> execute.io.regFile
+    regFile.writeIo <> writeback.io.regFile
+
+    // debug.io.regRead := 0.U.asTypeOf(new RegFileReadIO(config.xlen))
+    // debug.io.regWrite := 0.U.asTypeOf(new RegFileWriteIO(config.xlen))
+  }
   // execute.io.regFile <> regFile.readIo
   // writeback.io.regFile <> regFile.writeIo
 

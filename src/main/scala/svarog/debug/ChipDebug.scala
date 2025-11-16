@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import svarog.memory.MemWidth
 import svarog.memory.MemoryRequest
+import svarog.memory.MemoryIO
 
 class ChipHartDebugIO(xlen: Int) extends Bundle {
   val id = Valid(UInt(8.W))
@@ -26,15 +27,15 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
 
     val harts = Vec(numHarts, new HartDebugIO(xlen))
 
-    val imem_iface = Decoupled(new MemoryRequest(xlen, xlen))
-    val dmem_iface = Decoupled(new MemoryRequest(xlen, xlen))
+    val imem_iface = new MemoryIO(xlen, xlen)
+    val dmem_iface = new MemoryIO(xlen, xlen)
 
     val mem_res = Decoupled(UInt(xlen.W))
   })
 
-  io.harts.foreach { hart =>
-    hart := 0.U
-  }
+  // io.harts.foreach { hart =>
+  //   hart := 0.U
+  // }
 
   when(io.hart_in.id.valid) {
     io.harts(0) := io.hart_in.bits

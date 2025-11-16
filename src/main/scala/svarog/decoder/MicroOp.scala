@@ -16,11 +16,11 @@ class MicroOp(xlen: Int) extends Bundle {
   val rs2 = Output(UInt(5.W))
   val hasImm = Output(Bool())
   val imm = Output(UInt(xlen.W))
-  val memWidth = Output(MemWidth())
+  val memWidth = Output(MemWidth.Type())
   val memUnsigned = Output(Bool())
-  val branchFunc = Output(UInt(3.W))  // Changed back to UInt for compatibility
+  val branchFunc = Output(UInt(3.W)) // Changed back to UInt for compatibility
   val regWrite = Output(Bool())
-  val valid = Output(Bool())  // Added back for compatibility
+  val valid = Output(Bool()) // Added back for compatibility
   val pc = Output(UInt(xlen.W))
   val isEcall = Output(Bool())
 }

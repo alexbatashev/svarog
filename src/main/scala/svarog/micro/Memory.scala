@@ -34,7 +34,7 @@ class Memory(xlen: Int) extends Module {
 
   mem.req.bits.dataWrite := alignedStoreData
   mem.req.bits.write := false.B
-  mem.req.bits.reqWidth := io.ex.bits.memWidth.asUInt
+  mem.req.bits.reqWidth := io.ex.bits.memWidth
   mem.resp.ready := true.B
   mem.req.bits.address := 0.U
 
