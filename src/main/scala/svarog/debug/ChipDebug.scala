@@ -55,18 +55,56 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
   io.reg_res.valid := io.cpuRegData.valid
   io.reg_res.bits := io.cpuRegData.bits
 
-  // Memory interface
-  io.mem_in.ready := true.B // Always ready for now
+  // Memory interface - route debug memory requests to imem or dmem
+  val memPending = RegInit(false.B)
+  val memIsInstr = RegInit(false.B)
 
-  // Default outputs
-  io.imem_iface.req.valid := false.B
-  io.imem_iface.req.bits := DontCare
-  io.imem_iface.resp.ready := true.B
+  // Accept new memory requests when not pending
+  io.mem_in.ready := !memPending
 
-  io.dmem_iface.req.valid := false.B
-  io.dmem_iface.req.bits := DontCare
-  io.dmem_iface.resp.ready := true.B
+  // Convert debug memory request to MemoryRequest format
+  val memReqBits = Wire(new MemoryRequest(xlen, xlen))
+  memReqBits.address := io.mem_in.bits.addr
+  memReqBits.write := io.mem_in.bits.write
+  memReqBits.reqWidth := io.mem_in.bits.reqWidth
 
-  io.mem_res.valid := false.B
-  io.mem_res.bits := 0.U
+  // Convert scalar data to Vec of bytes for write data
+  val writeDataBytes = Wire(Vec(xlen / 8, UInt(8.W)))
+  for (i <- 0 until xlen / 8) {
+    writeDataBytes(i) := io.mem_in.bits.data((i + 1) * 8 - 1, i * 8)
+  }
+  memReqBits.dataWrite := writeDataBytes
+
+  // Route to instruction or data memory based on 'instr' bit
+  io.imem_iface.req.valid := io.mem_in.valid && io.mem_in.bits.instr && !memPending
+  io.imem_iface.req.bits := memReqBits
+
+  io.dmem_iface.req.valid := io.mem_in.valid && !io.mem_in.bits.instr && !memPending
+  io.dmem_iface.req.bits := memReqBits
+
+  // Track pending requests
+  when(io.mem_in.valid && io.mem_in.ready) {
+    memPending := true.B
+    memIsInstr := io.mem_in.bits.instr
+  }
+
+  // Handle responses
+  io.imem_iface.resp.ready := memPending && memIsInstr
+  io.dmem_iface.resp.ready := memPending && !memIsInstr
+
+  // Convert response back to scalar for mem_res
+  val respData = Mux(
+    memIsInstr,
+    io.imem_iface.resp.bits.dataRead.asUInt,
+    io.dmem_iface.resp.bits.dataRead.asUInt
+  )
+
+  io.mem_res.valid := (io.imem_iface.resp.valid && memIsInstr) ||
+    (io.dmem_iface.resp.valid && !memIsInstr)
+  io.mem_res.bits := respData
+
+  // Clear pending when response is consumed
+  when(io.mem_res.valid && io.mem_res.ready) {
+    memPending := false.B
+  }
 }

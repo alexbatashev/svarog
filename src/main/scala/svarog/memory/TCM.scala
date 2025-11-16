@@ -39,16 +39,37 @@ class TCM(
       addr >= baseAddr.U && addr < (baseAddr + memSizeBytes).U
 
     val wordIdx = (addr - baseAddr.U) / wordSize.U
-    val wordOffset = (addr - baseAddr.U) - wordIdx
+    val wordOffset = (addr - baseAddr.U) % wordSize.U
 
     val enable =
       addrInRange && io.ports(i).req.bits.write && io.ports(i).req.valid
-    val mask = MemWidth.mask(xlen)(io.ports(i).req.bits.reqWidth)
+
+    // Generate mask and shift it based on byte offset
+    val baseMask = MemWidth.mask(xlen)(io.ports(i).req.bits.reqWidth)
+    val shiftedMask = Wire(Vec(wordSize, Bool()))
+    for (j <- 0 until wordSize) {
+      shiftedMask(j) := Mux(
+        (j.U >= wordOffset) && ((j.U - wordOffset) < baseMask.length.U),
+        baseMask(j.U - wordOffset),
+        false.B
+      )
+    }
+
+    // Shift write data to align with byte offset
+    val shiftedWriteData = Wire(Vec(wordSize, UInt(8.W)))
+    for (j <- 0 until wordSize) {
+      shiftedWriteData(j) := Mux(
+        (j.U >= wordOffset) && ((j.U - wordOffset) < io.ports(i).req.bits.dataWrite.length.U),
+        io.ports(i).req.bits.dataWrite(j.U - wordOffset),
+        0.U
+      )
+    }
+
     val size = MemWidth.size(io.ports(i).req.bits.reqWidth)
     val readData = mem.readWrite(
       wordIdx,
-      io.ports(i).req.bits.dataWrite,
-      mask,
+      shiftedWriteData,
+      shiftedMask,
       enable,
       io.ports(i).req.bits.write
     )
