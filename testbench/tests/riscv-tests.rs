@@ -59,8 +59,13 @@ fn run_test_impl(test_path: &Path) -> Result<()> {
         .context("Failed to load binary")?;
 
     // Run Verilator simulation
+    let max_cycles = std::env::var("SVAROG_MAX_CYCLES")
+        .ok()
+        .and_then(|val| val.parse::<usize>().ok())
+        .unwrap_or(20_000);
+
     let verilator_result = simulator
-        .run(&vcd_path, 100_000)
+        .run(&vcd_path, max_cycles)
         .context("Verilator simulation failed")?;
 
     // Check if there was any register activity

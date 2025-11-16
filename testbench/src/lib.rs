@@ -1,4 +1,10 @@
-use std::{cell::RefCell, collections::HashMap, path::Path, process::Command};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    convert::TryInto,
+    path::Path,
+    process::Command,
+};
 
 use anyhow::{Context, Result};
 use elf::{ElfBytes, endian::AnyEndian};
@@ -148,13 +154,12 @@ impl Simulator {
             self.tick(&mut None);
         }
 
-        // Release reset
+        // Take reset low before loading sections so the core starts from a clean
+        // slate once we release halt later.
         {
             let mut dut = self.model.borrow_mut();
             dut.reset = 0;
         }
-
-        // Wait a cycle after reset
         self.tick(&mut None);
 
         // Load sections: .text, .text.init, and .data
@@ -169,15 +174,10 @@ impl Simulator {
             }
         }
 
-        // One more cycle after loading
-        self.tick(&mut None);
-
         Ok(())
     }
 
     fn upload_section(&self, section_name: &str, data: &[u8], start_addr: u32) {
-        let data_words: &[u32] = bytemuck::cast_slice(data);
-
         eprintln!(
             "Loading section {} ({} bytes) starting at address 0x{:08x}",
             section_name,
@@ -185,20 +185,52 @@ impl Simulator {
             start_addr
         );
 
-        for (i, word) in data_words.iter().enumerate() {
+        let mut chunk_iter = data.chunks_exact(4);
+        for (i, chunk) in chunk_iter.by_ref().enumerate() {
+            let word = u32::from_le_bytes(chunk.try_into().unwrap());
             let addr = start_addr + (i as u32 * 4);
             if i < 10 {
                 eprintln!("  [0x{:08x}] = 0x{:08x}", addr, word);
             }
-            // Write word as 4 bytes (little-endian)
-            let bytes = word.to_le_bytes();
-            for (byte_offset, byte) in bytes.iter().enumerate() {
-                self.write_mem_byte(addr + byte_offset as u32, *byte);
+            self.write_mem_word(addr, word);
+            if cfg!(debug_assertions) && i < 4 {
+                debug_assert_eq!(
+                    self.read_mem_word(addr),
+                    word,
+                    "memory verify failed at address 0x{:08x}",
+                    addr
+                );
+            }
+        }
+
+        let remainder = chunk_iter.remainder();
+        if !remainder.is_empty() {
+            let start_offset = (data.len() - remainder.len()) as u32;
+            for (byte_offset, byte) in remainder.iter().enumerate() {
+                let addr = start_addr + start_offset + byte_offset as u32;
+                self.write_mem_byte(addr, *byte);
             }
         }
     }
 
     pub fn run(&self, vcd_path: &Path, max_cycles: usize) -> Result<TestResult> {
+        let mut vcd = { self.model.borrow_mut().open_vcd(vcd_path) };
+
+        // Toggle reset while dumping a couple of baseline cycles so the trace captures
+        // the CPU at the architectural reset vector before we let the pipeline run.
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.reset = 1;
+        }
+        for _ in 0..2 {
+            self.tick(&mut Some(&mut vcd));
+        }
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.reset = 0;
+        }
+        self.tick(&mut Some(&mut vcd));
+
         // Release halt to start execution
         {
             let mut dut = self.model.borrow_mut();
@@ -212,15 +244,11 @@ impl Simulator {
 
         // Tick more cycles to fully clear pipeline after halt
         for _ in 0..10 {
-            self.tick(&mut None);
+            self.tick(&mut Some(&mut vcd));
         }
 
-        let mut vcd = { self.model.borrow_mut().open_vcd(vcd_path) };
-
-        for cycle in 0..max_cycles {
+        for _ in 0..max_cycles {
             self.tick(&mut Some(&mut vcd));
-
-            // let dut = self.model.borrow();
         }
 
         let regs = self.capture_registers()?;
@@ -293,19 +321,56 @@ impl Simulator {
     }
 
     fn write_mem_byte(&self, addr: u32, data: u8) {
-        {
-            let mut dut = self.model.borrow_mut();
-            dut.io_debug_mem_in_valid = 1;
-            dut.io_debug_mem_in_bits_addr = addr;
-            dut.io_debug_mem_in_bits_write = 1;
-            dut.io_debug_mem_in_bits_data = data as u32;
-            dut.io_debug_mem_in_bits_reqWidth = 0; // BYTE
-            dut.io_debug_mem_in_bits_instr = 0;
+        self.drive_mem_request(addr, data as u32, 0, true);
+    }
+
+    fn write_mem_word(&self, addr: u32, data: u32) {
+        self.drive_mem_request(addr, data, 2, true);
+    }
+
+    fn drive_mem_request(&self, addr: u32, data: u32, req_width: u8, write: bool) {
+        loop {
+            let ready = {
+                let mut dut = self.model.borrow_mut();
+                dut.io_debug_mem_in_bits_addr = addr;
+                dut.io_debug_mem_in_bits_write = if write { 1 } else { 0 };
+                dut.io_debug_mem_in_bits_data = data;
+                dut.io_debug_mem_in_bits_reqWidth = req_width;
+                dut.io_debug_mem_in_bits_instr = 0;
+                dut.io_debug_mem_in_valid = 1;
+                dut.io_debug_mem_in_ready != 0
+            };
+            self.tick(&mut None);
+            if ready {
+                break;
+            }
         }
-        self.tick(&mut None);
         {
             let mut dut = self.model.borrow_mut();
             dut.io_debug_mem_in_valid = 0;
+            dut.io_debug_mem_in_bits_write = 0;
+        }
+    }
+
+    #[allow(dead_code)]
+    fn read_mem_word(&self, addr: u32) -> u32 {
+        self.drive_mem_request(addr, 0, 2, false);
+
+        loop {
+            let response = {
+                let dut = self.model.borrow();
+                if dut.io_debug_mem_res_valid != 0 {
+                    Some(dut.io_debug_mem_res_bits)
+                } else {
+                    None
+                }
+            };
+
+            if let Some(val) = response {
+                return val;
+            }
+
+            self.tick(&mut None);
         }
     }
 

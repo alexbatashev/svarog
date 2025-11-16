@@ -4,50 +4,58 @@ import chisel3._
 import chisel3.simulator.scalatest.ChiselSim
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import svarog.memory.MemWidth
 
 class FetchSpec extends AnyFlatSpec with Matchers with ChiselSim {
   behavior of "Fetch"
 
-  val xlen = 32
+  private val xlen = 32
 
-  def simulateICacheHit(dut: Fetch, addr: Int, instruction: Long): Unit = {
-    // These are now INPUTS to the flipped interface
-    dut.io.icache.respValid.poke(true.B)
-    dut.io.icache.data.poke(instruction.U)
-  }
+  private def wordToBytes(word: BigInt, numBytes: Int): Seq[Int] =
+    (0 until numBytes).map(i => ((word >> (8 * i)) & 0xff).toInt)
 
-  def simulateICacheMiss(dut: Fetch): Unit = {
-    dut.io.icache.respValid.poke(false.B)
-  }
+  it should "issue sequential fetches and output pc/instruction pairs" in {
+    val program = Seq(
+      BigInt("11223344", 16),
+      BigInt("88776655", 16),
+      BigInt("cafebabe", 16),
+      BigInt("01020304", 16)
+    )
 
-  it should "increment PC by 4 on normal operation" in {
-    simulate(new Fetch(xlen)) { dut =>
-      // Initialize
-      dut.io.stall.poke(false.B)
-      dut.io.flush.poke(false.B)
-      dut.io.branch_taken.poke(false.B)
+    simulate(new Fetch(xlen, resetVector = 0)) { dut =>
+      dut.io.branch.valid.poke(false.B)
+      dut.io.branch.bits.targetPC.poke(0.U)
+      dut.io.inst_out.ready.poke(true.B)
+      dut.io.mem.req.ready.poke(true.B)
+      dut.io.mem.resp.valid.poke(false.B)
+      dut.io.mem.resp.bits.valid.poke(false.B)
 
-      // Check initial PC
-      dut.io.pc_out.expect(0.U)
-      dut.io.icache.addr.expect(0.U)
+      for ((instruction, idx) <- program.zipWithIndex) {
+        val expectedPC = idx * 4
 
-      // Simulate cache hit with instruction
-      simulateICacheHit(dut, 0x0, 0x12345678L)
+        dut.io.mem.req.valid.expect(true.B)
+        dut.io.mem.req.bits.address.expect(expectedPC.U)
+        dut.io.mem.req.bits.write.expect(false.B)
 
-      dut.clock.step(1)
+        // Wait one cycle before responding, emulating synchronous memory
+        dut.clock.step(1)
 
-      // PC should increment to 4
-      dut.io.pc_out.expect(4.U)
-      dut.io.icache.addr.expect(4.U)
-      dut.io.instruction.expect(0x12345678.U)
-      dut.io.valid.expect(true.B)
+        val bytes = wordToBytes(instruction, xlen / 8)
+        for (i <- bytes.indices) {
+          dut.io.mem.resp.bits.dataRead(i).poke(bytes(i).U(8.W))
+        }
+        dut.io.mem.resp.bits.valid.poke(true.B)
+        dut.io.mem.resp.valid.poke(true.B)
 
-      // Another step
-      simulateICacheHit(dut, 0x4, 0x87654321L)
-      dut.clock.step(1)
+        dut.io.inst_out.valid.expect(true.B)
+        dut.io.inst_out.bits.word.expect(instruction.U)
+        dut.io.inst_out.bits.pc.expect(expectedPC.U)
 
-      dut.io.pc_out.expect(8.U)
-      dut.io.instruction.expect(0x87654321L.U)
+        dut.clock.step(1)
+
+        dut.io.mem.resp.bits.valid.poke(false.B)
+        dut.io.mem.resp.valid.poke(false.B)
+      }
     }
   }
 }

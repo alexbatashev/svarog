@@ -70,7 +70,7 @@ class TCM(
       wordIdx,
       shiftedWriteData,
       shiftedMask,
-      writeEnable,
+      enable,
       io.ports(i).req.bits.write
     )
 
