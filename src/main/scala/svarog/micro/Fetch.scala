@@ -36,11 +36,13 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   when(io.branch.valid) {
     pc_reg := next_pc
     pending_response := false.B
-  }.elsewhen(instruction_accepted && !pending_response) {
+  }.elsewhen(instruction_accepted) {
+    // Advance PC whenever an instruction is accepted, regardless of pending state
     pc_reg := pc_plus_4
   }
 
-  when(!pending_response) {
+  when(instruction_accepted || !pending_response) {
+    // Update output PC when advancing or when not pending
     pc_out_reg := pc_reg
   }
 

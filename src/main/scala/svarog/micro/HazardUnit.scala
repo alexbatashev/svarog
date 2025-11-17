@@ -10,6 +10,7 @@ class HazardUnit extends Module {
     val exec = Flipped(Valid(UInt(5.W)))
     val mem = Flipped(Valid(UInt(5.W)))
     val wb = Flipped(Valid(UInt(5.W)))
+    val watchpointHit = Input(Bool()) // Watchpoint trigger from debug module
     val stall = Output(Bool())
   })
 
@@ -25,8 +26,6 @@ class HazardUnit extends Module {
       io.exec.bits === io.decode.bits.rs2 && io.decode.bits.rs2 =/= 0.U
     when(hazardOnRs1 || hazardOnRs2) {
       mustStall := true.B
-      // Immediately stall the pipeline
-      io.stall := true.B
       stallReg := io.exec.bits
     }
   }
@@ -38,8 +37,6 @@ class HazardUnit extends Module {
       io.mem.bits === io.decode.bits.rs2 && io.decode.bits.rs2 =/= 0.U
     when(hazardOnRs1 || hazardOnRs2) {
       mustStall := true.B
-      // Immediately stall the pipeline
-      io.stall := true.B
       stallReg := io.mem.bits
     }
   }
@@ -49,5 +46,10 @@ class HazardUnit extends Module {
       // Release stall on next cycle since reg file has no bypass
       mustStall := false.B
     }
+  }
+
+  // Watchpoint handling: stall on next cycle when watchpoint is hit
+  when(io.watchpointHit) {
+    mustStall := true.B
   }
 }

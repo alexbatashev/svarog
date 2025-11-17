@@ -53,9 +53,9 @@ fn run_test_impl(test_path: &Path) -> Result<()> {
     let simulator = Simulator::new(&build_dir)
         .map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
 
-    // Load the ELF binary
+    // Load the ELF binary with watchpoint on 'tohost' symbol
     simulator
-        .load_binary(test_path)
+        .load_binary(test_path, Some("tohost"))
         .context("Failed to load binary")?;
 
     // Run Verilator simulation

@@ -19,6 +19,7 @@ class CpuIO(xlen: Int) extends Bundle {
   val datamem = new MemoryIO(xlen, xlen)
   val debug = Flipped(new HartDebugIO(xlen))
   val debugRegData = Valid(UInt(xlen.W))
+  val halt = Output(Bool()) // Expose halt status
 }
 
 class Cpu(
@@ -36,6 +37,7 @@ class Cpu(
   // Connect debug interface
   debug.io.hart <> io.debug
   io.debugRegData <> debug.io.regData
+  io.halt := halt
 
   // Memories
   val regFile = Module(new RegFile(config.xlen))
@@ -97,13 +99,13 @@ class Cpu(
   dontTouch(regFile.extraWriteData)
 
   // IF -> ID
-  val fetchDecodeQueue = Module(new Queue(new InstWord(config.xlen), 1))
+  val fetchDecodeQueue = Module(new Queue(new InstWord(config.xlen), 1, hasFlush = true))
 
   fetchDecodeQueue.io.enq <> fetch.io.inst_out
   decode.io.inst <> fetchDecodeQueue.io.deq
 
   // ID -> EX
-  val decodeExecQueue = Module(new Queue(new MicroOp(config.xlen), 1))
+  val decodeExecQueue = Module(new Queue(new MicroOp(config.xlen), 1, hasFlush = true))
   decodeExecQueue.io.enq <> decode.io.decoded
   execute.io.uop <> decodeExecQueue.io.deq
 
@@ -119,17 +121,25 @@ class Cpu(
 
   // Debug connections
   debug.io.wbPC <> writeback.io.debugPC
+  debug.io.memStore <> writeback.io.debugStore
 
   // Backprop pipes
   val execFetchPipe = Module(new Pipe(new BranchFeedback(config.xlen)))
   fetch.io.branch <> execFetchPipe.io.deq
   execFetchPipe.io.enq <> execute.io.branch
 
+  // Flush pipeline queues on branch mispredict
+  val branchMispredict = execute.io.branch.valid
+  fetchDecodeQueue.flush := branchMispredict
+  decodeExecQueue.flush := branchMispredict
+
   // Hazard signals
-  hazardUnit.io.decode := decode.io.hazard
+  hazardUnit.io.decode.valid := decode.io.hazard.valid && decodeExecQueue.io.enq.ready
+  hazardUnit.io.decode.bits := decode.io.hazard.bits
   hazardUnit.io.exec := execute.io.hazard
   hazardUnit.io.mem := memory.io.hazard
   hazardUnit.io.wb := writeback.io.hazard
+  hazardUnit.io.watchpointHit := debug.io.watchpointTriggered
   execute.io.stall := hazardUnit.io.stall || halt
   writeback.io.halt := halt
 }

@@ -11,6 +11,8 @@ class MemResult(xlen: Int) extends Bundle {
   val regWrite = Output(Bool())
   val regData = Output(UInt(xlen.W))
   val pc = Output(UInt(xlen.W))
+  val storeAddr = Output(UInt(xlen.W)) // Store address for watchpoint
+  val isStore = Output(Bool()) // Flag indicating if this was a store
 }
 
 class Memory(xlen: Int) extends Module {
@@ -57,12 +59,16 @@ class Memory(xlen: Int) extends Module {
   val wbResult = Wire(UInt(xlen.W))
   val resValid = WireDefault(false.B)
   val wbPC = Wire(UInt(xlen.W))
+  val wbStoreAddr = Wire(UInt(xlen.W))
+  val wbIsStore = Wire(Bool())
 
   wbOpType := io.ex.bits.opType
   wbRd := io.ex.bits.rd
   wbRegWrite := io.ex.bits.regWrite
   wbResult := io.ex.bits.intResult
   wbPC := io.ex.bits.pc
+  wbStoreAddr := 0.U
+  wbIsStore := false.B
 
   def extractData(
       bytes: Vec[UInt],
@@ -107,6 +113,8 @@ class Memory(xlen: Int) extends Module {
     wbRd := pendingRd
     wbPC := pendingPC
     wbRegWrite := pendingRegWrite
+    wbStoreAddr := 0.U  // Not a store
+    wbIsStore := false.B
     when(mem.resp.valid && mem.resp.bits.valid) {
       val loadedBytes = mem.resp.bits.dataRead
       wbResult := extractData(
@@ -145,6 +153,9 @@ class Memory(xlen: Int) extends Module {
         mem.req.bits.write := true.B
         wbRegWrite := false.B
         wbResult := 0.U
+        // Pass store address to Writeback for watchpoint detection
+        wbStoreAddr := io.ex.bits.memAddress
+        wbIsStore := true.B
       }
     }
   }
@@ -155,4 +166,6 @@ class Memory(xlen: Int) extends Module {
   io.res.bits.regData := wbResult
   io.res.valid := resValid
   io.res.bits.pc := wbPC
+  io.res.bits.storeAddr := wbStoreAddr
+  io.res.bits.isStore := wbIsStore
 }

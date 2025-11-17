@@ -45,9 +45,10 @@ class Execute(xlen: Integer) extends Module {
 
   val alu = Module(new ALU(xlen))
 
-  // FIXME always ready for a single-cycle EX
+  // Single-cycle execute: always propagate valid when we have a micro-op
+  // Stall prevents accepting NEW instructions, but current instruction continues
+  io.res.valid := io.uop.valid
   io.uop.ready := io.res.ready && !io.stall
-  io.res.valid := true.B
 
   io.hazard.valid := io.uop.valid && io.uop.bits.regWrite && !(io.uop.bits.rd === 0.U)
   io.hazard.bits := io.uop.bits.rd

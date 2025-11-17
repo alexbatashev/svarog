@@ -42,6 +42,8 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
     io.harts(i).halt.bits := false.B
     io.harts(i).breakpoint.valid := false.B
     io.harts(i).breakpoint.bits := DontCare
+    io.harts(i).watchpoint.valid := false.B
+    io.harts(i).watchpoint.bits := DontCare
     io.harts(i).register.valid := false.B
     io.harts(i).register.bits := DontCare
 

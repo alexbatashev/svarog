@@ -119,10 +119,32 @@ impl Simulator {
         })
     }
 
-    pub fn load_binary<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
+    pub fn load_binary<P: AsRef<Path>>(&self, path: P, watchpoint_symbol: Option<&str>) -> anyhow::Result<()> {
         let file_data = std::fs::read(path)?;
         let slice = file_data.as_slice();
         let file = ElfBytes::<AnyEndian>::minimal_parse(slice)?;
+
+        // Resolve watchpoint symbol address if provided
+        let watchpoint_addr = if let Some(symbol_name) = watchpoint_symbol {
+            if let Some(symtab) = file.symbol_table()? {
+                let mut found_addr = None;
+                for symbol in symtab.0.iter() {
+                    if let Ok(name) = symtab.1.get(symbol.st_name as usize) {
+                        if name == symbol_name {
+                            found_addr = Some(symbol.st_value as u32);
+                            eprintln!("Found symbol '{}' at address 0x{:08x}", symbol_name, symbol.st_value);
+                            break;
+                        }
+                    }
+                }
+                found_addr
+            } else {
+                eprintln!("Warning: No symbol table found in ELF file");
+                None
+            }
+        } else {
+            None
+        };
 
         // IMPORTANT: Reset FIRST before loading memory!
         // Memory uses RegInit, so reset clears it to all zeros.
@@ -144,6 +166,13 @@ impl Simulator {
             dut.io_debug_hart_in_id_bits = 0; // Hart 0
             dut.io_debug_hart_in_bits_halt_valid = 1;
             dut.io_debug_hart_in_bits_halt_bits = 1;
+
+            // Set watchpoint if address was resolved
+            if let Some(addr) = watchpoint_addr {
+                dut.io_debug_hart_in_bits_watchpoint_valid = 1;
+                dut.io_debug_hart_in_bits_watchpoint_bits_addr = addr;
+                eprintln!("Setting watchpoint on address: 0x{:08x}", addr);
+            }
 
             // Evaluate to apply reset before first clock edge
             dut.eval();
@@ -247,8 +276,23 @@ impl Simulator {
             self.tick(&mut Some(&mut vcd));
         }
 
-        for _ in 0..max_cycles {
+        for cycle in 0..max_cycles {
             self.tick(&mut Some(&mut vcd));
+
+            // Check if CPU has halted (watchpoint hit)
+            let halted = {
+                let dut = self.model.borrow();
+                dut.io_debug_halt != 0
+            };
+
+            if halted {
+                eprintln!("CPU halted at cycle {}, watchpoint triggered", cycle);
+                // Run a few more cycles to let the pipeline settle
+                for _ in 0..5 {
+                    self.tick(&mut Some(&mut vcd));
+                }
+                break;
+            }
         }
 
         let regs = self.capture_registers()?;

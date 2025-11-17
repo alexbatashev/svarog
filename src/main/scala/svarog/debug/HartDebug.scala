@@ -9,6 +9,10 @@ class Breakpoint(xlen: Int) extends Bundle {
   val pc = UInt(xlen.W)
 }
 
+class Watchpoint(xlen: Int) extends Bundle {
+  val addr = UInt(xlen.W)
+}
+
 class RegisterDebugIO(xlen: Int) extends Bundle {
   val reg = UInt(5.W)
   val write = Bool()
@@ -18,6 +22,7 @@ class RegisterDebugIO(xlen: Int) extends Bundle {
 class HartDebugIO(xlen: Int) extends Bundle {
   val halt = Valid(Bool())
   val breakpoint = Valid(new Breakpoint(xlen))
+  val watchpoint = Valid(new Watchpoint(xlen))
   val register = Valid(new RegisterDebugIO(xlen))
 }
 
@@ -26,8 +31,10 @@ class HartDebugModule(xlen: Int) extends Module {
     val hart = Flipped(new HartDebugIO(xlen: Int))
 
     val halt = Output(Bool())
+    val watchpointTriggered = Output(Bool()) // Signal to HazardUnit
 
     val wbPC = Flipped(Valid(UInt(xlen.W)))
+    val memStore = Flipped(Valid(UInt(xlen.W))) // Memory store address
 
     val regData = Valid(UInt(xlen.W))
     val regRead = Flipped(new RegFileReadIO(xlen))
@@ -77,6 +84,24 @@ class HartDebugModule(xlen: Int) extends Module {
   when(io.wbPC.valid) {
     when(io.wbPC.bits === breakpointPC) {
       haltState := true.B
+    }
+  }
+
+  // Watchpoint support
+  val watchpointAddr = RegInit(0.U(xlen.W))
+  val watchpointEnabled = RegInit(false.B)
+
+  when(io.hart.watchpoint.valid) {
+    watchpointAddr := io.hart.watchpoint.bits.addr
+    watchpointEnabled := true.B
+  }
+
+  // Trigger watchpoint on store to watched address
+  // Output signal to HazardUnit which will stall on next cycle
+  io.watchpointTriggered := false.B
+  when(io.memStore.valid && watchpointEnabled) {
+    when(io.memStore.bits === watchpointAddr) {
+      io.watchpointTriggered := true.B
     }
   }
 }

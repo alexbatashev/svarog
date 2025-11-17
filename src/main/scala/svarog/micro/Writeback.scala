@@ -11,6 +11,7 @@ class Writeback(xlen: Int) extends Module {
     val regFile = Flipped(new RegFileWriteIO(xlen))
     val hazard = Valid(UInt(5.W))
     val debugPC = Valid(UInt(xlen.W))
+    val debugStore = Valid(UInt(xlen.W)) // For watchpoint support
     val halt = Input(Bool())
   })
 
@@ -22,6 +23,10 @@ class Writeback(xlen: Int) extends Module {
 
   io.debugPC.valid := io.in.valid
   io.debugPC.bits := io.in.bits.pc
+
+  // Watchpoint support: signal store operations
+  io.debugStore.valid := io.in.valid && io.in.bits.isStore
+  io.debugStore.bits := io.in.bits.storeAddr
 
   io.regFile.writeEn := false.B
   io.regFile.writeAddr := 0.U
