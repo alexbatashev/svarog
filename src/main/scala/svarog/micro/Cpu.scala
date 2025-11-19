@@ -147,21 +147,8 @@ class Cpu(
   decodeExecQueue.flush := branchMispredict
 
   // Hazard signals
-  // IMPORTANT: Don't condition on queue ready - we need to detect hazards even when queue is full
-  val hazardDecodeInfo = Wire(new SimpleDecodeHazardIO)
-  hazardDecodeInfo.rs1 := 0.U
-  hazardDecodeInfo.rs2 := 0.U
-  when(decodeExecQueue.io.deq.valid) {
-    hazardDecodeInfo.rs1 := decodeExecQueue.io.deq.bits.rs1
-    hazardDecodeInfo.rs2 := Mux(
-      decodeExecQueue.io.deq.bits.hasImm,
-      0.U,
-      decodeExecQueue.io.deq.bits.rs2
-    )
-  }
-
-  hazardUnit.io.decode.valid := decodeExecQueue.io.deq.valid
-  hazardUnit.io.decode.bits := hazardDecodeInfo
+  hazardUnit.io.decode.valid := decode.io.hazard.valid
+  hazardUnit.io.decode.bits := decode.io.hazard.bits
   hazardUnit.io.exec := execute.io.hazard
   hazardUnit.io.mem := memory.io.hazard
   hazardUnit.io.wb := writeback.io.hazard

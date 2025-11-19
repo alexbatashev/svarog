@@ -1,4 +1,10 @@
-use std::{cell::RefCell, convert::TryInto, path::Path, process::Command};
+use std::{
+    cell::RefCell,
+    convert::TryInto,
+    io::{BufRead, BufReader},
+    path::Path,
+    process::{Command, Stdio},
+};
 
 use anyhow::{Context, Result};
 use elf::{ElfBytes, endian::AnyEndian};
@@ -474,47 +480,62 @@ impl Simulator {
 
 /// Run test in Spike and return register state
 pub fn run_spike_test(elf_path: &Path, watchpoint_addr: Option<u32>) -> Result<TestResult> {
-    // Run spike with register dumping
-    let output = Command::new("spike")
+    let mut child = Command::new("spike")
         .args(&["--isa=RV32I", "-l", "--log-commits"])
         .arg(elf_path)
-        .output()
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
         .context("Failed to run spike")?;
 
-    // Parse spike output to extract register state
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("Failed to capture spike stderr"))?;
+    let reader = BufReader::new(stderr);
+    let mut regs = RegisterFile::new();
 
-    let regs = parse_spike_output(&stdout, &stderr, watchpoint_addr)?;
+    let mut lines_seen = 0usize;
+    let mut hit_watchpoint = false;
+    for line in reader.lines() {
+        let line = line?;
+        lines_seen += 1;
+        if let Some(reg_write) = parse_spike_reg_write(&line) {
+            regs.set(reg_write.0, reg_write.1);
+        }
+
+        if let Some(addr) = parse_spike_mem_write(&line) {
+            if Some(addr) == watchpoint_addr {
+                // Test reached tohost; stop spike execution.
+                let _ = child.kill();
+                hit_watchpoint = true;
+                break;
+            }
+        }
+
+        if lines_seen > 1_000_000 {
+            let _ = child.kill();
+            anyhow::bail!(
+                "Spike did not reach tohost (addr=0x{:08x}) within log limit",
+                watchpoint_addr.unwrap_or(0)
+            );
+        }
+    }
+
+    // Wait for spike to exit (ignore errors)
+    let _ = child.wait();
+
+    if watchpoint_addr.is_some() && !hit_watchpoint {
+        anyhow::bail!(
+            "Spike terminated without hitting tohost (addr=0x{:08x})",
+            watchpoint_addr.unwrap()
+        );
+    }
 
     Ok(TestResult {
         regs,
         exit_code: None,
     })
-}
-
-/// Parse spike output to extract final register state
-fn parse_spike_output(
-    stdout: &str,
-    stderr: &str,
-    watchpoint_addr: Option<u32>,
-) -> Result<RegisterFile> {
-    let mut regs = RegisterFile::new();
-
-    for line in stdout.lines().chain(stderr.lines()) {
-        // Look for lines with register writes
-        if let Some(reg_write) = parse_spike_reg_write(line) {
-            regs.set(reg_write.0, reg_write.1);
-        }
-
-        if let Some(addr) = parse_spike_mem_write(line) {
-            if Some(addr) == watchpoint_addr {
-                return Ok(regs);
-            }
-        }
-    }
-
-    Ok(regs)
 }
 
 /// Parse a single spike register write line

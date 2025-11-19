@@ -50,8 +50,15 @@ class Memory(xlen: Int) extends Module {
   val pendingAddress = RegInit(0.U(xlen.W))
 
   io.ex.ready := !pendingLoad
-  io.hazard.valid := io.ex.valid && !pendingLoad
-  io.hazard.bits := io.ex.bits.rd
+  io.hazard.valid := false.B
+  io.hazard.bits := 0.U
+  when(pendingLoad) {
+    io.hazard.valid := pendingRd =/= 0.U
+    io.hazard.bits := pendingRd
+  }.elsewhen(io.ex.valid && io.ex.bits.regWrite && io.ex.bits.rd =/= 0.U) {
+    io.hazard.valid := true.B
+    io.hazard.bits := io.ex.bits.rd
+  }
 
   val wbOpType = Wire(OpType())
   val wbRd = Wire(UInt(5.W))
@@ -122,6 +129,9 @@ class Memory(xlen: Int) extends Module {
         pendingWidth,
         pendingUnsigned,
         pendingByteOffset
+      )
+      printf(
+        p"[Memory] LOAD complete pc=0x${Hexadecimal(pendingPC)}, addr=0x${Hexadecimal(pendingAddress)}, rd=x${pendingRd}, data=0x${Hexadecimal(wbResult)}\n"
       )
       pendingLoad := false.B
       resValid := true.B

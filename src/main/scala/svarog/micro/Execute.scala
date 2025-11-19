@@ -139,6 +139,9 @@ class Execute(xlen: Integer) extends Module {
 
         io.branch.valid := taken
         io.branch.bits.targetPC := io.uop.bits.pc + io.uop.bits.imm
+        printf(
+          p"[Execute] BRANCH pc=0x${Hexadecimal(io.uop.bits.pc)} rs1=0x${Hexadecimal(rs1)} rs2=0x${Hexadecimal(rs2)} func=${Binary(io.uop.bits.branchFunc)} taken=${taken}\n"
+        )
       }
 
       is(OpType.JAL) {

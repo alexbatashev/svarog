@@ -16,6 +16,7 @@ class HazardUnit extends Module {
 
   val mustStall = RegInit(false.B)
   val stallReg = RegInit(0.U)
+  val releasePending = RegInit(false.B)
 
   io.stall := mustStall
 
@@ -31,6 +32,7 @@ class HazardUnit extends Module {
     when(hazardOnRs1 || hazardOnRs2) {
       mustStall := true.B
       stallReg := io.exec.bits
+      releasePending := false.B
     }
   }
 
@@ -42,18 +44,22 @@ class HazardUnit extends Module {
     when(hazardOnRs1 || hazardOnRs2) {
       mustStall := true.B
       stallReg := io.mem.bits
+      releasePending := false.B
     }
   }
 
-  when(mustStall && io.wb.valid && io.wb.bits =/= 0.U) {
-    when(io.wb.bits === stallReg) {
-      // Release stall on next cycle since reg file has no bypass
-      mustStall := false.B
-    }
+  when(mustStall && io.wb.valid && io.wb.bits =/= 0.U && io.wb.bits === stallReg) {
+    releasePending := true.B
+  }
+
+  when(releasePending) {
+    mustStall := false.B
+    releasePending := false.B
   }
 
   // Watchpoint handling: stall on next cycle when watchpoint is hit
   when(io.watchpointHit) {
     mustStall := true.B
+    releasePending := false.B
   }
 }
