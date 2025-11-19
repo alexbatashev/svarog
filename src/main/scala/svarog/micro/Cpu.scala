@@ -9,6 +9,7 @@ import svarog.memory.{MemoryRequest, MemoryIO}
 import svarog.decoder.SimpleDecoder
 import svarog.decoder.InstWord
 import svarog.decoder.MicroOp
+import svarog.decoder.SimpleDecodeHazardIO
 import svarog.debug.HartDebugModule
 import svarog.debug.HartDebugIO
 import svarog.bits.RegFileReadIO
@@ -75,18 +76,20 @@ class Cpu(
   debug.io.regRead.readData2 := regFile.readIo.readData2
 
   // Write side
+  // Debug writes take priority when debug module is actively writing
+  // Otherwise, allow Writeback writes even when halted (to drain pipeline)
   regFile.writeIo.writeEn := Mux(
-    halt,
     debug.io.regWrite.writeEn,
+    true.B,
     writeback.io.regFile.writeEn
   )
   regFile.writeIo.writeAddr := Mux(
-    halt,
+    debug.io.regWrite.writeEn,
     debug.io.regWrite.writeAddr,
     writeback.io.regFile.writeAddr
   )
   regFile.writeIo.writeData := Mux(
-    halt,
+    debug.io.regWrite.writeEn,
     debug.io.regWrite.writeData,
     writeback.io.regFile.writeData
   )
@@ -99,6 +102,7 @@ class Cpu(
   dontTouch(regFile.extraWriteData)
 
   // IF -> ID
+  // Increased depth from 1 to 4 to handle pipelining and stalls without losing instructions
   val fetchDecodeQueue = Module(new Queue(new InstWord(config.xlen), 1, hasFlush = true))
 
   fetchDecodeQueue.io.enq <> fetch.io.inst_out
@@ -110,18 +114,27 @@ class Cpu(
   execute.io.uop <> decodeExecQueue.io.deq
 
   // EX -> MEM
-  val execMemQueue = Module(new Queue(new ExecuteResult(config.xlen), 1))
+  val execMemQueue = Module(new Queue(new ExecuteResult(config.xlen), 1, hasFlush = true))
   execMemQueue.io.enq <> execute.io.res
   memory.io.ex <> execMemQueue.io.deq
 
   // MEM -> WB
-  val memWbQueue = Module(new Queue(new MemResult(config.xlen), 1))
+  val memWbQueue = Module(new Queue(new MemResult(config.xlen), 1, hasFlush = true))
   memWbQueue.io.enq <> memory.io.res
   writeback.io.in <> memWbQueue.io.deq
+
+  // Flush all pipeline queues when debug sets PC
+  val debugFlush = debug.io.setPCOut.valid
+  fetchDecodeQueue.io.flush.get := debugFlush
+  decodeExecQueue.io.flush.get := debugFlush
+  execMemQueue.io.flush.get := debugFlush
+  memWbQueue.io.flush.get := debugFlush
 
   // Debug connections
   debug.io.wbPC <> writeback.io.debugPC
   debug.io.memStore <> writeback.io.debugStore
+  fetch.io.debugSetPC <> debug.io.setPCOut
+  fetch.io.halt := halt
 
   // Backprop pipes
   val execFetchPipe = Module(new Pipe(new BranchFeedback(config.xlen)))
@@ -134,8 +147,21 @@ class Cpu(
   decodeExecQueue.flush := branchMispredict
 
   // Hazard signals
-  hazardUnit.io.decode.valid := decode.io.hazard.valid && decodeExecQueue.io.enq.ready
-  hazardUnit.io.decode.bits := decode.io.hazard.bits
+  // IMPORTANT: Don't condition on queue ready - we need to detect hazards even when queue is full
+  val hazardDecodeInfo = Wire(new SimpleDecodeHazardIO)
+  hazardDecodeInfo.rs1 := 0.U
+  hazardDecodeInfo.rs2 := 0.U
+  when(decodeExecQueue.io.deq.valid) {
+    hazardDecodeInfo.rs1 := decodeExecQueue.io.deq.bits.rs1
+    hazardDecodeInfo.rs2 := Mux(
+      decodeExecQueue.io.deq.bits.hasImm,
+      0.U,
+      decodeExecQueue.io.deq.bits.rs2
+    )
+  }
+
+  hazardUnit.io.decode.valid := decodeExecQueue.io.deq.valid
+  hazardUnit.io.decode.bits := hazardDecodeInfo
   hazardUnit.io.exec := execute.io.hazard
   hazardUnit.io.mem := memory.io.hazard
   hazardUnit.io.wb := writeback.io.hazard

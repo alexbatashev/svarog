@@ -76,7 +76,7 @@ class VerilatorTop(
         val mem_in = Flipped(Decoupled(new svarog.debug.ChipMemoryDebugIO(config.xlen)))
         val mem_res = Decoupled(UInt(config.xlen.W))
         val reg_res = Decoupled(UInt(config.xlen.W))
-        val halt = Output(Bool())
+        val halted = Output(Bool())
       })
     } else None
   })
@@ -93,6 +93,6 @@ class VerilatorTop(
     soc.io.debug.mem_in <> io.debug.get.mem_in
     soc.io.debug.mem_res <> io.debug.get.mem_res
     soc.io.debug.reg_res <> io.debug.get.reg_res
-    io.debug.get.halt <> soc.io.debug.halt
+    io.debug.get.halted <> soc.io.debug.halted
   }
 }

@@ -45,10 +45,16 @@ class Execute(xlen: Integer) extends Module {
 
   val alu = Module(new ALU(xlen))
 
-  // Single-cycle execute: always propagate valid when we have a micro-op
-  // Stall prevents accepting NEW instructions, but current instruction continues
-  io.res.valid := io.uop.valid
-  io.uop.ready := io.res.ready && !io.stall
+  // Single-cycle execute: current instruction always completes
+  // Output is valid only when we have an instruction AND (downstream is ready AND not stalled)
+  // This ensures we don't output the same instruction multiple times
+  val canDequeue = io.res.ready && !io.stall
+  io.uop.ready := canDequeue
+  io.res.valid := io.uop.valid && canDequeue
+
+  when(io.uop.valid) {
+    printf(p"[Execute] PC=0x${Hexadecimal(io.uop.bits.pc)}, rd=x${io.uop.bits.rd}, stall=${io.stall}, ready=${io.res.ready}, uop.ready=${io.uop.ready}\n")
+  }
 
   io.hazard.valid := io.uop.valid && io.uop.bits.regWrite && !(io.uop.bits.rd === 0.U)
   io.hazard.bits := io.uop.bits.rd
@@ -85,7 +91,7 @@ class Execute(xlen: Integer) extends Module {
     io.regFile.readData2
   )
 
-  when(io.uop.valid && io.res.ready) {
+  when(io.uop.valid) {
     switch(io.uop.bits.opType) {
       is(OpType.ALU) {
         io.res.bits.intResult := alu.io.output

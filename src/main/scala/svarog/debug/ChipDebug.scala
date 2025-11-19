@@ -27,30 +27,38 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
 
     val harts = Vec(numHarts, new HartDebugIO(xlen))
     val cpuRegData = Flipped(Valid(UInt(xlen.W))) // Register data from CPU
+    val cpuHalted = Input(Vec(numHarts, Bool())) // Status: is CPU currently halted?
 
     val imem_iface = new MemoryIO(xlen, xlen)
     val dmem_iface = new MemoryIO(xlen, xlen)
 
     val mem_res = Decoupled(UInt(xlen.W))
     val reg_res = Decoupled(UInt(xlen.W))
+    val halted = Output(Vec(numHarts, Bool())) // Status output: which harts are halted
   })
 
   // Route hart commands to the appropriate hart
   for (i <- 0 until numHarts) {
-    // Default values
-    io.harts(i).halt.valid := false.B
-    io.harts(i).halt.bits := false.B
-    io.harts(i).breakpoint.valid := false.B
-    io.harts(i).breakpoint.bits := DontCare
-    io.harts(i).watchpoint.valid := false.B
-    io.harts(i).watchpoint.bits := DontCare
-    io.harts(i).register.valid := false.B
-    io.harts(i).register.bits := DontCare
+    // Default: no commands
+    val hartSelected = io.hart_in.id.valid && io.hart_in.id.bits === i.U
 
-    // Override with input if targeting this hart
-    when(io.hart_in.id.valid && io.hart_in.id.bits === i.U) {
-      io.harts(i) := io.hart_in.bits
-    }
+    io.harts(i).halt.valid := Mux(hartSelected, io.hart_in.bits.halt.valid, false.B)
+    io.harts(i).halt.bits := Mux(hartSelected, io.hart_in.bits.halt.bits, false.B)
+
+    io.harts(i).breakpoint.valid := Mux(hartSelected, io.hart_in.bits.breakpoint.valid, false.B)
+    io.harts(i).breakpoint.bits := Mux(hartSelected, io.hart_in.bits.breakpoint.bits, DontCare)
+
+    io.harts(i).watchpoint.valid := Mux(hartSelected, io.hart_in.bits.watchpoint.valid, false.B)
+    io.harts(i).watchpoint.bits := Mux(hartSelected, io.hart_in.bits.watchpoint.bits, DontCare)
+
+    io.harts(i).register.valid := Mux(hartSelected, io.hart_in.bits.register.valid, false.B)
+    io.harts(i).register.bits := Mux(hartSelected, io.hart_in.bits.register.bits, DontCare)
+
+    io.harts(i).setPC.valid := Mux(hartSelected, io.hart_in.bits.setPC.valid, false.B)
+    io.harts(i).setPC.bits := Mux(hartSelected, io.hart_in.bits.setPC.bits, DontCare)
+
+    // Pass through halt status
+    io.halted(i) := io.cpuHalted(i)
   }
 
   // Connect register results from CPU

@@ -15,8 +15,9 @@ class Writeback(xlen: Int) extends Module {
     val halt = Input(Bool())
   })
 
-  // Always ready to accept new input
-  io.in.ready := !io.halt
+  // Always ready - don't backpressure based on halt
+  // Halt is handled by not writing registers (below)
+  io.in.ready := true.B
 
   io.hazard.valid := io.in.valid
   io.hazard.bits := io.in.bits.rd
@@ -36,5 +37,7 @@ class Writeback(xlen: Int) extends Module {
     io.regFile.writeEn := io.in.bits.regWrite
     io.regFile.writeAddr := io.in.bits.rd
     io.regFile.writeData := io.in.bits.regData
+
+    printf(p"[WB] PC=0x${Hexadecimal(io.in.bits.pc)}, rd=x${io.in.bits.rd}, regWrite=${io.in.bits.regWrite}, data=0x${Hexadecimal(io.in.bits.regData)}\n")
   }
 }

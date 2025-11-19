@@ -54,7 +54,7 @@ fn run_test_impl(test_path: &Path) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
 
     // Load the ELF binary with watchpoint on 'tohost' symbol
-    simulator
+    let tohost_addr = simulator
         .load_binary(test_path, Some("tohost"))
         .context("Failed to load binary")?;
 
@@ -85,7 +85,8 @@ fn run_test_impl(test_path: &Path) -> Result<()> {
     }
 
     // Run Spike and compare architectural state
-    let spike_result = run_spike_test(test_path).context("Spike simulation failed")?;
+    let spike_result =
+        run_spike_test(test_path, tohost_addr).context("Spike simulation failed")?;
 
     compare_results(&verilator_result, &spike_result)?;
     Ok(())

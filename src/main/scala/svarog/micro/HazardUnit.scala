@@ -19,6 +19,10 @@ class HazardUnit extends Module {
 
   io.stall := mustStall
 
+  when(mustStall) {
+    printf(p"[HazardUnit] STALL: waiting for x${stallReg}\n")
+  }
+
   when(io.exec.valid && io.decode.valid && io.exec.bits =/= 0.U) {
     val hazardOnRs1 =
       io.exec.bits === io.decode.bits.rs1 && io.decode.bits.rs1 =/= 0.U

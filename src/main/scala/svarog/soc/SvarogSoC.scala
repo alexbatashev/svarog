@@ -20,7 +20,7 @@ class SvarogSoC(
       val mem_in = Flipped(Decoupled(new ChipMemoryDebugIO(config.xlen)))
       val mem_res = Decoupled(UInt(config.xlen.W))
       val reg_res = Decoupled(UInt(config.xlen.W))
-      val halt = Output(Bool()) // CPU halt status
+      val halted = Output(Bool()) // CPU halt status
     }
   })
 
@@ -54,11 +54,12 @@ class SvarogSoC(
     debug.get.io.imem_iface <> mem.io.ports(3)
     debug.get.io.harts(0) <> cpu.io.debug
     debug.get.io.cpuRegData <> cpu.io.debugRegData
+    debug.get.io.cpuHalted(0) := cpu.io.halt // CPU halt status to debug module
     debug.get.io.hart_in <> io.debug.hart_in
     debug.get.io.mem_in <> io.debug.mem_in
     io.debug.mem_res <> debug.get.io.mem_res
     io.debug.reg_res <> debug.get.io.reg_res
-    io.debug.halt <> cpu.io.halt
+    io.debug.halted := debug.get.io.halted(0) // Debug module reports halt status
   } else {
     // Default debug inputs (no external debugger connected)
     cpu.io.debug.halt.valid := false.B
@@ -67,7 +68,7 @@ class SvarogSoC(
     cpu.io.debug.breakpoint.bits := DontCare
     cpu.io.debug.register.valid := false.B
     cpu.io.debug.register.bits := DontCare
-    io.debug.halt := cpu.io.halt
+    io.debug.halted := cpu.io.halt // Direct connection when no debug module
   }
 
 }

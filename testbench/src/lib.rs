@@ -1,10 +1,4 @@
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    convert::TryInto,
-    path::Path,
-    process::Command,
-};
+use std::{cell::RefCell, convert::TryInto, path::Path, process::Command};
 
 use anyhow::{Context, Result};
 use elf::{ElfBytes, endian::AnyEndian};
@@ -70,6 +64,10 @@ impl Simulator {
         dut.io_debug_hart_in_bits_halt_bits = 0;
         dut.io_debug_hart_in_bits_breakpoint_valid = 0;
         dut.io_debug_hart_in_bits_breakpoint_bits_pc = 0;
+        dut.io_debug_hart_in_bits_watchpoint_valid = 0;
+        dut.io_debug_hart_in_bits_watchpoint_bits_addr = 0;
+        dut.io_debug_hart_in_bits_setPC_valid = 0;
+        dut.io_debug_hart_in_bits_setPC_bits_pc = 0;
         dut.io_debug_hart_in_bits_register_valid = 0;
         dut.io_debug_hart_in_bits_register_bits_reg = 0;
         dut.io_debug_hart_in_bits_register_bits_write = 0;
@@ -83,6 +81,7 @@ impl Simulator {
         dut.io_debug_mem_in_bits_instr = 0;
 
         dut.io_debug_mem_res_ready = 1; // Always ready to receive results
+        dut.io_debug_reg_res_ready = 0; // Not ready until explicitly set
     }
 
     pub fn new(out_dir: &str) -> Result<Self, Whatever> {
@@ -119,7 +118,11 @@ impl Simulator {
         })
     }
 
-    pub fn load_binary<P: AsRef<Path>>(&self, path: P, watchpoint_symbol: Option<&str>) -> anyhow::Result<()> {
+    pub fn load_binary<P: AsRef<Path>>(
+        &self,
+        path: P,
+        watchpoint_symbol: Option<&str>,
+    ) -> anyhow::Result<Option<u32>> {
         let file_data = std::fs::read(path)?;
         let slice = file_data.as_slice();
         let file = ElfBytes::<AnyEndian>::minimal_parse(slice)?;
@@ -132,7 +135,10 @@ impl Simulator {
                     if let Ok(name) = symtab.1.get(symbol.st_name as usize) {
                         if name == symbol_name {
                             found_addr = Some(symbol.st_value as u32);
-                            eprintln!("Found symbol '{}' at address 0x{:08x}", symbol_name, symbol.st_value);
+                            eprintln!(
+                                "Found symbol '{}' at address 0x{:08x}",
+                                symbol_name, symbol.st_value
+                            );
                             break;
                         }
                     }
@@ -203,7 +209,7 @@ impl Simulator {
             }
         }
 
-        Ok(())
+        Ok(watchpoint_addr)
     }
 
     fn upload_section(&self, section_name: &str, data: &[u8], start_addr: u32) {
@@ -260,6 +266,22 @@ impl Simulator {
         }
         self.tick(&mut Some(&mut vcd));
 
+        // Set PC to program entry point and flush pipeline before releasing halt
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.io_debug_hart_in_id_valid = 1;
+            dut.io_debug_hart_in_id_bits = 0; // Hart 0
+            dut.io_debug_hart_in_bits_setPC_valid = 1;
+            dut.io_debug_hart_in_bits_setPC_bits_pc = 0x80000000;
+            eprintln!("Setting PC to 0x80000000 and flushing pipeline");
+        }
+        self.tick(&mut Some(&mut vcd));
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.io_debug_hart_in_bits_setPC_valid = 0;
+        }
+        self.tick(&mut Some(&mut vcd));
+
         // Release halt to start execution
         {
             let mut dut = self.model.borrow_mut();
@@ -270,10 +292,27 @@ impl Simulator {
             dut.io_debug_hart_in_bits_halt_bits = 0; // Release halt
             eprintln!("CPU halt released, starting execution");
         }
+        self.tick(&mut Some(&mut vcd));
+
+        // Clear id.valid and halt.valid to enter "don't care" state
+        // This allows internal events (watchpoints, breakpoints) to assert halt
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.io_debug_hart_in_id_valid = 0;
+            dut.io_debug_hart_in_bits_halt_valid = 0;
+            eprintln!("Cleared halt.valid to 'don't care' state");
+        }
 
         // Tick more cycles to fully clear pipeline after halt
         for _ in 0..10 {
             self.tick(&mut Some(&mut vcd));
+        }
+
+        // Check if halt was actually released
+        {
+            let dut = self.model.borrow();
+            let halted = dut.io_debug_halted != 0;
+            eprintln!("After release+10cycles: halted={}", halted);
         }
 
         for cycle in 0..max_cycles {
@@ -282,7 +321,7 @@ impl Simulator {
             // Check if CPU has halted (watchpoint hit)
             let halted = {
                 let dut = self.model.borrow();
-                dut.io_debug_halt != 0
+                dut.io_debug_halted != 0
             };
 
             if halted {
@@ -434,7 +473,7 @@ impl Simulator {
 }
 
 /// Run test in Spike and return register state
-pub fn run_spike_test(elf_path: &Path) -> Result<TestResult> {
+pub fn run_spike_test(elf_path: &Path, watchpoint_addr: Option<u32>) -> Result<TestResult> {
     // Run spike with register dumping
     let output = Command::new("spike")
         .args(&["--isa=RV32I", "-l", "--log-commits"])
@@ -446,7 +485,7 @@ pub fn run_spike_test(elf_path: &Path) -> Result<TestResult> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    let regs = parse_spike_output(&stdout, &stderr)?;
+    let regs = parse_spike_output(&stdout, &stderr, watchpoint_addr)?;
 
     Ok(TestResult {
         regs,
@@ -455,20 +494,24 @@ pub fn run_spike_test(elf_path: &Path) -> Result<TestResult> {
 }
 
 /// Parse spike output to extract final register state
-fn parse_spike_output(stdout: &str, stderr: &str) -> Result<RegisterFile> {
+fn parse_spike_output(
+    stdout: &str,
+    stderr: &str,
+    watchpoint_addr: Option<u32>,
+) -> Result<RegisterFile> {
     let mut regs = RegisterFile::new();
-    let mut reg_map: HashMap<u8, u32> = HashMap::new();
 
     for line in stdout.lines().chain(stderr.lines()) {
         // Look for lines with register writes
         if let Some(reg_write) = parse_spike_reg_write(line) {
-            reg_map.insert(reg_write.0, reg_write.1);
+            regs.set(reg_write.0, reg_write.1);
         }
-    }
 
-    // Apply all register writes
-    for (idx, value) in reg_map {
-        regs.set(idx, value);
+        if let Some(addr) = parse_spike_mem_write(line) {
+            if Some(addr) == watchpoint_addr {
+                return Ok(regs);
+            }
+        }
     }
 
     Ok(regs)
@@ -517,6 +560,18 @@ fn parse_hex(token: &str) -> Option<u32> {
         return None;
     }
     u32::from_str_radix(trimmed, 16).ok()
+}
+
+fn parse_spike_mem_write(line: &str) -> Option<u32> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    for i in 0..parts.len() {
+        if parts[i] == "mem" && i + 2 < parts.len() {
+            if let Some(addr) = parse_hex(parts[i + 1]) {
+                return Some(addr);
+            }
+        }
+    }
+    None
 }
 
 /// Compare Verilator and Spike results

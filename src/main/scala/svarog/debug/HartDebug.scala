@@ -19,11 +19,16 @@ class RegisterDebugIO(xlen: Int) extends Bundle {
   val data = UInt(xlen.W)
 }
 
+class PCDebugIO(xlen: Int) extends Bundle {
+  val pc = UInt(xlen.W)
+}
+
 class HartDebugIO(xlen: Int) extends Bundle {
   val halt = Valid(Bool())
   val breakpoint = Valid(new Breakpoint(xlen))
   val watchpoint = Valid(new Watchpoint(xlen))
   val register = Valid(new RegisterDebugIO(xlen))
+  val setPC = Valid(new PCDebugIO(xlen)) // Set PC and flush pipeline
 }
 
 class HartDebugModule(xlen: Int) extends Module {
@@ -32,6 +37,7 @@ class HartDebugModule(xlen: Int) extends Module {
 
     val halt = Output(Bool())
     val watchpointTriggered = Output(Bool()) // Signal to HazardUnit
+    val setPCOut = Valid(UInt(xlen.W)) // PC to set + flush signal
 
     val wbPC = Flipped(Valid(UInt(xlen.W)))
     val memStore = Flipped(Valid(UInt(xlen.W))) // Memory store address
@@ -45,17 +51,17 @@ class HartDebugModule(xlen: Int) extends Module {
 
   io.halt := haltState
 
-  when(io.hart.halt.valid) {
-    haltState := io.hart.halt.bits
-  }
+  // Pass through PC set command
+  io.setPCOut.valid := io.hart.setPC.valid
+  io.setPCOut.bits := io.hart.setPC.bits.pc
 
   val regData = RegInit(0.U)
   val regValid = RegInit(false.B)
 
   io.regData.valid := regValid
   io.regData.bits := regData
-  regValid := false.B
 
+  // Default: keep current state
   io.regWrite.writeEn := false.B
   io.regWrite.writeAddr := 0.U
   io.regWrite.writeData := 0.U
@@ -68,23 +74,24 @@ class HartDebugModule(xlen: Int) extends Module {
       io.regWrite.writeEn := true.B
       io.regWrite.writeAddr := io.hart.register.bits.reg
       io.regWrite.writeData := io.hart.register.bits.data
+      regValid := false.B // Clear valid on write
     }.otherwise {
+      // Register read request
       io.regRead.readAddr1 := io.hart.register.bits.reg
       regValid := true.B
       regData := io.regRead.readData1
     }
+  }.otherwise {
+    // No new request - keep regValid high until next request
+    // This allows testbench to poll for the result
   }
 
-  val breakpointPC = RegInit(0.U)
+  val breakpointPC = RegInit(0.U(xlen.W))
+  val breakpointEnabled = RegInit(false.B)
 
   when(io.hart.breakpoint.valid) {
     breakpointPC := io.hart.breakpoint.bits.pc
-  }
-
-  when(io.wbPC.valid) {
-    when(io.wbPC.bits === breakpointPC) {
-      haltState := true.B
-    }
+    breakpointEnabled := true.B
   }
 
   // Watchpoint support
@@ -97,11 +104,31 @@ class HartDebugModule(xlen: Int) extends Module {
   }
 
   // Trigger watchpoint on store to watched address
-  // Output signal to HazardUnit which will stall on next cycle
   io.watchpointTriggered := false.B
   when(io.memStore.valid && watchpointEnabled) {
     when(io.memStore.bits === watchpointAddr) {
       io.watchpointTriggered := true.B
     }
+  }
+
+  // Halt state management
+  // Tri-state control:
+  // - halt.valid=true, halt.bits=true: Assert halt
+  // - halt.valid=true, halt.bits=false: Release halt
+  // - halt.valid=false: Don't change halt state
+  // Internal events (breakpoint, watchpoint) can also assert halt
+
+  // External halt control (only when valid)
+  when(io.hart.halt.valid) {
+    haltState := io.hart.halt.bits
+  }
+
+  // Internal events that assert halt (these can override external release)
+  // These execute after external commands, so they have higher priority
+  when(io.wbPC.valid && breakpointEnabled && io.wbPC.bits === breakpointPC) {
+    haltState := true.B
+  }
+  when(io.watchpointTriggered) {
+    haltState := true.B
   }
 }
