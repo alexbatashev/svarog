@@ -141,10 +141,13 @@ class Cpu(
   fetch.io.branch <> execFetchPipe.io.deq
   execFetchPipe.io.enq <> execute.io.branch
 
-  // Flush pipeline queues on branch mispredict
-  val branchMispredict = execute.io.branch.valid
-  fetchDecodeQueue.flush := branchMispredict
-  decodeExecQueue.flush := branchMispredict
+  // Flush pipeline queues on branch mispredict (including the cycle after branch resolution
+  // to cover the extra cycle of latency in the fetch redirect path).
+  val branchFlushNow = execute.io.branch.valid
+  val branchFlushHold = RegNext(branchFlushNow, init = false.B)
+  val branchFlush = branchFlushNow || branchFlushHold
+  fetchDecodeQueue.flush := branchFlush
+  decodeExecQueue.flush := branchFlush
 
   // Hazard signals
   hazardUnit.io.decode.valid := decode.io.hazard.valid
@@ -153,6 +156,6 @@ class Cpu(
   hazardUnit.io.mem := memory.io.hazard
   hazardUnit.io.wb := writeback.io.hazard
   hazardUnit.io.watchpointHit := debug.io.watchpointTriggered
-  execute.io.stall := hazardUnit.io.stall || halt
+  execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold
   writeback.io.halt := halt
 }

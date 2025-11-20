@@ -101,6 +101,9 @@ class Execute(xlen: Integer) extends Module {
       }
       is(OpType.AUIPC) {
         io.res.bits.intResult := io.uop.bits.pc + io.uop.bits.imm
+        printf(
+          p"[Execute] AUIPC pc=0x${Hexadecimal(io.uop.bits.pc)} imm=0x${Hexadecimal(io.uop.bits.imm)} res=0x${Hexadecimal(io.res.bits.intResult)}\n"
+        )
       }
       is(OpType.LOAD) {
         io.res.bits.memAddress := io.regFile.readData1 + io.uop.bits.imm

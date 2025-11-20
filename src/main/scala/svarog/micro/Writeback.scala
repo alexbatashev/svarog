@@ -38,6 +38,10 @@ class Writeback(xlen: Int) extends Module {
     io.regFile.writeAddr := io.in.bits.rd
     io.regFile.writeData := io.in.bits.regData
 
-    printf(p"[WB] PC=0x${Hexadecimal(io.in.bits.pc)}, rd=x${io.in.bits.rd}, regWrite=${io.in.bits.regWrite}, data=0x${Hexadecimal(io.in.bits.regData)}\n")
+    when(io.in.bits.regWrite) {
+      printf(
+        p"[WB] PC=0x${Hexadecimal(io.in.bits.pc)}, rd=x${io.in.bits.rd}, data=0x${Hexadecimal(io.in.bits.regData)}\n"
+      )
+    }
   }
 }
