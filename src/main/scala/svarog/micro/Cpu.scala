@@ -82,8 +82,14 @@ class Cpu(
     )
   }
 
-  execute.io.regFile.readData1 := bypass(execute.io.regFile.readAddr1, regFile.readIo.readData1)
-  execute.io.regFile.readData2 := bypass(execute.io.regFile.readAddr2, regFile.readIo.readData2)
+  execute.io.regFile.readData1 := bypass(
+    execute.io.regFile.readAddr1,
+    regFile.readIo.readData1
+  )
+  execute.io.regFile.readData2 := bypass(
+    execute.io.regFile.readAddr2,
+    regFile.readIo.readData2
+  )
   debug.io.regRead.readData1 := regFile.readIo.readData1
   debug.io.regRead.readData2 := regFile.readIo.readData2
 
@@ -106,32 +112,33 @@ class Cpu(
     writeback.io.regFile.writeData
   )
 
-  regFile.extraWriteEn := false.B
-  regFile.extraWriteAddr := 0.U
-  regFile.extraWriteData := 0.U
-  dontTouch(regFile.extraWriteEn)
-  dontTouch(regFile.extraWriteAddr)
-  dontTouch(regFile.extraWriteData)
-
   // IF -> ID
   // Increased depth from 1 to 4 to handle pipelining and stalls without losing instructions
-  val fetchDecodeQueue = Module(new Queue(new InstWord(config.xlen), 1, hasFlush = true))
+  val fetchDecodeQueue = Module(
+    new Queue(new InstWord(config.xlen), 1, pipe = true, hasFlush = true)
+  )
 
   fetchDecodeQueue.io.enq <> fetch.io.inst_out
   decode.io.inst <> fetchDecodeQueue.io.deq
 
   // ID -> EX
-  val decodeExecQueue = Module(new Queue(new MicroOp(config.xlen), 1, hasFlush = true))
+  val decodeExecQueue = Module(
+    new Queue(new MicroOp(config.xlen), 1, pipe = true, hasFlush = true)
+  )
   decodeExecQueue.io.enq <> decode.io.decoded
   execute.io.uop <> decodeExecQueue.io.deq
 
   // EX -> MEM
-  val execMemQueue = Module(new Queue(new ExecuteResult(config.xlen), 1, hasFlush = true))
+  val execMemQueue = Module(
+    new Queue(new ExecuteResult(config.xlen), 1, pipe = true, hasFlush = true)
+  )
   execMemQueue.io.enq <> execute.io.res
   memory.io.ex <> execMemQueue.io.deq
 
   // MEM -> WB
-  val memWbQueue = Module(new Queue(new MemResult(config.xlen), 1, hasFlush = true))
+  val memWbQueue = Module(
+    new Queue(new MemResult(config.xlen), 1, pipe = true, hasFlush = true)
+  )
   memWbQueue.io.enq <> memory.io.res
   writeback.io.in <> memWbQueue.io.deq
 

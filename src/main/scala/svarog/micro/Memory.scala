@@ -118,9 +118,6 @@ class Memory(xlen: Int) extends Module {
     when(mem.resp.valid) {
       val loadedBytes = mem.resp.bits.dataRead
       wbResult := extractData(loadedBytes, pendingWidth, pendingUnsigned)
-      printf(
-        p"[Memory] LOAD complete pc=0x${Hexadecimal(pendingPC)}, addr=0x${Hexadecimal(pendingAddress)}, rd=x${pendingRd}, data=0x${Hexadecimal(wbResult)}\n"
-      )
       pendingLoad := false.B
       resValid := true.B
     }.otherwise {

@@ -19,7 +19,7 @@ class MicroOp(xlen: Int) extends Bundle {
   val imm = Output(UInt(xlen.W))
   val memWidth = Output(MemWidth.Type())
   val memUnsigned = Output(Bool())
-  val branchFunc = Output(UInt(3.W)) // Changed back to UInt for compatibility
+  val branchFunc = Output(BranchOp.Type())
   val regWrite = Output(Bool())
   val pc = Output(UInt(xlen.W))
   val isEcall = Output(Bool())
@@ -37,7 +37,7 @@ object MicroOp {
     invalid.imm := 0.U
     invalid.memWidth := MemWidth.WORD
     invalid.memUnsigned := false.B
-    invalid.branchFunc := 0.U
+    invalid.branchFunc := BranchOp.INVALID
     invalid.regWrite := false.B
     invalid.pc := 0.U
     invalid.isEcall := false.B

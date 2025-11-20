@@ -2,13 +2,6 @@ package svarog.bits
 
 import chisel3._
 import chisel3.util._
-import chisel3.util.experimental.BoringUtils
-
-object RegFileProbe {
-  def addr(id: String): String = s"${id}_regfile_probe_addr"
-  def en(id: String): String = s"${id}_regfile_probe_en"
-  def data(id: String): String = s"${id}_regfile_probe_data"
-}
 
 class RegFileReadIO(xlen: Int) extends Bundle {
   val readAddr1 = Input(UInt(5.W))
@@ -27,18 +20,11 @@ class RegFileWriteIO(xlen: Int) extends Bundle {
 class RegFile(xlen: Int) extends Module {
   val readIo = IO(new RegFileReadIO(xlen))
   val writeIo = IO(new RegFileWriteIO(xlen))
-  val extraWriteEn = IO(Input(Bool()))
-  val extraWriteAddr = IO(Input(UInt(5.W)))
-  val extraWriteData = IO(Input(UInt(xlen.W)))
 
   val regs = RegInit(VecInit(Seq.fill(32)(0.U(xlen.W))))
 
   when(writeIo.writeEn && writeIo.writeAddr =/= 0.U) {
     regs(writeIo.writeAddr) := writeIo.writeData
-  }
-
-  when(extraWriteEn && extraWriteAddr =/= 0.U) {
-    regs(extraWriteAddr) := extraWriteData
   }
 
   readIo.readData1 := Mux(readIo.readAddr1 === 0.U, 0.U, regs(readIo.readAddr1))

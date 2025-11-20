@@ -37,11 +37,5 @@ class Writeback(xlen: Int) extends Module {
     io.regFile.writeEn := io.in.bits.regWrite
     io.regFile.writeAddr := io.in.bits.rd
     io.regFile.writeData := io.in.bits.regData
-
-    when(io.in.bits.regWrite) {
-      printf(
-        p"[WB] PC=0x${Hexadecimal(io.in.bits.pc)}, rd=x${io.in.bits.rd}, data=0x${Hexadecimal(io.in.bits.regData)}\n"
-      )
-    }
   }
 }

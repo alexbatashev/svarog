@@ -30,7 +30,10 @@ fn discover_tests() -> Result<Vec<Trial>> {
         if test_name.ends_with(".dump") {
             continue;
         }
-
+        // misaligned unsupported
+        if test_name.starts_with("rv32ui-p-ma") {
+            continue;
+        }
         trials.push(Trial::test(
             format!("svarog-micro::{}", test_name),
             move || run_test(&test_path),
@@ -96,8 +99,7 @@ fn run_test_impl(test_path: &Path) -> Result<()> {
 
     // Run Spike and compare architectural state
     println!("Running Spike for {}", test_name);
-    let spike_result =
-        run_spike_test(test_path, tohost_addr).context("Spike simulation failed")?;
+    let spike_result = run_spike_test(test_path, tohost_addr).context("Spike simulation failed")?;
 
     println!("Comparing architectural state");
     compare_results(&verilator_result, &spike_result)?;

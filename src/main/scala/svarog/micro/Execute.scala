@@ -43,6 +43,11 @@ class Execute(xlen: Integer) extends Module {
     val stall = Input(Bool())
   })
 
+  // If the branch is mispredicted on current cycle, whatever instruction
+  // comes on next cycle must be dropped
+  val needFlush = RegInit(false.B)
+  needFlush := false.B // reset at each cycle
+
   val alu = Module(new ALU(xlen))
 
   // Single-cycle execute: current instruction always completes
@@ -51,10 +56,6 @@ class Execute(xlen: Integer) extends Module {
   val canDequeue = io.res.ready && !io.stall
   io.uop.ready := canDequeue
   io.res.valid := io.uop.valid && canDequeue
-
-  when(io.uop.valid) {
-    printf(p"[Execute] PC=0x${Hexadecimal(io.uop.bits.pc)}, rd=x${io.uop.bits.rd}, stall=${io.stall}, ready=${io.res.ready}, uop.ready=${io.uop.ready}\n")
-  }
 
   io.hazard.valid := io.uop.valid && io.uop.bits.regWrite && !(io.uop.bits.rd === 0.U)
   io.hazard.bits := io.uop.bits.rd
@@ -91,7 +92,7 @@ class Execute(xlen: Integer) extends Module {
     io.regFile.readData2
   )
 
-  when(io.uop.valid) {
+  when(io.uop.valid && !needFlush) {
     switch(io.uop.bits.opType) {
       is(OpType.ALU) {
         io.res.bits.intResult := alu.io.output
@@ -101,9 +102,6 @@ class Execute(xlen: Integer) extends Module {
       }
       is(OpType.AUIPC) {
         io.res.bits.intResult := io.uop.bits.pc + io.uop.bits.imm
-        printf(
-          p"[Execute] AUIPC pc=0x${Hexadecimal(io.uop.bits.pc)} imm=0x${Hexadecimal(io.uop.bits.imm)} res=0x${Hexadecimal(io.res.bits.intResult)}\n"
-        )
       }
       is(OpType.LOAD) {
         io.res.bits.memAddress := io.regFile.readData1 + io.uop.bits.imm
@@ -120,31 +118,29 @@ class Execute(xlen: Integer) extends Module {
         val taken = WireDefault(false.B)
 
         switch(io.uop.bits.branchFunc) {
-          is("b000".U) { // BEQ
+          is(BranchOp.BEQ) {
             taken := (rs1 === rs2)
           }
-          is("b001".U) { // BNE
+          is(BranchOp.BNE) {
             taken := (rs1 =/= rs2)
           }
-          is("b100".U) { // BLT
+          is(BranchOp.BLT) {
             taken := (rs1.asSInt < rs2.asSInt)
           }
-          is("b101".U) { // BGE
+          is(BranchOp.BGE) {
             taken := (rs1.asSInt >= rs2.asSInt)
           }
-          is("b110".U) { // BLTU
+          is(BranchOp.BLTU) {
             taken := (rs1 < rs2)
           }
-          is("b111".U) { // BGEU
+          is(BranchOp.BGEU) {
             taken := (rs1 >= rs2)
           }
         }
 
         io.branch.valid := taken
+        needFlush := taken
         io.branch.bits.targetPC := io.uop.bits.pc + io.uop.bits.imm
-        printf(
-          p"[Execute] BRANCH pc=0x${Hexadecimal(io.uop.bits.pc)} rs1=0x${Hexadecimal(rs1)} rs2=0x${Hexadecimal(rs2)} func=${Binary(io.uop.bits.branchFunc)} taken=${taken}\n"
-        )
       }
 
       is(OpType.JAL) {

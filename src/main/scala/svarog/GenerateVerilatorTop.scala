@@ -4,7 +4,6 @@ import chisel3._
 import chisel3.util.{Decoupled, log2Ceil}
 import circt.stage.FirtoolOption
 import svarog.soc.SvarogSoC
-import svarog.bits.RegFileProbe
 import chisel3.util.experimental.BoringUtils
 import svarog.soc.SvarogConfig
 
@@ -73,7 +72,8 @@ class VerilatorTop(
     val debug = if (config.enableDebugInterface) {
       Some(new Bundle {
         val hart_in = Flipped(new svarog.debug.ChipHartDebugIO(config.xlen))
-        val mem_in = Flipped(Decoupled(new svarog.debug.ChipMemoryDebugIO(config.xlen)))
+        val mem_in =
+          Flipped(Decoupled(new svarog.debug.ChipMemoryDebugIO(config.xlen)))
         val mem_res = Decoupled(UInt(config.xlen.W))
         val reg_res = Decoupled(UInt(config.xlen.W))
         val halted = Output(Bool())

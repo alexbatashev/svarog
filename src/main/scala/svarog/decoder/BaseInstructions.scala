@@ -35,7 +35,7 @@ case class BaseInstructions(xlen: Int) extends Module {
   io.decoded.hasImm := false.B
   io.decoded.memWidth := MemWidth.WORD
   io.decoded.memUnsigned := false.B
-  io.decoded.branchFunc := 0.U
+  io.decoded.branchFunc := BranchOp.INVALID
   io.decoded.regWrite := false.B
   io.decoded.pc := io.pc
   io.decoded.isEcall := false.B
@@ -160,7 +160,7 @@ case class BaseInstructions(xlen: Int) extends Module {
       io.decoded.hasImm := true.B
       io.decoded.regWrite := false.B
       io.immGen.format := ImmFormat.B
-      io.decoded.branchFunc := funct3
+      io.decoded.branchFunc := BranchOp.fromFunct3(funct3)
     }
 
     is(Opcodes.JAL) {

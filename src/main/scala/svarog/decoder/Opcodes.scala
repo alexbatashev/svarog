@@ -33,18 +33,20 @@ object SRA_SLLFunc7 {
 }
 
 object BranchOp extends ChiselEnum {
-  val BEQ, BNE, BLT, BGE, BLTU, BGEU = Value
+  val INVALID, BEQ, BNE, BLT, BGE, BLTU, BGEU = Value
 
   def fromFunct3(funct3: UInt): BranchOp.Type = {
     // Map funct3 encoding to BranchOp enum
     // 0b000 -> BEQ, 0b001 -> BNE, 0b100 -> BLT, 0b101 -> BGE, 0b110 -> BLTU, 0b111 -> BGEU
-    MuxLookup(funct3, BEQ)(Seq(
-      "b000".U -> BEQ,
-      "b001".U -> BNE,
-      "b100".U -> BLT,
-      "b101".U -> BGE,
-      "b110".U -> BLTU,
-      "b111".U -> BGEU
-    ))
+    MuxLookup(funct3, BEQ)(
+      Seq(
+        "b000".U -> BEQ,
+        "b001".U -> BNE,
+        "b100".U -> BLT,
+        "b101".U -> BGE,
+        "b110".U -> BLTU,
+        "b111".U -> BGEU
+      )
+    )
   }
 }
