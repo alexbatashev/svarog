@@ -1,4 +1,10 @@
-use std::{cell::RefCell, collections::HashMap, path::Path, process::Command};
+use std::{
+    cell::RefCell,
+    convert::TryInto,
+    io::{BufRead, BufReader},
+    path::Path,
+    process::{Command, Stdio},
+};
 
 use anyhow::{Context, Result};
 use elf::{ElfBytes, endian::AnyEndian};
@@ -43,7 +49,6 @@ impl Default for RegisterFile {
 #[derive(Debug)]
 pub struct TestResult {
     pub regs: RegisterFile,
-    pub cycles: usize,
     pub exit_code: Option<u32>,
 }
 
@@ -57,6 +62,34 @@ pub struct Simulator {
 }
 
 impl Simulator {
+    fn init_debug_interface(dut: &mut VerilatorTop) {
+        // Initialize all debug interface signals to safe defaults
+        dut.io_debug_hart_in_id_valid = 0;
+        dut.io_debug_hart_in_id_bits = 0;
+        dut.io_debug_hart_in_bits_halt_valid = 0;
+        dut.io_debug_hart_in_bits_halt_bits = 0;
+        dut.io_debug_hart_in_bits_breakpoint_valid = 0;
+        dut.io_debug_hart_in_bits_breakpoint_bits_pc = 0;
+        dut.io_debug_hart_in_bits_watchpoint_valid = 0;
+        dut.io_debug_hart_in_bits_watchpoint_bits_addr = 0;
+        dut.io_debug_hart_in_bits_setPC_valid = 0;
+        dut.io_debug_hart_in_bits_setPC_bits_pc = 0;
+        dut.io_debug_hart_in_bits_register_valid = 0;
+        dut.io_debug_hart_in_bits_register_bits_reg = 0;
+        dut.io_debug_hart_in_bits_register_bits_write = 0;
+        dut.io_debug_hart_in_bits_register_bits_data = 0;
+
+        dut.io_debug_mem_in_valid = 0;
+        dut.io_debug_mem_in_bits_addr = 0;
+        dut.io_debug_mem_in_bits_write = 0;
+        dut.io_debug_mem_in_bits_data = 0;
+        dut.io_debug_mem_in_bits_reqWidth = 0; // BYTE
+        dut.io_debug_mem_in_bits_instr = 0;
+
+        dut.io_debug_mem_res_ready = 1; // Always ready to receive results
+        dut.io_debug_reg_res_ready = 0; // Not ready until explicitly set
+    }
+
     pub fn new(out_dir: &str) -> Result<Self, Whatever> {
         // Leak the runtime to get a 'static reference
         // This is necessary because the model needs to borrow from the runtime
@@ -77,10 +110,13 @@ impl Simulator {
                 ..Default::default()
             },
         )?);
+
+        // Initialize debug interface to safe defaults
         {
             let mut dut = model.borrow_mut();
-            dut.tohost_addr = 0;
+            Self::init_debug_interface(&mut dut);
         }
+
         Ok(Simulator {
             runtime,
             model,
@@ -88,20 +124,70 @@ impl Simulator {
         })
     }
 
-    pub fn load_binary<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
+    pub fn load_binary<P: AsRef<Path>>(
+        &self,
+        path: P,
+        watchpoint_symbol: Option<&str>,
+    ) -> anyhow::Result<Option<u32>> {
         let file_data = std::fs::read(path)?;
         let slice = file_data.as_slice();
         let file = ElfBytes::<AnyEndian>::minimal_parse(slice)?;
+
+        // Resolve watchpoint symbol address if provided
+        let watchpoint_addr = if let Some(symbol_name) = watchpoint_symbol {
+            if let Some(symtab) = file.symbol_table()? {
+                let mut found_addr = None;
+                for symbol in symtab.0.iter() {
+                    if let Ok(name) = symtab.1.get(symbol.st_name as usize) {
+                        if name == symbol_name {
+                            found_addr = Some(symbol.st_value as u32);
+                            eprintln!(
+                                "Found symbol '{}' at address 0x{:08x}",
+                                symbol_name, symbol.st_value
+                            );
+                            break;
+                        }
+                    }
+                }
+                found_addr
+            } else {
+                eprintln!("Warning: No symbol table found in ELF file");
+                None
+            }
+        } else {
+            None
+        };
 
         // IMPORTANT: Reset FIRST before loading memory!
         // Memory uses RegInit, so reset clears it to all zeros.
         // We must reset first, then load memory after.
         {
             let mut dut = self.model.borrow_mut();
+
+            // Establish initial state: clock low, then apply reset
+            dut.clock = 0;
             dut.reset = 1;
-            dut.halt = 1;
-            dut.regfile_read_en = 0;
-            dut.mem_write_en = 0;
+
+            // Initialize debug interface first, THEN set halt
+            // (init_debug_interface clears all signals including halt)
+            Self::init_debug_interface(&mut dut);
+
+            // Set halt through debug interface
+            // IMPORTANT: Must set id_valid and id_bits to route commands to hart 0
+            dut.io_debug_hart_in_id_valid = 1;
+            dut.io_debug_hart_in_id_bits = 0; // Hart 0
+            dut.io_debug_hart_in_bits_halt_valid = 1;
+            dut.io_debug_hart_in_bits_halt_bits = 1;
+
+            // Set watchpoint if address was resolved
+            if let Some(addr) = watchpoint_addr {
+                dut.io_debug_hart_in_bits_watchpoint_valid = 1;
+                dut.io_debug_hart_in_bits_watchpoint_bits_addr = addr;
+                eprintln!("Setting watchpoint on address: 0x{:08x}", addr);
+            }
+
+            // Evaluate to apply reset before first clock edge
+            dut.eval();
         }
 
         // Reset for a few cycles
@@ -109,13 +195,12 @@ impl Simulator {
             self.tick(&mut None);
         }
 
-        // Release reset
+        // Take reset low before loading sections so the core starts from a clean
+        // slate once we release halt later.
         {
             let mut dut = self.model.borrow_mut();
             dut.reset = 0;
         }
-
-        // Wait a cycle after reset
         self.tick(&mut None);
 
         // Load sections: .text, .text.init, and .data
@@ -130,24 +215,10 @@ impl Simulator {
             }
         }
 
-        let tohost_addr = file
-            .section_header_by_name(".tohost")?
-            .map(|hdr| hdr.sh_addr as u32)
-            .unwrap_or(0);
-        {
-            let mut dut = self.model.borrow_mut();
-            dut.tohost_addr = tohost_addr;
-        }
-
-        // One more cycle after loading
-        self.tick(&mut None);
-
-        Ok(())
+        Ok(watchpoint_addr)
     }
 
     fn upload_section(&self, section_name: &str, data: &[u8], start_addr: u32) {
-        let data_words: &[u32] = bytemuck::cast_slice(data);
-
         eprintln!(
             "Loading section {} ({} bytes) starting at address 0x{:08x}",
             section_name,
@@ -155,129 +226,117 @@ impl Simulator {
             start_addr
         );
 
-        for (i, word) in data_words.iter().enumerate() {
+        let mut chunk_iter = data.chunks_exact(4);
+        for (i, chunk) in chunk_iter.by_ref().enumerate() {
+            let word = u32::from_le_bytes(chunk.try_into().unwrap());
             let addr = start_addr + (i as u32 * 4);
             if i < 10 {
                 eprintln!("  [0x{:08x}] = 0x{:08x}", addr, word);
             }
-            // Write word as 4 bytes (little-endian)
-            let bytes = word.to_le_bytes();
-            for (byte_offset, byte) in bytes.iter().enumerate() {
-                self.write_mem_byte(addr + byte_offset as u32, *byte);
+            self.write_mem_word(addr, word);
+            if cfg!(debug_assertions) && i < 4 {
+                debug_assert_eq!(
+                    self.read_mem_word(addr),
+                    word,
+                    "memory verify failed at address 0x{:08x}",
+                    addr
+                );
+            }
+        }
+
+        let remainder = chunk_iter.remainder();
+        if !remainder.is_empty() {
+            let start_offset = (data.len() - remainder.len()) as u32;
+            for (byte_offset, byte) in remainder.iter().enumerate() {
+                let addr = start_addr + start_offset + byte_offset as u32;
+                self.write_mem_byte(addr, *byte);
             }
         }
     }
 
     pub fn run(&self, vcd_path: &Path, max_cycles: usize) -> Result<TestResult> {
-        // Just ensure write signals are disabled and release halt to start execution
+        let mut vcd = { self.model.borrow_mut().open_vcd(vcd_path) };
+
+        // Toggle reset while dumping a couple of baseline cycles so the trace captures
+        // the CPU at the architectural reset vector before we let the pipeline run.
         {
             let mut dut = self.model.borrow_mut();
-            dut.mem_write_en = 0;
-            dut.halt = 0; // Release halt to start CPU
+            dut.reset = 1;
+        }
+        for _ in 0..2 {
+            self.tick(&mut Some(&mut vcd));
+        }
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.reset = 0;
+        }
+        self.tick(&mut Some(&mut vcd));
+
+        // Set PC to program entry point and flush pipeline before releasing halt
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.io_debug_hart_in_id_valid = 1;
+            dut.io_debug_hart_in_id_bits = 0; // Hart 0
+            dut.io_debug_hart_in_bits_setPC_valid = 1;
+            dut.io_debug_hart_in_bits_setPC_bits_pc = 0x80000000;
+            eprintln!("Setting PC to 0x80000000 and flushing pipeline");
+        }
+        self.tick(&mut Some(&mut vcd));
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.io_debug_hart_in_bits_setPC_valid = 0;
+        }
+        self.tick(&mut Some(&mut vcd));
+
+        // Release halt to start execution
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.io_debug_mem_in_valid = 0; // Disable memory writes
+            dut.io_debug_hart_in_id_valid = 1;
+            dut.io_debug_hart_in_id_bits = 0; // Hart 0
+            dut.io_debug_hart_in_bits_halt_valid = 1;
+            dut.io_debug_hart_in_bits_halt_bits = 0; // Release halt
             eprintln!("CPU halt released, starting execution");
+        }
+        self.tick(&mut Some(&mut vcd));
+
+        // Clear id.valid and halt.valid to enter "don't care" state
+        // This allows internal events (watchpoints, breakpoints) to assert halt
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.io_debug_hart_in_id_valid = 0;
+            dut.io_debug_hart_in_bits_halt_valid = 0;
+            eprintln!("Cleared halt.valid to 'don't care' state");
         }
 
         // Tick more cycles to fully clear pipeline after halt
         for _ in 0..10 {
-            self.tick(&mut None);
+            self.tick(&mut Some(&mut vcd));
         }
 
-        // Run simulation
-        let mut failure_cycle = None;
-        let mut completion_detected_cycle = None;
-        let mut regwrite_count = 0;
-        let mut alu_print_count = 0;
-        let mut pc_print_count = 0;
-
-        let mut vcd = { self.model.borrow_mut().open_vcd(vcd_path) };
+        // Check if halt was actually released
+        {
+            let dut = self.model.borrow();
+            let halted = dut.io_debug_halted != 0;
+            eprintln!("After release+10cycles: halted={}", halted);
+        }
 
         for cycle in 0..max_cycles {
             self.tick(&mut Some(&mut vcd));
 
-            let dut = self.model.borrow();
+            // Check if CPU has halted (watchpoint hit)
+            let halted = {
+                let dut = self.model.borrow();
+                dut.io_debug_halted != 0
+            };
 
-            // Debug: Print PC progression for first 50 cycles and during test 18
-            if (cycle < 50 || (dut.debug_pc >= 0x80000330 && dut.debug_pc <= 0x80000360))
-                && pc_print_count < 100
-            {
-                pc_print_count += 1;
-                eprintln!(
-                    "PC[{}]: cycle {} pc=0x{:08x}",
-                    pc_print_count, cycle, dut.debug_pc
-                );
-            }
-
-            // Debug: Print ALU operations in test 18 range (PC 0x80000334-0x80000350)
-            if dut.debug_aluValid != 0
-                && dut.debug_aluPc >= 0x80000334
-                && dut.debug_aluPc <= 0x80000350
-                && alu_print_count < 20
-            {
-                alu_print_count += 1;
-                eprintln!(
-                    "ALU[{}]: cycle {} EXE[pc=0x{:08x} rd={} rw={}] MEM[pc=0x{:08x} rd={} rw={}] WB[pc=0x{:08x} rd={} rw={}]",
-                    alu_print_count,
-                    cycle,
-                    dut.debug_aluPc,
-                    dut.debug_aluRd,
-                    dut.debug_aluRegWrite,
-                    dut.debug_memPc,
-                    dut.debug_memRd,
-                    dut.debug_memRegWrite,
-                    dut.debug_wbPc,
-                    dut.debug_wbRd,
-                    dut.debug_wbRegWrite
-                );
-            }
-
-            // Debug: Print ALL register writes (including zeros) for first 30
-            if dut.debug_regWrite != 0 {
-                regwrite_count += 1;
-                // Print first 30, cycles 350-400, and all x3 writes
-                if regwrite_count <= 30
-                    || (cycle >= 350 && cycle <= 400)
-                    || dut.debug_writeAddr == 3
-                    || matches!(
-                        dut.debug_writeAddr,
-                        1 | 2 | 4 | 7 | 11 | 12 | 14 | 30
-                    )
-                {
-                    eprintln!(
-                        "REGWRITE[{}]: cycle {} x{} = 0x{:08x} wbPc=0x{:08x}",
-                        regwrite_count,
-                        cycle,
-                        dut.debug_writeAddr,
-                        dut.debug_writeData,
-                        dut.debug_wbPc
-                    );
+            if halted {
+                eprintln!("CPU halted at cycle {}, watchpoint triggered", cycle);
+                // Run a few more cycles to let the pipeline settle
+                for _ in 0..5 {
+                    self.tick(&mut Some(&mut vcd));
                 }
-            }
-
-            // Check for test completion by detecting when x3 (gp) is written to 1 (pass)
-            // All RISC-V tests write x3=1 in the pass handler
-            if completion_detected_cycle.is_none()
-                && dut.debug_regWrite != 0
-                && dut.debug_writeAddr == 3
-                && dut.debug_writeData == 1
-            {
-                completion_detected_cycle = Some(cycle);
-                failure_cycle = Some(cycle);
-                eprintln!("TRACE: detected PASS (x3=1) at cycle {}", cycle);
-            }
-
-            // Also check for fail by detecting ecall with x3 != 1 after many cycles
-            // (This is a fallback - we'll hit max_cycles if the test really fails)
-            if completion_detected_cycle.is_none() && cycle > 10000 {
-                eprintln!("TRACE: test timeout at cycle {}", cycle);
                 break;
-            }
-
-            // Break 10 cycles after detecting completion to let pending writes finish
-            // (including ECALL extra writes which take 2 cycles)
-            if let Some(detected_cycle) = completion_detected_cycle {
-                if cycle >= detected_cycle + 10 {
-                    break;
-                }
             }
         }
 
@@ -286,7 +345,6 @@ impl Simulator {
 
         Ok(TestResult {
             regs,
-            cycles: failure_cycle.unwrap_or(max_cycles),
             exit_code: Some(exit_code),
         })
     }
@@ -294,35 +352,114 @@ impl Simulator {
     fn capture_registers(&self) -> Result<RegisterFile> {
         let mut regs = RegisterFile::new();
 
-        let mut dut = self.model.borrow_mut();
-
-        // Hold clock low while sampling register file (combinational read)
-        dut.clock = 0;
-        dut.eval();
-
-        dut.regfile_read_en = 1;
-        for idx in 0..32 {
-            dut.regfile_read_addr = idx as u8;
-            dut.eval();
-            let val = dut.regfile_read_data;
-            regs.set(idx as u8, val);
+        // Ensure CPU is halted
+        {
+            let mut dut = self.model.borrow_mut();
+            dut.io_debug_hart_in_id_valid = 1;
+            dut.io_debug_hart_in_id_bits = 0; // Hart 0
+            dut.io_debug_hart_in_bits_halt_valid = 1;
+            dut.io_debug_hart_in_bits_halt_bits = 1;
+            dut.io_debug_reg_res_ready = 1; // Ready to receive results
         }
-        dut.regfile_read_en = 0;
+
+        // Tick to apply halt
+        self.tick(&mut None);
+
+        // Read each register through debug interface
+        for idx in 0..32 {
+            {
+                let mut dut = self.model.borrow_mut();
+                dut.io_debug_hart_in_id_valid = 1;
+                dut.io_debug_hart_in_id_bits = 0; // Hart 0
+                dut.io_debug_hart_in_bits_register_valid = 1;
+                dut.io_debug_hart_in_bits_register_bits_reg = idx;
+                dut.io_debug_hart_in_bits_register_bits_write = 0; // Read
+                dut.io_debug_hart_in_bits_register_bits_data = 0;
+            }
+
+            // Tick to process request
+            self.tick(&mut None);
+
+            // Wait for result
+            let mut attempts = 0;
+            let val = loop {
+                let dut = self.model.borrow();
+                if dut.io_debug_reg_res_valid != 0 {
+                    break dut.io_debug_reg_res_bits;
+                }
+                drop(dut);
+
+                attempts += 1;
+                if attempts > 10 {
+                    eprintln!("Warning: Timeout waiting for register {} read result", idx);
+                    break 0;
+                }
+                self.tick(&mut None);
+            };
+
+            regs.set(idx, val);
+
+            // Clear register request
+            {
+                let mut dut = self.model.borrow_mut();
+                dut.io_debug_hart_in_bits_register_valid = 0;
+            }
+        }
 
         Ok(regs)
     }
 
     fn write_mem_byte(&self, addr: u32, data: u8) {
-        {
-            let mut dut = self.model.borrow_mut();
-            dut.mem_write_en = 1;
-            dut.mem_write_addr = addr;
-            dut.mem_write_data = data;
+        self.drive_mem_request(addr, data as u32, 0, true);
+    }
+
+    fn write_mem_word(&self, addr: u32, data: u32) {
+        self.drive_mem_request(addr, data, 2, true);
+    }
+
+    fn drive_mem_request(&self, addr: u32, data: u32, req_width: u8, write: bool) {
+        loop {
+            let ready = {
+                let mut dut = self.model.borrow_mut();
+                dut.io_debug_mem_in_bits_addr = addr;
+                dut.io_debug_mem_in_bits_write = if write { 1 } else { 0 };
+                dut.io_debug_mem_in_bits_data = data;
+                dut.io_debug_mem_in_bits_reqWidth = req_width;
+                dut.io_debug_mem_in_bits_instr = 0;
+                dut.io_debug_mem_in_valid = 1;
+                dut.io_debug_mem_in_ready != 0
+            };
+            self.tick(&mut None);
+            if ready {
+                break;
+            }
         }
-        self.tick(&mut None);
         {
             let mut dut = self.model.borrow_mut();
-            dut.mem_write_en = 0;
+            dut.io_debug_mem_in_valid = 0;
+            dut.io_debug_mem_in_bits_write = 0;
+        }
+    }
+
+    #[allow(dead_code)]
+    fn read_mem_word(&self, addr: u32) -> u32 {
+        self.drive_mem_request(addr, 0, 2, false);
+
+        loop {
+            let response = {
+                let dut = self.model.borrow();
+                if dut.io_debug_mem_res_valid != 0 {
+                    Some(dut.io_debug_mem_res_bits)
+                } else {
+                    None
+                }
+            };
+
+            if let Some(val) = response {
+                return val;
+            }
+
+            self.tick(&mut None);
         }
     }
 
@@ -342,45 +479,63 @@ impl Simulator {
 }
 
 /// Run test in Spike and return register state
-pub fn run_spike_test(elf_path: &Path) -> Result<TestResult> {
-    // Run spike with register dumping
-    let output = Command::new("spike")
+pub fn run_spike_test(elf_path: &Path, watchpoint_addr: Option<u32>) -> Result<TestResult> {
+    let mut child = Command::new("spike")
         .args(&["--isa=RV32I", "-l", "--log-commits"])
         .arg(elf_path)
-        .output()
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
         .context("Failed to run spike")?;
 
-    // Parse spike output to extract register state
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    let regs = parse_spike_output(&stdout, &stderr)?;
-
-    Ok(TestResult {
-        regs,
-        cycles: 0, // Spike doesn't report cycles in the same way
-        exit_code: None,
-    })
-}
-
-/// Parse spike output to extract final register state
-fn parse_spike_output(stdout: &str, stderr: &str) -> Result<RegisterFile> {
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("Failed to capture spike stderr"))?;
+    let reader = BufReader::new(stderr);
     let mut regs = RegisterFile::new();
-    let mut reg_map: HashMap<u8, u32> = HashMap::new();
 
-    for line in stdout.lines().chain(stderr.lines()) {
-        // Look for lines with register writes
-        if let Some(reg_write) = parse_spike_reg_write(line) {
-            reg_map.insert(reg_write.0, reg_write.1);
+    let mut lines_seen = 0usize;
+    let mut hit_watchpoint = false;
+    for line in reader.lines() {
+        let line = line?;
+        lines_seen += 1;
+        if let Some(reg_write) = parse_spike_reg_write(&line) {
+            regs.set(reg_write.0, reg_write.1);
+        }
+
+        if let Some(addr) = parse_spike_mem_write(&line) {
+            if Some(addr) == watchpoint_addr {
+                // Test reached tohost; stop spike execution.
+                let _ = child.kill();
+                hit_watchpoint = true;
+                break;
+            }
+        }
+
+        if lines_seen > 1_000_000 {
+            let _ = child.kill();
+            anyhow::bail!(
+                "Spike did not reach tohost (addr=0x{:08x}) within log limit",
+                watchpoint_addr.unwrap_or(0)
+            );
         }
     }
 
-    // Apply all register writes
-    for (idx, value) in reg_map {
-        regs.set(idx, value);
+    // Wait for spike to exit (ignore errors)
+    let _ = child.wait();
+
+    if watchpoint_addr.is_some() && !hit_watchpoint {
+        anyhow::bail!(
+            "Spike terminated without hitting tohost (addr=0x{:08x})",
+            watchpoint_addr.unwrap()
+        );
     }
 
-    Ok(regs)
+    Ok(TestResult {
+        regs,
+        exit_code: None,
+    })
 }
 
 /// Parse a single spike register write line
@@ -426,6 +581,18 @@ fn parse_hex(token: &str) -> Option<u32> {
         return None;
     }
     u32::from_str_radix(trimmed, 16).ok()
+}
+
+fn parse_spike_mem_write(line: &str) -> Option<u32> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    for i in 0..parts.len() {
+        if parts[i] == "mem" && i + 2 < parts.len() {
+            if let Some(addr) = parse_hex(parts[i + 1]) {
+                return Some(addr);
+            }
+        }
+    }
+    None
 }
 
 /// Compare Verilator and Spike results

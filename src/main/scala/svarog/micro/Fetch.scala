@@ -3,16 +3,15 @@ package svarog.micro
 import chisel3._
 import chisel3.util._
 import svarog.memory.{MemoryRequest, MemoryIO}
+import svarog.decoder.InstWord
+import svarog.memory.MemWidth
 
 class FetchIO(xlen: Int) extends Bundle {
-  val pc_out = Output(UInt(xlen.W))
-  val instruction = Output(UInt(32.W))
-  val valid = Output(Bool())
+  val inst_out = Decoupled(new InstWord(xlen))
 
-  val stall = Input(Bool()) // Stall from pipeline
-  val flush = Input(Bool()) // Flush on branch/jump
-  val branch_target = Input(UInt(xlen.W)) // New PC from execute stage
-  val branch_taken = Input(Bool())
+  val branch = Flipped(Valid(new BranchFeedback(xlen)))
+  val debugSetPC = Flipped(Valid(UInt(xlen.W))) // Debug interface to set PC
+  val halt = Input(Bool()) // Stop fetching when halted
 
   val mem = new MemoryIO(xlen, xlen)
 }
@@ -20,37 +19,67 @@ class FetchIO(xlen: Int) extends Bundle {
 class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   val io = IO(new FetchIO(xlen))
 
+  // For now we statically predict branches as not taken, so io.branch.valid is
+  // also the flush signal. In future we'll need to reconsider this decision.
+
   private val resetVec = resetVector.U(xlen.W)
   val pc_reg = RegInit(resetVec)
-  val pc_out_reg = RegInit(resetVec)
+  val reqPending = RegInit(false.B)
+  val dropResponse = RegInit(false.B)
+  val respPending = RegInit(false.B)
+  val respData = Reg(UInt(32.W))
+  val respPC = Reg(UInt(xlen.W))
 
   val pc_plus_4 = pc_reg + 4.U
-  val next_pc = Mux(io.branch_taken, io.branch_target, pc_plus_4)
+  val next_pc = Mux(io.debugSetPC.valid, io.debugSetPC.bits,
+                Mux(io.branch.valid, io.branch.bits.targetPC, pc_plus_4))
 
-  when(!io.stall) {
-    pc_out_reg := pc_reg
-  }
+  val canRequest = !reqPending && !respPending && !io.halt
+  io.mem.req.valid := canRequest
+  io.mem.req.bits.address := pc_reg
+  io.mem.req.bits.reqWidth := MemWidth.WORD
+  io.mem.req.bits.write := false.B
+  io.mem.req.bits.dataWrite := VecInit(Seq.fill(xlen / 8)(0.U(8.W)))
 
-  when(io.branch_taken || io.flush) {
-    pc_reg := next_pc
-  }.elsewhen(!io.stall) {
+  when(io.mem.req.fire) {
+    reqPending := true.B
+    respPC := pc_reg
     pc_reg := pc_plus_4
   }
 
-  io.mem.req.valid := !io.stall
-  io.mem.req.bits.address := pc_reg
-  io.mem.req.bits.reqWidth := 4.U
-  io.mem.req.bits.write := false.B
-  io.mem.req.bits.dataWrite := VecInit(Seq.fill(xlen / 8)(0.U(8.W)))
   io.mem.resp.ready := true.B
-
-  io.pc_out := pc_out_reg
-
   when(io.mem.resp.valid) {
-    io.instruction := io.mem.resp.bits.dataRead.asUInt
-    io.valid := io.mem.resp.bits.valid && !io.flush
-  }.otherwise {
-    io.instruction := 0.U
-    io.valid := false.B
+    when(dropResponse) {
+      dropResponse := false.B
+      reqPending := false.B
+    }.otherwise {
+      respPending := true.B
+      respData := io.mem.resp.bits.dataRead.asUInt
+      reqPending := false.B
+    }
+  }
+
+  io.inst_out.valid := respPending
+  io.inst_out.bits.pc := respPC
+  io.inst_out.bits.word := respData
+
+  when(io.inst_out.fire) {
+    respPending := false.B
+  }
+
+  when(io.debugSetPC.valid) {
+    pc_reg := io.debugSetPC.bits
+    reqPending := false.B
+    respPending := false.B
+    dropResponse := false.B
+  }.elsewhen(io.branch.valid) {
+    pc_reg := io.branch.bits.targetPC
+    respPending := false.B
+    when(reqPending) {
+      dropResponse := true.B
+    }.otherwise {
+      dropResponse := false.B
+    }
+    reqPending := false.B
   }
 }

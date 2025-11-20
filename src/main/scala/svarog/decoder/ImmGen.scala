@@ -1,4 +1,4 @@
-package svarog.bits
+package svarog.decoder
 
 import chisel3._
 import chisel3.util._
@@ -7,19 +7,21 @@ object ImmFormat extends ChiselEnum {
   val I, S, B, U, J = Value
 }
 
+class ImmGenIO(xlen: Int) extends Bundle {
+  val instruction = Input(UInt(32.W))
+  val format = Input(ImmFormat())
+  val immediate = Output(UInt(xlen.W))
+}
+
 class ImmGen(xlen: Int) extends Module {
-  val io = IO(new Bundle {
-    val instruction = Input(UInt(32.W))
-    val format = Input(ImmFormat())
-    val immediate = Output(UInt(xlen.W))
-  })
+  val io = IO(new ImmGenIO(xlen))
 
   io.immediate := 0.U
 
   val signBit = io.instruction(31)
   val inst = io.instruction
 
-  switch (io.format) {
+  switch(io.format) {
     is(ImmFormat.I) {
       // Sign-extend from bit 11 of the immediate.
       io.immediate := Cat(Fill(xlen - 12, signBit), inst(31, 20)).asUInt
@@ -27,13 +29,18 @@ class ImmGen(xlen: Int) extends Module {
 
     is(ImmFormat.S) {
       val imm_11_5 = inst(31, 25)
-      val imm_4_0  = inst(11, 7)
+      val imm_4_0 = inst(11, 7)
       // Sign-extend from bit 11 of the immediate.
       io.immediate := Cat(Fill(xlen - 12, signBit), imm_11_5, imm_4_0).asUInt
     }
 
     is(ImmFormat.B) {
-      val imm_b = Cat(inst(31), inst(7), inst(30, 25), inst(11, 8)) // This forms imm[12:1]
+      val imm_b = Cat(
+        inst(31),
+        inst(7),
+        inst(30, 25),
+        inst(11, 8)
+      ) // This forms imm[12:1]
       // Append LSB of 0, cast to SInt, then pad.
       io.immediate := Cat(imm_b, 0.U(1.W)).asSInt.pad(xlen).asUInt
     }
@@ -45,7 +52,12 @@ class ImmGen(xlen: Int) extends Module {
     }
 
     is(ImmFormat.J) {
-      val imm_j = Cat(inst(31), inst(19, 12), inst(20), inst(30, 21)) // This forms imm[20:1]
+      val imm_j = Cat(
+        inst(31),
+        inst(19, 12),
+        inst(20),
+        inst(30, 21)
+      ) // This forms imm[20:1]
       // Append LSB of 0, cast to SInt, then pad.
       io.immediate := Cat(imm_j, 0.U(1.W)).asSInt.pad(xlen).asUInt
     }

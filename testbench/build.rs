@@ -29,12 +29,26 @@ fn main() -> Result<()> {
     }
 
     sh.change_dir(&riscv_tests_dir);
+    let build_indicator = riscv_tests_dir.join("build_indicator");
 
     // Initialize submodules (needed for env)
     if !riscv_tests_dir.join("env/.git").exists() {
         cmd!(sh, "git submodule update --init --recursive")
             .run()
             .context("Failed to initialize submodules")?;
+    }
+
+    let patch_file = cur_dir.join("testbench/patches/riscv-tests-no-priv.patch");
+    let patch_stamp = riscv_tests_dir.join(".svarog_patch_applied");
+    if patch_file.exists() && !patch_stamp.exists() {
+        cmd!(
+            sh,
+            "git apply --ignore-space-change --ignore-whitespace {patch_file}"
+        )
+        .run()
+        .context("Failed to patch riscv-tests with simplified env")?;
+        cmd!(sh, "touch {patch_stamp}").run()?;
+        cmd!(sh, "rm -f {build_indicator}").run()?;
     }
 
     // Run autoconf if configure doesn't exist
@@ -51,8 +65,6 @@ fn main() -> Result<()> {
             .run()
             .context("Failed to configure riscv-tests")?;
     }
-
-    let build_indicator = riscv_tests_dir.join("build_indicator");
 
     if !build_indicator.exists() {
         let riscv_prefix = "riscv32-unknown-elf-";
