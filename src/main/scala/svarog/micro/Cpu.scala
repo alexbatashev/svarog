@@ -9,7 +9,6 @@ import svarog.memory.{MemoryRequest, MemoryIO}
 import svarog.decoder.SimpleDecoder
 import svarog.decoder.InstWord
 import svarog.decoder.MicroOp
-import svarog.decoder.SimpleDecodeHazardIO
 import svarog.debug.HartDebugModule
 import svarog.debug.HartDebugIO
 import svarog.bits.RegFileReadIO
@@ -70,8 +69,21 @@ class Cpu(
     debug.io.regRead.readAddr2,
     execute.io.regFile.readAddr2
   )
-  execute.io.regFile.readData1 := regFile.readIo.readData1
-  execute.io.regFile.readData2 := regFile.readIo.readData2
+  // Simple writeback bypass so execute sees the most recent value without waiting
+  val wbWriteEn = regFile.writeIo.writeEn
+  val wbWriteAddr = regFile.writeIo.writeAddr
+  val wbWriteData = regFile.writeIo.writeData
+
+  def bypass(readAddr: UInt, readData: UInt): UInt = {
+    Mux(
+      wbWriteEn && (wbWriteAddr =/= 0.U) && (wbWriteAddr === readAddr),
+      wbWriteData,
+      readData
+    )
+  }
+
+  execute.io.regFile.readData1 := bypass(execute.io.regFile.readAddr1, regFile.readIo.readData1)
+  execute.io.regFile.readData2 := bypass(execute.io.regFile.readAddr2, regFile.readIo.readData2)
   debug.io.regRead.readData1 := regFile.readIo.readData1
   debug.io.regRead.readData2 := regFile.readIo.readData2
 
@@ -149,9 +161,9 @@ class Cpu(
   fetchDecodeQueue.flush := branchFlush
   decodeExecQueue.flush := branchFlush
 
+  // Determine which source registers are actually used by the instruction currently in decode.
   // Hazard signals
-  hazardUnit.io.decode.valid := decode.io.hazard.valid
-  hazardUnit.io.decode.bits := decode.io.hazard.bits
+  hazardUnit.io.decode <> decode.io.hazard
   hazardUnit.io.exec := execute.io.hazard
   hazardUnit.io.mem := memory.io.hazard
   hazardUnit.io.wb := writeback.io.hazard

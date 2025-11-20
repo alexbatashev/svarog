@@ -26,15 +26,13 @@ class Memory(xlen: Int) extends Module {
 
   mem.req.valid := false.B
 
-  val byteOffset = io.ex.bits.memAddress(1, 0)
-  val shiftAmount = Cat(byteOffset, 0.U(3.W))
-  val shiftedStoreData = (io.ex.bits.storeData << shiftAmount)(xlen - 1, 0)
-  val alignedStoreData = Wire(Vec(xlen / 8, UInt(8.W)))
+  // Split store data into bytes; Memory backend applies address offset itself
+  val storeDataBytes = Wire(Vec(xlen / 8, UInt(8.W)))
   for (i <- 0 until (xlen / 8)) {
-    alignedStoreData(i) := shiftedStoreData(8 * (i + 1) - 1, 8 * i)
+    storeDataBytes(i) := io.ex.bits.storeData(8 * (i + 1) - 1, 8 * i)
   }
 
-  mem.req.bits.dataWrite := alignedStoreData
+  mem.req.bits.dataWrite := storeDataBytes
   mem.req.bits.write := false.B
   mem.req.bits.reqWidth := io.ex.bits.memWidth
   mem.resp.ready := true.B
@@ -46,7 +44,6 @@ class Memory(xlen: Int) extends Module {
   val pendingRegWrite = RegInit(false.B)
   val pendingUnsigned = RegInit(false.B)
   val pendingWidth = RegInit(MemWidth.WORD)
-  val pendingByteOffset = RegInit(0.U(2.W))
   val pendingAddress = RegInit(0.U(xlen.W))
 
   io.ex.ready := !pendingLoad
@@ -80,14 +77,13 @@ class Memory(xlen: Int) extends Module {
   def extractData(
       bytes: Vec[UInt],
       width: MemWidth.Type,
-      unsigned: Bool,
-      byteOffset: UInt
+      unsigned: Bool
   ): UInt = {
     val extracted = Wire(UInt(xlen.W))
     extracted := 0.U
     switch(width) {
       is(MemWidth.BYTE) {
-        val byteData = bytes(byteOffset)
+        val byteData = bytes(0)
         extracted := Mux(
           unsigned,
           Cat(0.U((xlen - 8).W), byteData),
@@ -95,7 +91,7 @@ class Memory(xlen: Int) extends Module {
         )
       }
       is(MemWidth.HALF) {
-        val halfData = Cat(bytes(byteOffset + 1.U), bytes(byteOffset))
+        val halfData = Cat(bytes(1), bytes(0))
         extracted := Mux(
           unsigned,
           Cat(0.U((xlen - 16).W), halfData),
@@ -113,23 +109,15 @@ class Memory(xlen: Int) extends Module {
   }
 
   when(pendingLoad) {
-    mem.req.valid := true.B
-    mem.req.bits.write := false.B
-    mem.req.bits.address := pendingAddress
     wbOpType := OpType.LOAD
     wbRd := pendingRd
     wbPC := pendingPC
     wbRegWrite := pendingRegWrite
-    wbStoreAddr := 0.U  // Not a store
+    wbStoreAddr := 0.U
     wbIsStore := false.B
-    when(mem.resp.valid && mem.resp.bits.valid) {
+    when(mem.resp.valid) {
       val loadedBytes = mem.resp.bits.dataRead
-      wbResult := extractData(
-        loadedBytes,
-        pendingWidth,
-        pendingUnsigned,
-        pendingByteOffset
-      )
+      wbResult := extractData(loadedBytes, pendingWidth, pendingUnsigned)
       printf(
         p"[Memory] LOAD complete pc=0x${Hexadecimal(pendingPC)}, addr=0x${Hexadecimal(pendingAddress)}, rd=x${pendingRd}, data=0x${Hexadecimal(wbResult)}\n"
       )
@@ -151,7 +139,6 @@ class Memory(xlen: Int) extends Module {
         pendingRegWrite := io.ex.bits.regWrite
         pendingUnsigned := io.ex.bits.memUnsigned
         pendingWidth := io.ex.bits.memWidth
-        pendingByteOffset := io.ex.bits.memAddress(1, 0)
         pendingAddress := io.ex.bits.memAddress
         wbOpType := OpType.NOP
         wbRegWrite := false.B
@@ -163,7 +150,6 @@ class Memory(xlen: Int) extends Module {
         mem.req.bits.write := true.B
         wbRegWrite := false.B
         wbResult := 0.U
-        // Pass store address to Writeback for watchpoint detection
         wbStoreAddr := io.ex.bits.memAddress
         wbIsStore := true.B
       }

@@ -37,7 +37,7 @@ class SimpleDecoder(xlen: Int) extends Module {
 
   io.hazard.valid := io.inst.valid
   io.hazard.bits.rs1 := io.decoded.bits.rs1
-  io.hazard.bits.rs2 := Mux(io.decoded.bits.hasImm, 0.U, io.decoded.bits.rs2)
+  io.hazard.bits.rs2 := io.decoded.bits.rs2
 
   when(io.inst.valid && io.inst.ready) {
     printf(p"[Decode] PC=0x${Hexadecimal(io.inst.bits.pc)}, inst=0x${Hexadecimal(io.inst.bits.word)}, ready=${io.decoded.ready}\n")

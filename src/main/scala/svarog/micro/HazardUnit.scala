@@ -14,52 +14,23 @@ class HazardUnit extends Module {
     val stall = Output(Bool())
   })
 
-  val mustStall = RegInit(false.B)
-  val stallReg = RegInit(0.U)
-  val releasePending = RegInit(false.B)
+  def hazardOn(reg: UInt, rs: UInt): Bool =
+    reg =/= 0.U && rs =/= 0.U && reg === rs
 
-  io.stall := mustStall
+  val hazardExec = io.decode.valid && io.exec.valid && (
+    hazardOn(io.exec.bits, io.decode.bits.rs1) ||
+      hazardOn(io.exec.bits, io.decode.bits.rs2)
+  )
 
-  when(mustStall) {
-    printf(p"[HazardUnit] STALL: waiting for x${stallReg}\n")
-  }
+  val hazardMem = io.decode.valid && io.mem.valid && (
+    hazardOn(io.mem.bits, io.decode.bits.rs1) ||
+      hazardOn(io.mem.bits, io.decode.bits.rs2)
+  )
 
-  when(io.exec.valid && io.decode.valid && io.exec.bits =/= 0.U) {
-    val hazardOnRs1 =
-      io.exec.bits === io.decode.bits.rs1 && io.decode.bits.rs1 =/= 0.U
-    val hazardOnRs2 =
-      io.exec.bits === io.decode.bits.rs2 && io.decode.bits.rs2 =/= 0.U
-    when(hazardOnRs1 || hazardOnRs2) {
-      mustStall := true.B
-      stallReg := io.exec.bits
-      releasePending := false.B
-    }
-  }
+  val hazardWb = io.decode.valid && io.wb.valid && (
+    hazardOn(io.wb.bits, io.decode.bits.rs1) ||
+      hazardOn(io.wb.bits, io.decode.bits.rs2)
+  )
 
-  when(io.mem.valid && io.decode.valid && io.mem.bits =/= 0.U) {
-    val hazardOnRs1 =
-      io.mem.bits === io.decode.bits.rs1 && io.decode.bits.rs1 =/= 0.U
-    val hazardOnRs2 =
-      io.mem.bits === io.decode.bits.rs2 && io.decode.bits.rs2 =/= 0.U
-    when(hazardOnRs1 || hazardOnRs2) {
-      mustStall := true.B
-      stallReg := io.mem.bits
-      releasePending := false.B
-    }
-  }
-
-  when(mustStall && io.wb.valid && io.wb.bits =/= 0.U && io.wb.bits === stallReg) {
-    releasePending := true.B
-  }
-
-  when(releasePending) {
-    mustStall := false.B
-    releasePending := false.B
-  }
-
-  // Watchpoint handling: stall on next cycle when watchpoint is hit
-  when(io.watchpointHit) {
-    mustStall := true.B
-    releasePending := false.B
-  }
+  io.stall := io.watchpointHit || hazardExec || hazardMem || hazardWb
 }
