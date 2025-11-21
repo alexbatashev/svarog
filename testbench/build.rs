@@ -135,14 +135,26 @@ fn main() -> Result<()> {
     let verilator_include = PathBuf::from(verilator_root).join("include");
 
     // Use cxx-build to compile our wrapper and link with Verilator
-    let mut build = cxx_build::bridge("testbench/src/bridge.rs");
+    // Note: cxx_build::bridge expects path relative to crate root (testbench/)
+    let mut build = cxx_build::bridge("src/bridge.rs");
 
+    // Add wrapper file
+    build.file("testbench/verilator_wrapper.cpp");
+
+    // Dynamically find all Verilator-generated C++ files
+    // (hash suffixes can change between versions/runs)
+    for entry in std::fs::read_dir(&verilator_out_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if let Some(ext) = path.extension() {
+            if ext == "cpp" && path.file_name().unwrap().to_str().unwrap().starts_with("VVerilatorTop") {
+                build.file(&path);
+            }
+        }
+    }
+
+    // Add Verilator runtime files
     build
-        .file("testbench/verilator_wrapper.cpp")
-        .file(verilator_out_dir.join("VVerilatorTop.cpp"))
-        .file(verilator_out_dir.join("VVerilatorTop___024root__DepSet_h84412442__0.cpp"))
-        .file(verilator_out_dir.join("VVerilatorTop___024root__DepSet_heccd7ead__0.cpp"))
-        .file(verilator_out_dir.join("VVerilatorTop__Trace__0.cpp"))
         .file(verilator_include.join("verilated.cpp"))
         .file(verilator_include.join("verilated_vcd_c.cpp"))
         .file(verilator_include.join("verilated_threads.cpp"))
