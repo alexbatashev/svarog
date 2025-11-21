@@ -1,0 +1,113 @@
+# Svarog Micro - 5-Stage In-Order RISC-V Core
+
+Svarog Micro is a 5-stage pipelined in-order RISC-V processor implementing RV32I, designed in Chisel.
+
+## Quick Overview
+
+- **Pipeline**: 5 stages (Fetch, Decode, Execute, Memory, Writeback)
+- **ISA**: RV32I (32-bit base integer instruction set)
+- **Execution**: In-order, single-issue
+- **HDL**: Chisel (generates Verilog)
+- **Hazard Handling**: Stall-based with limited bypass
+- **Branch Prediction**: Static not-taken
+
+## Documentation
+
+- **[Getting Started](getting-started.md)** - Setup and build instructions
+- **[Architecture](architecture.md)** - Pipeline and microarchitecture details
+- **[Development](development.md)** - Testing and contribution guide
+- **[Configuration](configuration.md)** - SoC configuration options
+
+## Supported ISA Extensions
+
+| Extension | Description | Status |
+|-----------|-------------|--------|
+| **RV32I** | Base Integer Instruction Set (2.1) | ✅ Complete (40 instructions) |
+| **Zicsr** | Control and Status Register | 🚧 Basic support |
+| **M** | Integer Multiplication and Division | ❌ Not implemented |
+| **A** | Atomic Instructions | ❌ Not implemented |
+| **F** | Single-Precision Floating-Point | ❌ Not implemented |
+| **D** | Double-Precision Floating-Point | ❌ Not implemented |
+| **C** | Compressed Instructions | ❌ Not implemented |
+
+## Performance Characteristics
+
+| Metric | Value |
+|--------|-------|
+| **Ideal CPI** | 1.0 |
+| **Branch Penalty** | 2 cycles (taken branches) |
+| **Load Latency** | 1 cycle + memory latency |
+| **Max Frequency** | ~50 MHz (target, FPGA-dependent) |
+
+## Pipeline Stages
+
+```
+┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌──────────┐
+│  FETCH  │───▶│ DECODE  │───▶│ EXECUTE │───▶│ MEMORY  │───▶│WRITEBACK │
+└─────────┘    └─────────┘    └─────────┘    └─────────┘    └──────────┘
+     ▲                              │
+     └──────── Branch Feedback ─────┘
+```
+
+See [Architecture](architecture.md) for detailed pipeline documentation.
+
+## File Structure
+
+```
+src/main/scala/svarog/
+├── micro/              # Pipeline stages
+│   ├── Cpu.scala       # Top-level CPU
+│   ├── Fetch.scala     # Instruction Fetch
+│   ├── Execute.scala   # Execute stage
+│   ├── Memory.scala    # Memory access
+│   ├── Writeback.scala # Register writeback
+│   └── HazardUnit.scala
+├── decoder/            # Instruction decode
+│   ├── SimpleDecoder.scala
+│   ├── BaseInstructions.scala
+│   └── ImmGen.scala
+├── bits/               # Basic components
+│   ├── ALU.scala
+│   └── RegFile.scala
+├── memory/             # Memory subsystem
+│   └── MemoryInterface.scala
+└── soc/                # SoC integration
+    ├── SvarogSoC.scala
+    └── SvarogConfig.scala
+```
+
+## Quick Start
+
+### Prerequisites
+
+- JDK 11 or newer
+- SBT or Mill build tool
+- Verilator (for simulation)
+
+### Build and Test
+
+```bash
+# Using Mill
+./mill svarog.test
+
+# Using SBT
+sbt test
+
+# Run specific test
+./mill svarog.test.testOnly svarog.micro.PipelineSpec
+```
+
+See [Getting Started](getting-started.md) for detailed setup instructions.
+
+## Contributing
+
+See [Development Guide](development.md) for information on:
+- Code structure
+- Testing strategy
+- Adding new features
+- Debugging
+
+## References
+
+- [RISC-V ISA Specifications](https://riscv.org/technical/specifications/)
+- [Chisel Documentation](https://www.chisel-lang.org/)
