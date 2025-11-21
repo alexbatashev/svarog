@@ -44,6 +44,7 @@ fn main() -> Result<()> {
             sh,
             "verilator
              -Wall
+             -Wno-fatal
              --cc
              --trace
              -O3
