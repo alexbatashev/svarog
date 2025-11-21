@@ -1,0 +1,96 @@
+#[cxx::bridge(namespace = "svarog")]
+pub mod ffi {
+    unsafe extern "C++" {
+        include!("testbench/verilator_wrapper.h");
+
+        type VerilatorModel;
+
+        // Factory function
+        fn create_verilator_model() -> UniquePtr<VerilatorModel>;
+
+        // VCD tracing
+        fn open_vcd(self: Pin<&mut VerilatorModel>, path: &str);
+        fn dump_vcd(self: Pin<&mut VerilatorModel>, timestamp: u64);
+        fn close_vcd(self: Pin<&mut VerilatorModel>);
+
+        // Simulation control
+        fn eval(self: Pin<&mut VerilatorModel>);
+        fn final_eval(self: Pin<&mut VerilatorModel>);
+
+        // Clock and reset
+        fn get_clock(&self) -> u8;
+        fn set_clock(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_reset(&self) -> u8;
+        fn set_reset(self: Pin<&mut VerilatorModel>, value: u8);
+
+        // Debug hart interface - ID routing
+        fn get_debug_hart_in_id_valid(&self) -> u8;
+        fn set_debug_hart_in_id_valid(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_hart_in_id_bits(&self) -> u8;
+        fn set_debug_hart_in_id_bits(self: Pin<&mut VerilatorModel>, value: u8);
+
+        // Debug hart interface - Halt control
+        fn get_debug_hart_in_bits_halt_valid(&self) -> u8;
+        fn set_debug_hart_in_bits_halt_valid(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_hart_in_bits_halt_bits(&self) -> u8;
+        fn set_debug_hart_in_bits_halt_bits(self: Pin<&mut VerilatorModel>, value: u8);
+
+        // Debug hart interface - Breakpoint
+        fn get_debug_hart_in_bits_breakpoint_valid(&self) -> u8;
+        fn set_debug_hart_in_bits_breakpoint_valid(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_hart_in_bits_breakpoint_bits_pc(&self) -> u32;
+        fn set_debug_hart_in_bits_breakpoint_bits_pc(self: Pin<&mut VerilatorModel>, value: u32);
+
+        // Debug hart interface - Watchpoint
+        fn get_debug_hart_in_bits_watchpoint_valid(&self) -> u8;
+        fn set_debug_hart_in_bits_watchpoint_valid(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_hart_in_bits_watchpoint_bits_addr(&self) -> u32;
+        fn set_debug_hart_in_bits_watchpoint_bits_addr(self: Pin<&mut VerilatorModel>, value: u32);
+
+        // Debug hart interface - Set PC
+        fn get_debug_hart_in_bits_setPC_valid(&self) -> u8;
+        fn set_debug_hart_in_bits_setPC_valid(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_hart_in_bits_setPC_bits_pc(&self) -> u32;
+        fn set_debug_hart_in_bits_setPC_bits_pc(self: Pin<&mut VerilatorModel>, value: u32);
+
+        // Debug hart interface - Register access
+        fn get_debug_hart_in_bits_register_valid(&self) -> u8;
+        fn set_debug_hart_in_bits_register_valid(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_hart_in_bits_register_bits_reg(&self) -> u8;
+        fn set_debug_hart_in_bits_register_bits_reg(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_hart_in_bits_register_bits_write(&self) -> u8;
+        fn set_debug_hart_in_bits_register_bits_write(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_hart_in_bits_register_bits_data(&self) -> u32;
+        fn set_debug_hart_in_bits_register_bits_data(self: Pin<&mut VerilatorModel>, value: u32);
+
+        // Debug memory interface - Request
+        fn get_debug_mem_in_valid(&self) -> u8;
+        fn set_debug_mem_in_valid(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_mem_in_ready(&self) -> u8;
+        fn get_debug_mem_in_bits_addr(&self) -> u32;
+        fn set_debug_mem_in_bits_addr(self: Pin<&mut VerilatorModel>, value: u32);
+        fn get_debug_mem_in_bits_write(&self) -> u8;
+        fn set_debug_mem_in_bits_write(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_mem_in_bits_data(&self) -> u32;
+        fn set_debug_mem_in_bits_data(self: Pin<&mut VerilatorModel>, value: u32);
+        fn get_debug_mem_in_bits_reqWidth(&self) -> u8;
+        fn set_debug_mem_in_bits_reqWidth(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_mem_in_bits_instr(&self) -> u8;
+        fn set_debug_mem_in_bits_instr(self: Pin<&mut VerilatorModel>, value: u8);
+
+        // Debug memory interface - Response
+        fn get_debug_mem_res_ready(&self) -> u8;
+        fn set_debug_mem_res_ready(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_mem_res_valid(&self) -> u8;
+        fn get_debug_mem_res_bits(&self) -> u32;
+
+        // Debug register interface - Response
+        fn get_debug_reg_res_ready(&self) -> u8;
+        fn set_debug_reg_res_ready(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_debug_reg_res_valid(&self) -> u8;
+        fn get_debug_reg_res_bits(&self) -> u32;
+
+        // Debug status
+        fn get_debug_halted(&self) -> u8;
+    }
+}

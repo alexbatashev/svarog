@@ -9,10 +9,10 @@ const TARGET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../target/");
 fn main() -> Result<()> {
     let vcd_path = PathBuf::from(format!("{}/vcd", TARGET_PATH));
     std::fs::create_dir_all(&vcd_path)?;
-    let mut args = Arguments::from_args();
-    // Verilator builds are not concurrency-safe; run tests serially to avoid
-    // multiple simulators rebuilding the shared model at once.
-    args.test_threads = Some(1);
+    let args = Arguments::from_args();
+    // Note: With the cxx-rs integration, Verilator model is built once during
+    // cargo build, so tests can now run in parallel if desired.
+    // We keep the default test thread count from args.
 
     let tests = discover_tests()?;
 
@@ -54,14 +54,9 @@ fn run_test(test_path: &Path) -> Result<(), Failed> {
 fn run_test_impl(test_path: &Path) -> Result<()> {
     let test_name = test_path.file_name().unwrap().to_str().unwrap().to_owned();
     let vcd_path = PathBuf::from(format!("{}/vcd/{}.vcd", TARGET_PATH, test_name));
-    // Use a per-test build directory to avoid concurrent Verilator collisions.
-    let build_dir = format!(
-        "{}/verilator_build/{}",
-        env!("CARGO_TARGET_TMPDIR"),
-        test_name
-    );
-    std::fs::create_dir_all(&build_dir)?;
-    let simulator = Simulator::new(&build_dir)
+
+    // Create simulator (model is built once during cargo build, no rebuild needed)
+    let simulator = Simulator::new()
         .map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
 
     // Load the ELF binary with watchpoint on 'tohost' symbol
