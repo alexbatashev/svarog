@@ -43,8 +43,8 @@ fn main() -> Result<()> {
         cmd!(
             sh,
             "verilator
-             -Wall
              -Wno-fatal
+             -Wno-UNUSEDSIGNAL
              --cc
              --trace
              -O3
@@ -165,6 +165,8 @@ fn main() -> Result<()> {
         .flag_if_supported("-std=c++14")
         .flag_if_supported("-O3")
         .flag_if_supported("-DVL_THREADED")
+        // Suppress warnings from generated code and Verilator runtime
+        .flag_if_supported("-w")
         .compile("verilator_model");
 
     println!("cargo:rustc-link-lib=static=verilator_model");

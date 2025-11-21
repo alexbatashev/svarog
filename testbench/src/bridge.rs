@@ -1,5 +1,6 @@
 #[cxx::bridge(namespace = "svarog")]
 pub mod ffi {
+    #[allow(dead_code)]
     unsafe extern "C++" {
         include!("testbench/verilator_wrapper.h");
 
