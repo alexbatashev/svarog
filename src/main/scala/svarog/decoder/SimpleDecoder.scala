@@ -29,17 +29,24 @@ class SimpleDecoder(xlen: Int) extends Module {
   baseDecoder.io.instruction := io.inst.bits.word
   baseDecoder.io.pc := io.inst.bits.pc
 
+  val mDecoder = Some(Module(new MInstructions(xlen)))
+
   io.decoded.bits := MicroOp.getInvalid(xlen)
 
   when(baseDecoder.io.decoded.opType =/= OpType.INVALID) {
     io.decoded.bits := baseDecoder.io.decoded
   }
 
+  mDecoder.foreach { mDecoder =>
+    mDecoder.io.instruction := io.inst.bits.word
+    mDecoder.io.pc := io.inst.bits.pc
+
+    when(mDecoder.io.decoded.opType =/= OpType.INVALID) {
+      io.decoded.bits := mDecoder.io.decoded
+    }
+  }
+
   io.hazard.valid := io.inst.valid
   io.hazard.bits.rs1 := io.decoded.bits.rs1
   io.hazard.bits.rs2 := io.decoded.bits.rs2
-
-  when(io.inst.valid && io.inst.ready) {
-    printf(p"[Decode] PC=0x${Hexadecimal(io.inst.bits.pc)}, inst=0x${Hexadecimal(io.inst.bits.word)}, ready=${io.decoded.ready}\n")
-  }
 }

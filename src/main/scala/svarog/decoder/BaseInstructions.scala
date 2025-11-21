@@ -4,9 +4,11 @@ import chisel3._
 import chisel3.util._
 import svarog.bits.ALUOp
 import svarog.memory.MemWidth
+import svarog.bits.MulOp
+import svarog.bits.DivOp
 
 case class BaseInstructions(xlen: Int) extends Module {
-  // require(xlen >= 32, "BaseInstructions requires XLEN >= 32")
+  require(xlen >= 32, "BaseInstructions requires XLEN >= 32")
 
   val io = IO(new Bundle {
     val immGen = Flipped(new ImmGenIO(xlen))
@@ -40,6 +42,8 @@ case class BaseInstructions(xlen: Int) extends Module {
   io.decoded.pc := io.pc
   io.decoded.isEcall := false.B
   io.decoded.aluOp := ALUOp.ADD
+  io.decoded.mulOp := MulOp.MUL
+  io.decoded.divOp := DivOp.DIV
   io.decoded.opType := OpType.INVALID
 
   switch(opcode) {

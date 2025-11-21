@@ -35,8 +35,8 @@ fn main() -> Result<()> {
     let verilog_file = verilog_dir.join("VerilatorTop.sv");
 
     // Check if we need to run Verilator (if stamp doesn't exist or verilog changed)
-    let need_verilator = !verilator_stamp.exists() ||
-        verilog_file.metadata()?.modified()? > verilator_stamp.metadata()?.modified()?;
+    let need_verilator = !verilator_stamp.exists()
+        || verilog_file.metadata()?.modified()? > verilator_stamp.metadata()?.modified()?;
 
     if need_verilator {
         println!("cargo:warning=Running Verilator to generate C++ model...");
@@ -129,7 +129,7 @@ fn main() -> Result<()> {
             .arg("VERILATOR_ROOT")
             .output()
             .context("Failed to get VERILATOR_ROOT")?
-            .stdout
+            .stdout,
     )?;
     let verilator_root = verilator_root.trim();
     let verilator_include = PathBuf::from(verilator_root).join("include");
@@ -148,7 +148,14 @@ fn main() -> Result<()> {
         let entry = entry?;
         let path = entry.path();
         if let Some(ext) = path.extension() {
-            if ext == "cpp" && path.file_name().unwrap().to_str().unwrap().starts_with("VVerilatorTop") {
+            if ext == "cpp"
+                && path
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .starts_with("VVerilatorTop")
+            {
                 build.file(&path);
             }
         }
