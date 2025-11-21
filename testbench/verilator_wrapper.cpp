@@ -7,7 +7,8 @@ namespace svarog {
 
 VerilatorModel::VerilatorModel() {
     // Initialize Verilator
-    Verilated::commandArgs(0, nullptr);
+    const char* argv[] = { nullptr };
+    Verilated::commandArgs(0, argv);
     Verilated::traceEverOn(true);
 
     // Create the model
