@@ -138,8 +138,9 @@ fn main() -> Result<()> {
     // Note: cxx_build::bridge expects path relative to crate root (testbench/)
     let mut build = cxx_build::bridge("src/bridge.rs");
 
-    // Add wrapper file
-    build.file("testbench/verilator_wrapper.cpp");
+    // Add wrapper file (use absolute path since we changed directories)
+    let wrapper_cpp = cur_dir.join("testbench/verilator_wrapper.cpp");
+    build.file(&wrapper_cpp);
 
     // Dynamically find all Verilator-generated C++ files
     // (hash suffixes can change between versions/runs)
