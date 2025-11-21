@@ -3,16 +3,21 @@
 #include "verilated.h"
 #include "verilated_vcd_c.h"
 
+// Required by Verilator - returns current simulation time
+double sc_time_stamp() {
+    return 0;
+}
+
 namespace svarog {
 
 VerilatorModel::VerilatorModel() {
-    // Initialize Verilator
-    const char* argv[] = { nullptr };
-    Verilated::commandArgs(0, argv);
-    Verilated::traceEverOn(true);
+    // Create a dedicated context for this model
+    context_ = std::make_unique<VerilatedContext>();
+    context_->commandArgs(0, static_cast<const char**>(nullptr));
+    context_->traceEverOn(true);
 
-    // Create the model
-    model_ = std::make_unique<VVerilatorTop>();
+    // Create the model with the dedicated context
+    model_ = std::make_unique<VVerilatorTop>(context_.get());
 }
 
 VerilatorModel::~VerilatorModel() {
@@ -23,11 +28,19 @@ VerilatorModel::~VerilatorModel() {
 }
 
 void VerilatorModel::open_vcd(rust::Str path) {
+    // Close any currently open VCD file
     if (vcd_) {
         vcd_->close();
     }
-    vcd_ = std::make_unique<VerilatedVcdC>();
-    model_->trace(vcd_.get(), 99);  // Trace 99 levels of hierarchy
+
+    // Create the VCD tracer on first use
+    if (!vcd_) {
+        vcd_ = std::make_unique<VerilatedVcdC>();
+        model_->trace(vcd_.get(), 99);  // Trace 99 levels of hierarchy
+        traced_ = true;
+    }
+
+    // Open the new VCD file (reusing the same tracer)
     vcd_->open(std::string(path).c_str());
 }
 
@@ -40,7 +53,7 @@ void VerilatorModel::dump_vcd(uint64_t timestamp) {
 void VerilatorModel::close_vcd() {
     if (vcd_) {
         vcd_->close();
-        vcd_.reset();
+        // Don't reset vcd_ - keep it alive for potential reuse with a different file
     }
 }
 

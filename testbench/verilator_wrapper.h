@@ -8,6 +8,7 @@
 // Forward declarations
 class VVerilatorTop;
 class VerilatedVcdC;
+class VerilatedContext;
 
 namespace svarog {
 
@@ -103,8 +104,10 @@ public:
     uint8_t get_debug_halted() const;
 
 private:
+    std::unique_ptr<VerilatedContext> context_;
     std::unique_ptr<VVerilatorTop> model_;
     std::unique_ptr<VerilatedVcdC> vcd_;
+    bool traced_ = false;
 };
 
 // Factory function for Rust
