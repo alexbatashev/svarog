@@ -46,9 +46,14 @@ class TCM(
     val baseMask = MemWidth.mask(xlen)(io.ports(i).req.bits.reqWidth)
     val shiftedMask = Wire(Vec(wordSize, Bool()))
     for (j <- 0 until wordSize) {
+      // Compute offset with explicit width to avoid Verilator warnings
+      // Cast to UInt(32.W) for arithmetic, then extract result
+      val jWide = j.U(32.W)
+      val offsetWide = jWide - wordOffset
+      val offset = offsetWide(offsetWidth - 1, 0)
       shiftedMask(j) := Mux(
-        (j.U >= wordOffset) && ((j.U - wordOffset) < baseMask.length.U),
-        baseMask(j.U - wordOffset),
+        (j.U >= wordOffset) && (offset < baseMask.length.U),
+        baseMask(offset),
         false.B
       )
     }
@@ -56,9 +61,13 @@ class TCM(
     // Shift write data to align with byte offset
     val shiftedWriteData = Wire(Vec(wordSize, UInt(8.W)))
     for (j <- 0 until wordSize) {
+      // Compute offset with explicit width to avoid Verilator warnings
+      val jWide = j.U(32.W)
+      val offsetWide = jWide - wordOffset
+      val offset = offsetWide(offsetWidth - 1, 0)
       shiftedWriteData(j) := Mux(
-        (j.U >= wordOffset) && ((j.U - wordOffset) < io.ports(i).req.bits.dataWrite.length.U),
-        io.ports(i).req.bits.dataWrite(j.U - wordOffset),
+        (j.U >= wordOffset) && (offset < io.ports(i).req.bits.dataWrite.length.U),
+        io.ports(i).req.bits.dataWrite(offset),
         0.U
       )
     }
@@ -84,12 +93,23 @@ class TCM(
     io.ports(i).resp.valid := respValid
     io.ports(i).resp.bits.valid := respValid
 
+    // Avoid narrow arithmetic by using explicit case-based indexing
+    // This prevents Verilator width expansion warnings
     for (j <- 0 until wordSize) {
-      val index = (respWordOffset + j.U)(offsetWidth - 1, 0)
+      val readValue = Wire(UInt(8.W))
+      readValue := 0.U
+
+      for (offset <- 0 until wordSize) {
+        when(respWordOffset === offset.U) {
+          val targetIdx = (offset + j) % wordSize
+          readValue := readData(targetIdx.U)
+        }
+      }
+
       io.ports(i)
         .resp
         .bits
-        .dataRead(j) := Mux(j.U < respSize, readData(index), 0.U)
+        .dataRead(j) := Mux(j.U < respSize, readValue, 0.U)
     }
   }
 }

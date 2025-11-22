@@ -134,49 +134,32 @@ fn main() -> Result<()> {
     let verilator_root = verilator_root.trim();
     let verilator_include = PathBuf::from(verilator_root).join("include");
 
-    // Use cxx-build to compile our wrapper and link with Verilator
-    // Note: cxx_build::bridge expects path relative to crate root (testbench/)
+    // Use cxx-build to compile our wrapper only
+    // Verilator already built everything with --build flag
     let mut build = cxx_build::bridge("src/bridge.rs");
 
     // Add wrapper file (use absolute path since we changed directories)
     let wrapper_cpp = cur_dir.join("testbench/verilator_wrapper.cpp");
     build.file(&wrapper_cpp);
 
-    // Dynamically find all Verilator-generated C++ files
-    // (hash suffixes can change between versions/runs)
-    for entry in std::fs::read_dir(&verilator_out_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if let Some(ext) = path.extension() {
-            if ext == "cpp"
-                && path
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .starts_with("VVerilatorTop")
-            {
-                build.file(&path);
-            }
-        }
-    }
-
-    // Add Verilator runtime files
     build
-        .file(verilator_include.join("verilated.cpp"))
-        .file(verilator_include.join("verilated_vcd_c.cpp"))
-        .file(verilator_include.join("verilated_threads.cpp"))
         .include(&verilator_out_dir)
         .include(&verilator_include)
         .include(&cur_dir)
-        .flag_if_supported("-std=c++14")
-        .flag_if_supported("-O3")
+        .flag_if_supported("-std=gnu++17")
         .flag_if_supported("-DVL_THREADED")
-        // Suppress warnings from generated code and Verilator runtime
+        // Suppress warnings from generated code
         .flag_if_supported("-w")
-        .compile("verilator_model");
+        .compile("verilator_wrapper");
 
-    println!("cargo:rustc-link-lib=static=verilator_model");
+    // Link against the pre-built Verilator archives
+    println!("cargo:rustc-link-lib=static=verilator_wrapper");
+    println!(
+        "cargo:rustc-link-search=native={}",
+        verilator_out_dir.display()
+    );
+    println!("cargo:rustc-link-lib=static=VVerilatorTop");
+    println!("cargo:rustc-link-lib=static=verilated");
 
     Ok(())
 }
