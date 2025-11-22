@@ -1,0 +1,42 @@
+name: Continuous Integration
+
+on:
+  push:
+    tags: ["*"]
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: coursier/cache-action@v6
+      - name: Setup Scala
+        uses: coursier/setup-action@v1
+        with:
+          jvm: adopt:11
+          apps: sbt
+      - name: Setup Dependencies
+        run: |
+          sudo apt-get install verilator
+          verilator --version
+      - name: Unit tests
+        run: ./mill _.test
+      - name: Integration tests
+        run: cargo test
+
+  formatting:
+    name: formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # Ensure rustfmt is installed and setup problem matcher
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt
+      - name: Rustfmt Check
+        uses: actions-rust-lang/rustfmt@v1
