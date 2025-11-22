@@ -93,15 +93,23 @@ class TCM(
     io.ports(i).resp.valid := respValid
     io.ports(i).resp.bits.valid := respValid
 
+    // Avoid narrow arithmetic by using explicit case-based indexing
+    // This prevents Verilator width expansion warnings
     for (j <- 0 until wordSize) {
-      // Compute index with explicit width to avoid Verilator warnings
-      val jWide = j.U(32.W)
-      val indexWide = respWordOffset + jWide
-      val index = indexWide(offsetWidth - 1, 0)
+      val readValue = Wire(UInt(8.W))
+      readValue := 0.U
+
+      for (offset <- 0 until wordSize) {
+        when(respWordOffset === offset.U) {
+          val targetIdx = (offset + j) % wordSize
+          readValue := readData(targetIdx.U)
+        }
+      }
+
       io.ports(i)
         .resp
         .bits
-        .dataRead(j) := Mux(j.U < respSize, readData(index), 0.U)
+        .dataRead(j) := Mux(j.U < respSize, readValue, 0.U)
     }
   }
 }
