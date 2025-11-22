@@ -14,12 +14,12 @@ jobs:
     steps:
       - name: Setup Spike
         run: |
-          apt-get install device-tree-compiler libboost-regex-dev libboost-system-dev
+          sudo apt-get install -yqq device-tree-compiler libboost-regex-dev libboost-system-dev
           git clone https://github.com/riscv-software-src/riscv-isa-sim.git
           cd riscv-isa-sim
           mkdir build && cd build
           ../configure --prefix=/opt/spike
-          make install
+          sudo make install
           echo "/opt/spike/bin" >> $GITHUB_PATH
           cd ../../
           rm -rf riscv-isa-sim
