@@ -16,7 +16,7 @@ jobs:
         run: |
           wget https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2025.11.21/riscv32-elf-ubuntu-24.04-gcc.tar.xz
           mkdir -p /opt/riscv32/
-          tar -xzvf riscv32-elf-ubuntu-24.04-gcc.tar.xz -C /opt/riscv32/
+          tar -xvf riscv32-elf-ubuntu-24.04-gcc.tar.xz -C /opt/riscv32/
           echo "/opt/riscv32/bin" >> $GITHUB_PATH
           rm riscv32-elf-ubuntu-24.04-gcc.tar.xz
       - uses: actions/checkout@v4
