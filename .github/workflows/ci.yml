@@ -12,10 +12,16 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     steps:
+      - name: Setup RISC-V toolchain
+        run: |
+          wget https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2025.11.21/riscv32-elf-ubuntu-24.04-gcc.tar.xz
+          mkdir -p /opt/riscv32/
+          tar -xzvf riscv32-elf-ubuntu-24.04-gcc.tar.xz -C /opt/riscv32/
+          echo "/opt/riscv32/bin" >> $GITHUB_PATH
+          rm riscv32-elf-ubuntu-24.04-gcc.tar.xz
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: coursier/cache-action@v6
-      - uses: colinaaa/setup-riscv-gnu-toolchain@v1.0.2
       - name: Setup Scala
         uses: coursier/setup-action@v1
         with:
