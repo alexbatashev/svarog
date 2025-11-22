@@ -66,12 +66,16 @@ impl Simulator {
         model.pin_mut().set_debug_hart_in_bits_breakpoint_valid(0);
         model.pin_mut().set_debug_hart_in_bits_breakpoint_bits_pc(0);
         model.pin_mut().set_debug_hart_in_bits_watchpoint_valid(0);
-        model.pin_mut().set_debug_hart_in_bits_watchpoint_bits_addr(0);
+        model
+            .pin_mut()
+            .set_debug_hart_in_bits_watchpoint_bits_addr(0);
         model.pin_mut().set_debug_hart_in_bits_setPC_valid(0);
         model.pin_mut().set_debug_hart_in_bits_setPC_bits_pc(0);
         model.pin_mut().set_debug_hart_in_bits_register_valid(0);
         model.pin_mut().set_debug_hart_in_bits_register_bits_reg(0);
-        model.pin_mut().set_debug_hart_in_bits_register_bits_write(0);
+        model
+            .pin_mut()
+            .set_debug_hart_in_bits_register_bits_write(0);
         model.pin_mut().set_debug_hart_in_bits_register_bits_data(0);
 
         model.pin_mut().set_debug_mem_in_valid(0);
@@ -156,7 +160,9 @@ impl Simulator {
             // Set watchpoint if address was resolved
             if let Some(addr) = watchpoint_addr {
                 model.pin_mut().set_debug_hart_in_bits_watchpoint_valid(1);
-                model.pin_mut().set_debug_hart_in_bits_watchpoint_bits_addr(addr);
+                model
+                    .pin_mut()
+                    .set_debug_hart_in_bits_watchpoint_bits_addr(addr);
                 eprintln!("Setting watchpoint on address: 0x{:08x}", addr);
             }
 
@@ -257,7 +263,9 @@ impl Simulator {
             model.pin_mut().set_debug_hart_in_id_valid(1);
             model.pin_mut().set_debug_hart_in_id_bits(0); // Hart 0
             model.pin_mut().set_debug_hart_in_bits_setPC_valid(1);
-            model.pin_mut().set_debug_hart_in_bits_setPC_bits_pc(0x80000000);
+            model
+                .pin_mut()
+                .set_debug_hart_in_bits_setPC_bits_pc(0x80000000);
             eprintln!("Setting PC to 0x80000000 and flushing pipeline");
         }
         self.tick(true);
@@ -358,8 +366,12 @@ impl Simulator {
                 model.pin_mut().set_debug_hart_in_id_valid(1);
                 model.pin_mut().set_debug_hart_in_id_bits(0); // Hart 0
                 model.pin_mut().set_debug_hart_in_bits_register_valid(1);
-                model.pin_mut().set_debug_hart_in_bits_register_bits_reg(idx);
-                model.pin_mut().set_debug_hart_in_bits_register_bits_write(0); // Read
+                model
+                    .pin_mut()
+                    .set_debug_hart_in_bits_register_bits_reg(idx);
+                model
+                    .pin_mut()
+                    .set_debug_hart_in_bits_register_bits_write(0); // Read
                 model.pin_mut().set_debug_hart_in_bits_register_bits_data(0);
             }
 
@@ -408,7 +420,9 @@ impl Simulator {
             let ready = {
                 let mut model = self.model.borrow_mut();
                 model.pin_mut().set_debug_mem_in_bits_addr(addr);
-                model.pin_mut().set_debug_mem_in_bits_write(if write { 1 } else { 0 });
+                model
+                    .pin_mut()
+                    .set_debug_mem_in_bits_write(if write { 1 } else { 0 });
                 model.pin_mut().set_debug_mem_in_bits_data(data);
                 model.pin_mut().set_debug_mem_in_bits_reqWidth(req_width);
                 model.pin_mut().set_debug_mem_in_bits_instr(0);
