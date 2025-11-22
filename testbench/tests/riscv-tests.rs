@@ -56,8 +56,8 @@ fn run_test_impl(test_path: &Path) -> Result<()> {
     let vcd_path = PathBuf::from(format!("{}/vcd/{}.vcd", TARGET_PATH, test_name));
 
     // Create simulator (model is built once during cargo build, no rebuild needed)
-    let simulator = Simulator::new()
-        .map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
+    let simulator =
+        Simulator::new().map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
 
     // Load the ELF binary with watchpoint on 'tohost' symbol
     let tohost_addr = simulator
