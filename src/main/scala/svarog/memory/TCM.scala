@@ -46,9 +46,11 @@ class TCM(
     val baseMask = MemWidth.mask(xlen)(io.ports(i).req.bits.reqWidth)
     val shiftedMask = Wire(Vec(wordSize, Bool()))
     for (j <- 0 until wordSize) {
+      // Use width-preserving subtraction and truncate to proper width
+      val offset = (j.U -& wordOffset)(offsetWidth - 1, 0)
       shiftedMask(j) := Mux(
-        (j.U >= wordOffset) && ((j.U - wordOffset) < baseMask.length.U),
-        baseMask(j.U - wordOffset),
+        (j.U >= wordOffset) && (offset < baseMask.length.U),
+        baseMask(offset),
         false.B
       )
     }
@@ -56,9 +58,11 @@ class TCM(
     // Shift write data to align with byte offset
     val shiftedWriteData = Wire(Vec(wordSize, UInt(8.W)))
     for (j <- 0 until wordSize) {
+      // Use width-preserving subtraction and truncate to proper width
+      val offset = (j.U -& wordOffset)(offsetWidth - 1, 0)
       shiftedWriteData(j) := Mux(
-        (j.U >= wordOffset) && ((j.U - wordOffset) < io.ports(i).req.bits.dataWrite.length.U),
-        io.ports(i).req.bits.dataWrite(j.U - wordOffset),
+        (j.U >= wordOffset) && (offset < io.ports(i).req.bits.dataWrite.length.U),
+        io.ports(i).req.bits.dataWrite(offset),
         0.U
       )
     }
@@ -85,7 +89,8 @@ class TCM(
     io.ports(i).resp.bits.valid := respValid
 
     for (j <- 0 until wordSize) {
-      val index = (respWordOffset + j.U)(offsetWidth - 1, 0)
+      // Ensure proper width for addition to avoid Verilator warnings
+      val index = (respWordOffset +& j.U)(offsetWidth - 1, 0)
       io.ports(i)
         .resp
         .bits
