@@ -154,7 +154,10 @@ fn main() -> Result<()> {
 
     // Link against the pre-built Verilator archives
     println!("cargo:rustc-link-lib=static=verilator_wrapper");
-    println!("cargo:rustc-link-search=native={}", verilator_out_dir.display());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        verilator_out_dir.display()
+    );
     println!("cargo:rustc-link-lib=static=VVerilatorTop");
     println!("cargo:rustc-link-lib=static=verilated");
 
