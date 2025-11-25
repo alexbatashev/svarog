@@ -1,11 +1,11 @@
 # Svarog Micro - 5-Stage In-Order RISC-V Core
 
-Svarog Micro is a 5-stage pipelined in-order RISC-V processor implementing RV32I, designed in Chisel.
+Svarog Micro is a 5-stage pipelined in-order RISC-V processor implementing RV32IM, designed in Chisel.
 
 ## Quick Overview
 
 - **Pipeline**: 5 stages (Fetch, Decode, Execute, Memory, Writeback)
-- **ISA**: RV32I (32-bit base integer instruction set)
+- **ISA**: RV32IM (32-bit base integer + multiply/divide)
 - **Execution**: In-order, single-issue
 - **HDL**: Chisel (generates Verilog)
 - **Hazard Handling**: Stall-based with limited bypass
@@ -23,8 +23,8 @@ Svarog Micro is a 5-stage pipelined in-order RISC-V processor implementing RV32I
 | Extension | Description | Status |
 |-----------|-------------|--------|
 | **RV32I** | Base Integer Instruction Set (2.1) | ✅ 38 instructions implemented |
+| **M** | Integer Multiplication and Division | ✅ 8 instructions implemented |
 | **Zicsr** | Control and Status Register | 🚧 Partial (CSR reads only) |
-| **M** | Integer Multiplication and Division | ❌ Not implemented |
 | **A** | Atomic Instructions | ❌ Not implemented |
 | **F** | Single-Precision Floating-Point | ❌ Not implemented |
 | **D** | Double-Precision Floating-Point | ❌ Not implemented |

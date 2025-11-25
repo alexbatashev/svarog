@@ -1,26 +1,14 @@
 # Svarog Documentation
 
-This directory contains documentation for the Svarog processor family.
+This directory contains documentation for the Svarog RISC-V processor.
 
-## Svarog Cores
+## Svarog Micro
 
-Svarog is designed as a series of RISC-V cores with different performance and complexity targets.
-
-### Available Cores
-
-- **[Micro](micro/)** - 5-stage in-order pipeline, RV32I
+- **[Micro](micro/)** - 5-stage in-order pipeline, RV32IM
   - Target: Educational, embedded, low-area applications
   - Status: ✅ Implemented
 
-### Planned Cores (Future)
-
-- **Nano** - Minimal area, microcoded
-- **Mega** - Superscalar, out-of-order
-- **Ultra** - High-performance, advanced features
-
 ## Getting Started
-
-For the currently implemented Micro core:
 
 1. [Setup and Build](micro/getting-started.md)
 2. [Architecture Overview](micro/architecture.md)

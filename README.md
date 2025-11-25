@@ -1,10 +1,10 @@
 # Svarog
 
-Svarog is a family of RISC-V processor cores written in Chisel.
+A RISC-V processor core written in Chisel.
 
 ## Current Status
 
-**Svarog Micro** - 5-stage in-order RV32I pipeline
+**Svarog Micro** - 5-stage in-order RV32IM pipeline
 - ✅ Implemented and tested
 - See [docs/micro/](docs/micro/) for architecture and usage
 
@@ -21,6 +21,14 @@ Svarog is a family of RISC-V processor cores written in Chisel.
 Additional tools required to run `testbench/` integration tests:
 
 - **Rust toolchain** - [Install from rustup.rs](https://rustup.rs/)
+- **C++ compiler** - For building Verilator wrapper (g++ or clang++)
+  ```bash
+  # Ubuntu/Debian
+  sudo apt-get install build-essential
+
+  # macOS
+  xcode-select --install
+  ```
 - **RISC-V GNU toolchain** - For building test binaries
   - Needs `riscv32-unknown-elf-gcc` and related tools
   - [Installation guide](https://github.com/riscv-collab/riscv-gnu-toolchain)
@@ -112,7 +120,7 @@ svarog/
 
 ## Svarog Micro Features
 
-- **ISA**: RV32I base integer instruction set
+- **ISA**: RV32IM (base integer + multiply/divide)
 - **Pipeline**: 5 stages (Fetch, Decode, Execute, Memory, Writeback)
 - **Execution**: In-order, single-issue
 - **CPI**: ~1.0 for straight-line code
