@@ -22,13 +22,15 @@ Svarog Micro is a 5-stage pipelined in-order RISC-V processor implementing RV32I
 
 | Extension | Description | Status |
 |-----------|-------------|--------|
-| **RV32I** | Base Integer Instruction Set (2.1) | ✅ Complete (40 instructions) |
-| **Zicsr** | Control and Status Register | 🚧 Basic support |
+| **RV32I** | Base Integer Instruction Set (2.1) | ✅ 38 instructions implemented |
+| **Zicsr** | Control and Status Register | 🚧 Partial (CSR reads only) |
 | **M** | Integer Multiplication and Division | ❌ Not implemented |
 | **A** | Atomic Instructions | ❌ Not implemented |
 | **F** | Single-Precision Floating-Point | ❌ Not implemented |
 | **D** | Double-Precision Floating-Point | ❌ Not implemented |
 | **C** | Compressed Instructions | ❌ Not implemented |
+
+**Note**: FENCE and EBREAK instructions are not yet implemented.
 
 ## Performance Characteristics
 

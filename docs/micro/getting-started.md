@@ -73,14 +73,11 @@ sbt compile
 ### Generate Verilog
 
 ```bash
-# Using Mill
-./mill svarog.runMain svarog.soc.SvarogSoC
-
-# Using SBT
-sbt "runMain svarog.soc.SvarogSoC"
+# Generate Verilog for Verilator testbench
+./mill -i svarog.runMain svarog.GenerateVerilatorTop --target-dir=target/generated/
 ```
 
-Verilog output will be generated in the working directory.
+See the root README for available command-line options.
 
 ## Running Tests
 

@@ -1,112 +1,141 @@
-Chisel Project Template
-=======================
+# Svarog
 
-You've done the [Chisel Bootcamp](https://github.com/freechipsproject/chisel-bootcamp), and now you
-are ready to start your own Chisel project.  The following procedure should get you started
-with a clean running [Chisel3](https://www.chisel-lang.org/) project.
+Svarog is a family of RISC-V processor cores written in Chisel.
 
-## Make your own Chisel3 project
+## Current Status
 
-### Dependencies
+**Svarog Micro** - 5-stage in-order RV32I pipeline
+- ✅ Implemented and tested
+- See [docs/micro/](docs/micro/) for architecture and usage
 
-#### JDK 11 or newer
+## Prerequisites
 
-We recommend using Java 11 or later LTS releases. While Chisel itself works with Java 8, our preferred build tool Mill requires Java 11. You can install the JDK as your operating system recommends, or use the prebuilt binaries from [Adoptium](https://adoptium.net/) (formerly AdoptOpenJDK).
+### For Chisel Development
 
-#### SBT or mill
+- **JDK 11 or newer** - [Download from Adoptium](https://adoptium.net/)
+- **Mill** - Included via `./mill` bootstrap script (no install needed)
+- **Verilator** - For ChiselTest simulations - [Install guide](https://verilator.org/guide/latest/install.html)
 
-SBT is the most common build tool in the Scala community. You can download it [here](https://www.scala-sbt.org/download.html).
-Mill is another Scala/Java build tool preferred by Chisel's developers.
-This repository includes a bootstrap script `./mill` so that no installation is necessary.
-You can read more about Mill on its website: https://mill-build.org.
+### For Integration Tests (Optional)
 
-#### Verilator
+Additional tools required to run `testbench/` integration tests:
 
-The test with `svsim` needs Verilator installed.
-See Verilator installation instructions [here](https://verilator.org/guide/latest/install.html).
+- **Rust toolchain** - [Install from rustup.rs](https://rustup.rs/)
+- **RISC-V GNU toolchain** - For building test binaries
+  - Needs `riscv32-unknown-elf-gcc` and related tools
+  - [Installation guide](https://github.com/riscv-collab/riscv-gnu-toolchain)
+- **Spike ISA simulator** - Golden reference for comparison
+  - [Installation guide](https://github.com/riscv-software-src/riscv-isa-sim)
+- **autoconf** and **make** - For building riscv-tests
+  ```bash
+  # Ubuntu/Debian
+  sudo apt-get install autoconf make
 
-### How to get started
+  # macOS
+  brew install autoconf make
+  ```
 
-#### Create a repository from the template
+## Quick Start
 
-This repository is a Github template. You can create your own repository from it by clicking the green `Use this template` in the top right.
-Please leave `Include all branches` **unchecked**; checking it will pollute the history of your new repository.
-For more information, see ["Creating a repository from a template"](https://docs.github.com/en/free-pro-team@latest/github/creating-cloning-and-archiving-repositories/creating-a-repository-from-a-template).
+### Build and Run Unit Tests
 
-#### Wait for the template cleanup workflow to complete
-
-After using the template to create your own blank project, please wait a minute or two for the `Template cleanup` workflow to run which will removes some template-specific stuff from the repository (like the LICENSE).
-Refresh the repository page in your browser until you see a 2nd commit by `actions-user` titled `Template cleanup`.
-
-
-#### Clone your repository
-
-Once you have created a repository from this template and the `Template cleanup` workflow has completed, you can click the green button to get a link for cloning your repository.
-Note that it is easiest to push to a repository if you set up SSH with Github, please see the [related documentation](https://docs.github.com/en/free-pro-team@latest/github/authenticating-to-github/connecting-to-github-with-ssh). SSH is required for pushing to a Github repository when using two-factor authentication.
-
-```sh
-git clone git@github.com:alexbatashev/svarog.git
-cd svarog
-```
-
-#### Set project organization and name in build.sbt
-
-The cleanup workflow will have attempted to provide sensible defaults for `ThisBuild / organization` and `name` in the `build.sbt`.
-Feel free to use your text editor of choice to change them as you see fit.
-
-#### Clean up the README.md file
-
-Again, use you editor of choice to make the README specific to your project.
-
-#### Add a LICENSE file
-
-It is important to have a LICENSE for open source (or closed source) code.
-This template repository has the Unlicense in order to allow users to add any license they want to derivative code.
-The Unlicense is stripped when creating a repository from this template so that users do not accidentally unlicense their own work.
-
-For more information about a license, check out the [Github Docs](https://docs.github.com/en/free-pro-team@latest/github/building-a-strong-community/adding-a-license-to-a-repository).
-
-#### Commit your changes
-```sh
-git commit -m 'Starting svarog'
-git push origin main
-```
-
-### Did it work?
-
-You should now have a working Chisel3 project.
-
-You can run the included test with:
-```sh
-sbt test
-```
-
-Alternatively, if you use Mill:
-```sh
+```bash
+# Run Chisel unit tests
 ./mill svarog.test
+
+# Run specific test
+./mill svarog.test.testOnly svarog.micro.PipelineSpec
 ```
 
-You should see a whole bunch of output that ends with something like the following lines
+### Generate Verilog
+
+```bash
+# Generate Verilog for Verilator testbench
+./mill -i svarog.runMain svarog.GenerateVerilatorTop --target-dir=target/generated/
 ```
-[info] Tests: succeeded 1, failed 0, canceled 0, ignored 0, pending 0
-[info] All tests passed.
-[success] Total time: 5 s, completed Dec 16, 2020 12:18:44 PM
+
+Options:
+- `--xlen=32` - Data width (default: 32)
+- `--ram-size-kb=16` - RAM size in KB (default: 16)
+- `--clock-hz=50000000` - Clock frequency (default: 50MHz)
+- `--target-dir=path` - Output directory (default: `target/generated/`)
+
+### Run Integration Tests
+
+Integration tests use the official RISC-V test suite:
+
+```bash
+cd testbench
+cargo test
 ```
-If you see the above then...
 
-### It worked!
+This will:
+1. Generate Verilog using Mill
+2. Clone and build riscv-tests (rv32ui suite)
+3. Run each test in Verilator
+4. Compare results against Spike (ISA simulator)
 
-You are ready to go. We have a few recommended practices and things to do.
+Set `SVAROG_MAX_CYCLES` to control simulation timeout:
+```bash
+SVAROG_MAX_CYCLES=50000 cargo test
+```
 
-* Use packages and following conventions for [structure](https://www.scala-sbt.org/1.x/docs/Directories.html) and [naming](http://docs.scala-lang.org/style/naming-conventions.html)
-* Package names should be clearly reflected in the testing hierarchy
-* Build tests for all your work
-* Read more about testing in SBT in the [SBT docs](https://www.scala-sbt.org/1.x/docs/Testing.html)
-* This template includes a [test dependency](https://www.scala-sbt.org/1.x/docs/Library-Dependencies.html#Per-configuration+dependencies) on [ScalaTest](https://www.scalatest.org/). This, coupled with `svsim` (included with Chisel) and `verilator`, are a starting point for testing Chisel generators.
-  * You can remove this dependency in the build.sbt file if you want to
-* Change the name of your project in the build.sbt file
-* Change your README.md
+## Project Structure
 
-## Problems? Questions?
+```
+svarog/
+├── src/
+│   ├── main/scala/svarog/
+│   │   ├── micro/          # Micro core pipeline stages
+│   │   ├── decoder/        # Instruction decoder
+│   │   ├── bits/           # Basic components (ALU, RegFile)
+│   │   ├── memory/         # Memory interfaces
+│   │   ├── soc/            # SoC integration
+│   │   ├── debug/          # Debug interface
+│   │   └── GenerateVerilatorTop.scala
+│   └── test/scala/svarog/  # Unit tests
+├── testbench/              # Integration tests (Rust + Verilator)
+│   ├── src/lib.rs
+│   ├── tests/riscv-tests.rs
+│   └── build.rs
+├── docs/                   # Documentation
+│   └── micro/              # Micro core docs
+└── build.mill              # Mill build configuration
+```
 
-Check out the [Chisel Users Community](https://www.chisel-lang.org/community.html) page for links to get in contact!
+## Documentation
+
+- **[Getting Started](docs/micro/getting-started.md)** - Detailed setup and build instructions
+- **[Architecture](docs/micro/architecture.md)** - Pipeline and microarchitecture details
+- **[Development](docs/micro/development.md)** - Testing and contributing guide
+- **[Configuration](docs/micro/configuration.md)** - SoC configuration options
+
+## Svarog Micro Features
+
+- **ISA**: RV32I base integer instruction set
+- **Pipeline**: 5 stages (Fetch, Decode, Execute, Memory, Writeback)
+- **Execution**: In-order, single-issue
+- **CPI**: ~1.0 for straight-line code
+- **Branch Prediction**: Static not-taken
+- **Debug**: Optional hardware debug interface
+
+See [docs/micro/README.md](docs/micro/README.md) for detailed specifications.
+
+## Build Requirements
+
+The build system expects a `.mill-jvm-opts` file in the repository root:
+```
+-Dchisel.project.root=${PWD}
+```
+
+This is needed for Chisel to properly locate test directories and output files.
+
+## License
+
+See LICENSE file in the repository root.
+
+## Resources
+
+- **Chisel**: [chisel-lang.org](https://www.chisel-lang.org/)
+- **RISC-V**: [riscv.org](https://riscv.org/)
+- **Chisel Bootcamp**: [github.com/freechipsproject/chisel-bootcamp](https://github.com/freechipsproject/chisel-bootcamp)
