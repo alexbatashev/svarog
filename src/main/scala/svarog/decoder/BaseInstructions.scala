@@ -4,9 +4,11 @@ import chisel3._
 import chisel3.util._
 import svarog.bits.ALUOp
 import svarog.memory.MemWidth
+import svarog.bits.MulOp
+import svarog.bits.DivOp
 
 case class BaseInstructions(xlen: Int) extends Module {
-  // require(xlen >= 32, "BaseInstructions requires XLEN >= 32")
+  require(xlen >= 32, "BaseInstructions requires XLEN >= 32")
 
   val io = IO(new Bundle {
     val immGen = Flipped(new ImmGenIO(xlen))
@@ -40,6 +42,8 @@ case class BaseInstructions(xlen: Int) extends Module {
   io.decoded.pc := io.pc
   io.decoded.isEcall := false.B
   io.decoded.aluOp := ALUOp.ADD
+  io.decoded.mulOp := MulOp.MUL
+  io.decoded.divOp := DivOp.DIV
   io.decoded.opType := OpType.INVALID
 
   switch(opcode) {
@@ -82,6 +86,7 @@ case class BaseInstructions(xlen: Int) extends Module {
       io.decoded.opType := OpType.ALU
       io.decoded.hasImm := true.B
       io.decoded.regWrite := rd =/= 0.U
+      io.decoded.rs2 := 0.U // I-type instructions don't use rs2
       io.immGen.format := ImmFormat.I
 
       switch(funct3) {
@@ -102,6 +107,7 @@ case class BaseInstructions(xlen: Int) extends Module {
       io.decoded.opType := OpType.LOAD
       io.decoded.hasImm := true.B
       io.decoded.regWrite := rd =/= 0.U
+      io.decoded.rs2 := 0.U // LOAD instructions don't use rs2
       io.immGen.format := ImmFormat.I
 
       switch(funct3) {
@@ -145,6 +151,8 @@ case class BaseInstructions(xlen: Int) extends Module {
       io.decoded.opType := OpType.LUI
       io.decoded.hasImm := true.B
       io.decoded.regWrite := rd =/= 0.U
+      io.decoded.rs1 := 0.U // LUI doesn't use rs1
+      io.decoded.rs2 := 0.U // LUI doesn't use rs2
       io.immGen.format := ImmFormat.U
     }
 
@@ -152,6 +160,8 @@ case class BaseInstructions(xlen: Int) extends Module {
       io.decoded.opType := OpType.AUIPC
       io.decoded.hasImm := true.B
       io.decoded.regWrite := rd =/= 0.U
+      io.decoded.rs1 := 0.U // AUIPC doesn't use rs1 (uses PC instead)
+      io.decoded.rs2 := 0.U // AUIPC doesn't use rs2
       io.immGen.format := ImmFormat.U
     }
 
@@ -167,6 +177,8 @@ case class BaseInstructions(xlen: Int) extends Module {
       io.decoded.opType := OpType.JAL
       io.decoded.hasImm := true.B
       io.decoded.regWrite := rd =/= 0.U
+      io.decoded.rs1 := 0.U // JAL doesn't use rs1 (uses PC instead)
+      io.decoded.rs2 := 0.U // JAL doesn't use rs2
       io.immGen.format := ImmFormat.J
     }
 
@@ -174,6 +186,7 @@ case class BaseInstructions(xlen: Int) extends Module {
       io.decoded.opType := OpType.JALR
       io.decoded.hasImm := true.B
       io.decoded.regWrite := rd =/= 0.U
+      io.decoded.rs2 := 0.U // JALR doesn't use rs2
       io.immGen.format := ImmFormat.I
     }
 

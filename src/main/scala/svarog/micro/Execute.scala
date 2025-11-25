@@ -4,6 +4,8 @@ import chisel3._
 import chisel3.util._
 import svarog.bits.RegFileReadIO
 import svarog.bits.ALU
+import svarog.bits.{MulOp, SimpleMultiplier}
+import svarog.bits.{DivOp, SimpleDivider}
 import svarog.decoder.BranchOp
 import svarog.decoder.{MicroOp, OpType}
 import svarog.memory.MemWidth
@@ -49,6 +51,8 @@ class Execute(xlen: Integer) extends Module {
   needFlush := false.B // reset at each cycle
 
   val alu = Module(new ALU(xlen))
+  val mul = Module(new SimpleMultiplier(xlen))
+  val div = Module(new SimpleDivider(xlen))
 
   // Single-cycle execute: current instruction always completes
   // Output is valid only when we have an instruction AND (downstream is ready AND not stalled)
@@ -91,6 +95,18 @@ class Execute(xlen: Integer) extends Module {
     io.uop.bits.imm,
     io.regFile.readData2
   )
+
+  // Multiplier wiring
+  mul.io.inp.bits.op := io.uop.bits.mulOp
+  mul.io.inp.bits.multiplicant := io.regFile.readData1
+  mul.io.inp.bits.multiplier := io.regFile.readData2
+  mul.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.MUL)
+
+  // Divider wiring
+  div.io.inp.bits.op := io.uop.bits.divOp
+  div.io.inp.bits.dividend := io.regFile.readData1
+  div.io.inp.bits.divisor := io.regFile.readData2
+  div.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.DIV)
 
   when(io.uop.valid && !needFlush) {
     switch(io.uop.bits.opType) {
@@ -156,6 +172,16 @@ class Execute(xlen: Integer) extends Module {
         val target = io.regFile.readData1 + io.uop.bits.imm
         io.branch.bits.targetPC := Cat(target(31, 1), 0.U(1.W)) // Clear LSB
         io.res.bits.intResult := io.uop.bits.pc + 4.U // Save return address
+      }
+
+      is(OpType.MUL) {
+        // Multiplication operations
+        io.res.bits.intResult := mul.io.result.bits
+      }
+
+      is(OpType.DIV) {
+        // Division/remainder operations
+        io.res.bits.intResult := div.io.result.bits
       }
     }
   }

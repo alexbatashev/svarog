@@ -47,6 +47,9 @@ class FetchSpec extends AnyFlatSpec with Matchers with ChiselSim {
         dut.io.mem.resp.bits.valid.poke(true.B)
         dut.io.mem.resp.valid.poke(true.B)
 
+        // Wait one cycle for respPending to be set and output to become valid
+        dut.clock.step(1)
+
         dut.io.inst_out.valid.expect(true.B)
         dut.io.inst_out.bits.word.expect(instruction.U)
         dut.io.inst_out.bits.pc.expect(expectedPC.U)

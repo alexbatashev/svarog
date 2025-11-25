@@ -7,14 +7,12 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use cxx::UniquePtr;
 use elf::{ElfBytes, endian::AnyEndian};
-use marlin::{
-    verilator::{
-        AsVerilatedModel, VerilatedModelConfig, VerilatorRuntime, VerilatorRuntimeOptions, vcd::Vcd,
-    },
-    verilog::prelude::*,
-};
 use snafu::Whatever;
+
+mod bridge;
+use bridge::ffi;
 
 /// Register file state
 #[derive(Debug, Clone)]
@@ -52,75 +50,55 @@ pub struct TestResult {
     pub exit_code: Option<u32>,
 }
 
-#[verilog(src = "../target/generated/VerilatorTop.sv", name = "VerilatorTop")]
-pub struct VerilatorTop;
-
 pub struct Simulator {
-    runtime: &'static VerilatorRuntime,
-    pub model: RefCell<VerilatorTop<'static>>,
-    pub timestamp: RefCell<u64>,
+    model: RefCell<UniquePtr<ffi::VerilatorModel>>,
+    timestamp: RefCell<u64>,
+    vcd_open: RefCell<bool>,
 }
 
 impl Simulator {
-    fn init_debug_interface(dut: &mut VerilatorTop) {
+    fn init_debug_interface(model: &mut UniquePtr<ffi::VerilatorModel>) {
         // Initialize all debug interface signals to safe defaults
-        dut.io_debug_hart_in_id_valid = 0;
-        dut.io_debug_hart_in_id_bits = 0;
-        dut.io_debug_hart_in_bits_halt_valid = 0;
-        dut.io_debug_hart_in_bits_halt_bits = 0;
-        dut.io_debug_hart_in_bits_breakpoint_valid = 0;
-        dut.io_debug_hart_in_bits_breakpoint_bits_pc = 0;
-        dut.io_debug_hart_in_bits_watchpoint_valid = 0;
-        dut.io_debug_hart_in_bits_watchpoint_bits_addr = 0;
-        dut.io_debug_hart_in_bits_setPC_valid = 0;
-        dut.io_debug_hart_in_bits_setPC_bits_pc = 0;
-        dut.io_debug_hart_in_bits_register_valid = 0;
-        dut.io_debug_hart_in_bits_register_bits_reg = 0;
-        dut.io_debug_hart_in_bits_register_bits_write = 0;
-        dut.io_debug_hart_in_bits_register_bits_data = 0;
+        model.pin_mut().set_debug_hart_in_id_valid(0);
+        model.pin_mut().set_debug_hart_in_id_bits(0);
+        model.pin_mut().set_debug_hart_in_bits_halt_valid(0);
+        model.pin_mut().set_debug_hart_in_bits_halt_bits(0);
+        model.pin_mut().set_debug_hart_in_bits_breakpoint_valid(0);
+        model.pin_mut().set_debug_hart_in_bits_breakpoint_bits_pc(0);
+        model.pin_mut().set_debug_hart_in_bits_watchpoint_valid(0);
+        model
+            .pin_mut()
+            .set_debug_hart_in_bits_watchpoint_bits_addr(0);
+        model.pin_mut().set_debug_hart_in_bits_setPC_valid(0);
+        model.pin_mut().set_debug_hart_in_bits_setPC_bits_pc(0);
+        model.pin_mut().set_debug_hart_in_bits_register_valid(0);
+        model.pin_mut().set_debug_hart_in_bits_register_bits_reg(0);
+        model
+            .pin_mut()
+            .set_debug_hart_in_bits_register_bits_write(0);
+        model.pin_mut().set_debug_hart_in_bits_register_bits_data(0);
 
-        dut.io_debug_mem_in_valid = 0;
-        dut.io_debug_mem_in_bits_addr = 0;
-        dut.io_debug_mem_in_bits_write = 0;
-        dut.io_debug_mem_in_bits_data = 0;
-        dut.io_debug_mem_in_bits_reqWidth = 0; // BYTE
-        dut.io_debug_mem_in_bits_instr = 0;
+        model.pin_mut().set_debug_mem_in_valid(0);
+        model.pin_mut().set_debug_mem_in_bits_addr(0);
+        model.pin_mut().set_debug_mem_in_bits_write(0);
+        model.pin_mut().set_debug_mem_in_bits_data(0);
+        model.pin_mut().set_debug_mem_in_bits_reqWidth(0); // BYTE
+        model.pin_mut().set_debug_mem_in_bits_instr(0);
 
-        dut.io_debug_mem_res_ready = 1; // Always ready to receive results
-        dut.io_debug_reg_res_ready = 0; // Not ready until explicitly set
+        model.pin_mut().set_debug_mem_res_ready(1); // Always ready to receive results
+        model.pin_mut().set_debug_reg_res_ready(0); // Not ready until explicitly set
     }
 
-    pub fn new(out_dir: &str) -> Result<Self, Whatever> {
-        // Leak the runtime to get a 'static reference
-        // This is necessary because the model needs to borrow from the runtime
-        // for its entire lifetime, creating a self-referential structure
-        let runtime = Box::new(VerilatorRuntime::new(
-            out_dir.into(),
-            &[VerilatorTop::source_path().into()],
-            &[],
-            [],
-            VerilatorRuntimeOptions::default_logging(),
-        )?);
-        let runtime: &'static VerilatorRuntime = Box::leak(runtime);
-
-        let model = RefCell::new(runtime.create_model::<VerilatorTop<'static>>(
-            &VerilatedModelConfig {
-                verilator_optimization: 3,
-                enable_tracing: true,
-                ..Default::default()
-            },
-        )?);
+    pub fn new() -> Result<Self, Whatever> {
+        let mut model = ffi::create_verilator_model();
 
         // Initialize debug interface to safe defaults
-        {
-            let mut dut = model.borrow_mut();
-            Self::init_debug_interface(&mut dut);
-        }
+        Self::init_debug_interface(&mut model);
 
         Ok(Simulator {
-            runtime,
-            model,
+            model: RefCell::new(model),
             timestamp: RefCell::new(0),
+            vcd_open: RefCell::new(false),
         })
     }
 
@@ -162,46 +140,48 @@ impl Simulator {
         // Memory uses RegInit, so reset clears it to all zeros.
         // We must reset first, then load memory after.
         {
-            let mut dut = self.model.borrow_mut();
+            let mut model = self.model.borrow_mut();
 
             // Establish initial state: clock low, then apply reset
-            dut.clock = 0;
-            dut.reset = 1;
+            model.pin_mut().set_clock(0);
+            model.pin_mut().set_reset(1);
 
             // Initialize debug interface first, THEN set halt
             // (init_debug_interface clears all signals including halt)
-            Self::init_debug_interface(&mut dut);
+            Self::init_debug_interface(&mut model);
 
             // Set halt through debug interface
             // IMPORTANT: Must set id_valid and id_bits to route commands to hart 0
-            dut.io_debug_hart_in_id_valid = 1;
-            dut.io_debug_hart_in_id_bits = 0; // Hart 0
-            dut.io_debug_hart_in_bits_halt_valid = 1;
-            dut.io_debug_hart_in_bits_halt_bits = 1;
+            model.pin_mut().set_debug_hart_in_id_valid(1);
+            model.pin_mut().set_debug_hart_in_id_bits(0); // Hart 0
+            model.pin_mut().set_debug_hart_in_bits_halt_valid(1);
+            model.pin_mut().set_debug_hart_in_bits_halt_bits(1);
 
             // Set watchpoint if address was resolved
             if let Some(addr) = watchpoint_addr {
-                dut.io_debug_hart_in_bits_watchpoint_valid = 1;
-                dut.io_debug_hart_in_bits_watchpoint_bits_addr = addr;
+                model.pin_mut().set_debug_hart_in_bits_watchpoint_valid(1);
+                model
+                    .pin_mut()
+                    .set_debug_hart_in_bits_watchpoint_bits_addr(addr);
                 eprintln!("Setting watchpoint on address: 0x{:08x}", addr);
             }
 
             // Evaluate to apply reset before first clock edge
-            dut.eval();
+            model.pin_mut().eval();
         }
 
         // Reset for a few cycles
         for _ in 0..5 {
-            self.tick(&mut None);
+            self.tick(false);
         }
 
         // Take reset low before loading sections so the core starts from a clean
         // slate once we release halt later.
         {
-            let mut dut = self.model.borrow_mut();
-            dut.reset = 0;
+            let mut model = self.model.borrow_mut();
+            model.pin_mut().set_reset(0);
         }
-        self.tick(&mut None);
+        self.tick(false);
 
         // Load sections: .text, .text.init, and .data
         let sections_to_load = [".text", ".text.init", ".data"];
@@ -255,89 +235,103 @@ impl Simulator {
     }
 
     pub fn run(&self, vcd_path: &Path, max_cycles: usize) -> Result<TestResult> {
-        let mut vcd = { self.model.borrow_mut().open_vcd(vcd_path) };
+        // Open VCD trace
+        {
+            let mut model = self.model.borrow_mut();
+            model.pin_mut().open_vcd(vcd_path.to_str().unwrap());
+            *self.vcd_open.borrow_mut() = true;
+        }
 
         // Toggle reset while dumping a couple of baseline cycles so the trace captures
         // the CPU at the architectural reset vector before we let the pipeline run.
         {
-            let mut dut = self.model.borrow_mut();
-            dut.reset = 1;
+            let mut model = self.model.borrow_mut();
+            model.pin_mut().set_reset(1);
         }
         for _ in 0..2 {
-            self.tick(&mut Some(&mut vcd));
+            self.tick(true);
         }
         {
-            let mut dut = self.model.borrow_mut();
-            dut.reset = 0;
+            let mut model = self.model.borrow_mut();
+            model.pin_mut().set_reset(0);
         }
-        self.tick(&mut Some(&mut vcd));
+        self.tick(true);
 
         // Set PC to program entry point and flush pipeline before releasing halt
         {
-            let mut dut = self.model.borrow_mut();
-            dut.io_debug_hart_in_id_valid = 1;
-            dut.io_debug_hart_in_id_bits = 0; // Hart 0
-            dut.io_debug_hart_in_bits_setPC_valid = 1;
-            dut.io_debug_hart_in_bits_setPC_bits_pc = 0x80000000;
+            let mut model = self.model.borrow_mut();
+            model.pin_mut().set_debug_hart_in_id_valid(1);
+            model.pin_mut().set_debug_hart_in_id_bits(0); // Hart 0
+            model.pin_mut().set_debug_hart_in_bits_setPC_valid(1);
+            model
+                .pin_mut()
+                .set_debug_hart_in_bits_setPC_bits_pc(0x80000000);
             eprintln!("Setting PC to 0x80000000 and flushing pipeline");
         }
-        self.tick(&mut Some(&mut vcd));
+        self.tick(true);
         {
-            let mut dut = self.model.borrow_mut();
-            dut.io_debug_hart_in_bits_setPC_valid = 0;
+            let mut model = self.model.borrow_mut();
+            model.pin_mut().set_debug_hart_in_bits_setPC_valid(0);
         }
-        self.tick(&mut Some(&mut vcd));
+        self.tick(true);
 
         // Release halt to start execution
         {
-            let mut dut = self.model.borrow_mut();
-            dut.io_debug_mem_in_valid = 0; // Disable memory writes
-            dut.io_debug_hart_in_id_valid = 1;
-            dut.io_debug_hart_in_id_bits = 0; // Hart 0
-            dut.io_debug_hart_in_bits_halt_valid = 1;
-            dut.io_debug_hart_in_bits_halt_bits = 0; // Release halt
+            let mut model = self.model.borrow_mut();
+            model.pin_mut().set_debug_mem_in_valid(0); // Disable memory writes
+            model.pin_mut().set_debug_hart_in_id_valid(1);
+            model.pin_mut().set_debug_hart_in_id_bits(0); // Hart 0
+            model.pin_mut().set_debug_hart_in_bits_halt_valid(1);
+            model.pin_mut().set_debug_hart_in_bits_halt_bits(0); // Release halt
             eprintln!("CPU halt released, starting execution");
         }
-        self.tick(&mut Some(&mut vcd));
+        self.tick(true);
 
         // Clear id.valid and halt.valid to enter "don't care" state
         // This allows internal events (watchpoints, breakpoints) to assert halt
         {
-            let mut dut = self.model.borrow_mut();
-            dut.io_debug_hart_in_id_valid = 0;
-            dut.io_debug_hart_in_bits_halt_valid = 0;
+            let mut model = self.model.borrow_mut();
+            model.pin_mut().set_debug_hart_in_id_valid(0);
+            model.pin_mut().set_debug_hart_in_bits_halt_valid(0);
             eprintln!("Cleared halt.valid to 'don't care' state");
         }
 
         // Tick more cycles to fully clear pipeline after halt
         for _ in 0..10 {
-            self.tick(&mut Some(&mut vcd));
+            self.tick(true);
         }
 
         // Check if halt was actually released
         {
-            let dut = self.model.borrow();
-            let halted = dut.io_debug_halted != 0;
+            let model = self.model.borrow();
+            let halted = model.get_debug_halted() != 0;
             eprintln!("After release+10cycles: halted={}", halted);
         }
 
         for cycle in 0..max_cycles {
-            self.tick(&mut Some(&mut vcd));
+            self.tick(true);
 
             // Check if CPU has halted (watchpoint hit)
             let halted = {
-                let dut = self.model.borrow();
-                dut.io_debug_halted != 0
+                let model = self.model.borrow();
+                model.get_debug_halted() != 0
             };
 
             if halted {
                 eprintln!("CPU halted at cycle {}, watchpoint triggered", cycle);
                 // Run a few more cycles to let the pipeline settle
                 for _ in 0..5 {
-                    self.tick(&mut Some(&mut vcd));
+                    self.tick(true);
                 }
                 break;
             }
+        }
+
+        // Close VCD
+        {
+            let mut model = self.model.borrow_mut();
+            model.pin_mut().close_vcd();
+            *self.vcd_open.borrow_mut() = false;
         }
 
         let regs = self.capture_registers()?;
@@ -354,55 +348,59 @@ impl Simulator {
 
         // Ensure CPU is halted
         {
-            let mut dut = self.model.borrow_mut();
-            dut.io_debug_hart_in_id_valid = 1;
-            dut.io_debug_hart_in_id_bits = 0; // Hart 0
-            dut.io_debug_hart_in_bits_halt_valid = 1;
-            dut.io_debug_hart_in_bits_halt_bits = 1;
-            dut.io_debug_reg_res_ready = 1; // Ready to receive results
+            let mut model = self.model.borrow_mut();
+            model.pin_mut().set_debug_hart_in_id_valid(1);
+            model.pin_mut().set_debug_hart_in_id_bits(0); // Hart 0
+            model.pin_mut().set_debug_hart_in_bits_halt_valid(1);
+            model.pin_mut().set_debug_hart_in_bits_halt_bits(1);
+            model.pin_mut().set_debug_reg_res_ready(1); // Ready to receive results
         }
 
         // Tick to apply halt
-        self.tick(&mut None);
+        self.tick(false);
 
         // Read each register through debug interface
         for idx in 0..32 {
             {
-                let mut dut = self.model.borrow_mut();
-                dut.io_debug_hart_in_id_valid = 1;
-                dut.io_debug_hart_in_id_bits = 0; // Hart 0
-                dut.io_debug_hart_in_bits_register_valid = 1;
-                dut.io_debug_hart_in_bits_register_bits_reg = idx;
-                dut.io_debug_hart_in_bits_register_bits_write = 0; // Read
-                dut.io_debug_hart_in_bits_register_bits_data = 0;
+                let mut model = self.model.borrow_mut();
+                model.pin_mut().set_debug_hart_in_id_valid(1);
+                model.pin_mut().set_debug_hart_in_id_bits(0); // Hart 0
+                model.pin_mut().set_debug_hart_in_bits_register_valid(1);
+                model
+                    .pin_mut()
+                    .set_debug_hart_in_bits_register_bits_reg(idx);
+                model
+                    .pin_mut()
+                    .set_debug_hart_in_bits_register_bits_write(0); // Read
+                model.pin_mut().set_debug_hart_in_bits_register_bits_data(0);
             }
 
             // Tick to process request
-            self.tick(&mut None);
+            self.tick(false);
 
             // Wait for result
             let mut attempts = 0;
             let val = loop {
-                let dut = self.model.borrow();
-                if dut.io_debug_reg_res_valid != 0 {
-                    break dut.io_debug_reg_res_bits;
+                let model = self.model.borrow();
+                if model.get_debug_reg_res_valid() != 0 {
+                    break model.get_debug_reg_res_bits();
                 }
-                drop(dut);
+                drop(model);
 
                 attempts += 1;
                 if attempts > 10 {
                     eprintln!("Warning: Timeout waiting for register {} read result", idx);
                     break 0;
                 }
-                self.tick(&mut None);
+                self.tick(false);
             };
 
             regs.set(idx, val);
 
             // Clear register request
             {
-                let mut dut = self.model.borrow_mut();
-                dut.io_debug_hart_in_bits_register_valid = 0;
+                let mut model = self.model.borrow_mut();
+                model.pin_mut().set_debug_hart_in_bits_register_valid(0);
             }
         }
 
@@ -420,24 +418,26 @@ impl Simulator {
     fn drive_mem_request(&self, addr: u32, data: u32, req_width: u8, write: bool) {
         loop {
             let ready = {
-                let mut dut = self.model.borrow_mut();
-                dut.io_debug_mem_in_bits_addr = addr;
-                dut.io_debug_mem_in_bits_write = if write { 1 } else { 0 };
-                dut.io_debug_mem_in_bits_data = data;
-                dut.io_debug_mem_in_bits_reqWidth = req_width;
-                dut.io_debug_mem_in_bits_instr = 0;
-                dut.io_debug_mem_in_valid = 1;
-                dut.io_debug_mem_in_ready != 0
+                let mut model = self.model.borrow_mut();
+                model.pin_mut().set_debug_mem_in_bits_addr(addr);
+                model
+                    .pin_mut()
+                    .set_debug_mem_in_bits_write(if write { 1 } else { 0 });
+                model.pin_mut().set_debug_mem_in_bits_data(data);
+                model.pin_mut().set_debug_mem_in_bits_reqWidth(req_width);
+                model.pin_mut().set_debug_mem_in_bits_instr(0);
+                model.pin_mut().set_debug_mem_in_valid(1);
+                model.get_debug_mem_in_ready() != 0
             };
-            self.tick(&mut None);
+            self.tick(false);
             if ready {
                 break;
             }
         }
         {
-            let mut dut = self.model.borrow_mut();
-            dut.io_debug_mem_in_valid = 0;
-            dut.io_debug_mem_in_bits_write = 0;
+            let mut model = self.model.borrow_mut();
+            model.pin_mut().set_debug_mem_in_valid(0);
+            model.pin_mut().set_debug_mem_in_bits_write(0);
         }
     }
 
@@ -447,9 +447,9 @@ impl Simulator {
 
         loop {
             let response = {
-                let dut = self.model.borrow();
-                if dut.io_debug_mem_res_valid != 0 {
-                    Some(dut.io_debug_mem_res_bits)
+                let model = self.model.borrow();
+                if model.get_debug_mem_res_valid() != 0 {
+                    Some(model.get_debug_mem_res_bits())
                 } else {
                     None
                 }
@@ -459,21 +459,25 @@ impl Simulator {
                 return val;
             }
 
-            self.tick(&mut None);
+            self.tick(false);
         }
     }
 
-    fn tick(&self, vcd: &mut Option<&mut Vcd<'static>>) {
-        let mut dut = self.model.borrow_mut();
-        dut.clock = 0;
-        dut.eval();
-        vcd.as_mut().map(|vcd| vcd.dump(*self.timestamp.borrow()));
+    fn tick(&self, dump_vcd: bool) {
+        let mut model = self.model.borrow_mut();
+        model.pin_mut().set_clock(0);
+        model.pin_mut().eval();
+        if dump_vcd && *self.vcd_open.borrow() {
+            model.pin_mut().dump_vcd(*self.timestamp.borrow());
+        }
         *(self.timestamp.borrow_mut()) += 1;
 
-        dut.clock = 1;
-        dut.eval();
+        model.pin_mut().set_clock(1);
+        model.pin_mut().eval();
 
-        vcd.as_mut().map(|vcd| vcd.dump(*self.timestamp.borrow()));
+        if dump_vcd && *self.vcd_open.borrow() {
+            model.pin_mut().dump_vcd(*self.timestamp.borrow());
+        }
         *(self.timestamp.borrow_mut()) += 1;
     }
 }
