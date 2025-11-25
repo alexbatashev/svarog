@@ -91,7 +91,7 @@ SVAROG_MAX_CYCLES=50000 cargo test
 
 ## Svarog Micro Features
 
-- **ISA**: RV32IM (base integer + multiply/divide)
+- **ISA**: RV32IM_Zicsr (base integer + multiply/divide + CSR access)
 - **Pipeline**: 5 stages (Fetch, Decode, Execute, Memory, Writeback)
 - **Execution**: In-order, single-issue
 - **Branch Prediction**: Static not-taken

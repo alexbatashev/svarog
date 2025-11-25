@@ -14,6 +14,7 @@ object Opcodes {
   val LOAD = "b0000011".U
   val STORE = "b0100011".U
   val SYSTEM = "b1110011".U
+  val MULDIV = "b0110011".U
 }
 
 object ALUFunc3 {
@@ -30,6 +31,15 @@ object ALUFunc3 {
 object SRA_SLLFunc7 {
   val SRA = "b0100000".U
   val SLL = "b0000000".U
+}
+
+object CSRFunc3 {
+  val RW = "b001".U
+  val RS = "b010".U
+  val RC = "b011".U
+  val RWI = "b101".U
+  val RSI = "b110".U
+  val RCI = "b111".U
 }
 
 object BranchOp extends ChiselEnum {

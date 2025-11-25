@@ -13,6 +13,8 @@ import svarog.debug.HartDebugModule
 import svarog.debug.HartDebugIO
 import svarog.bits.RegFileReadIO
 import svarog.bits.RegFileWriteIO
+import svarog.bits.CSRFile
+import svarog.bits.ControlRegister
 
 class CpuIO(xlen: Int) extends Bundle {
   val instmem = new MemoryIO(xlen, xlen)
@@ -41,6 +43,7 @@ class Cpu(
 
   // Memories
   val regFile = Module(new RegFile(config.xlen))
+  val csrFile = Module(new CSRFile(ControlRegister.getDefaultRegisters()))
 
   // Stages
   val fetch = Module(new Fetch(config.xlen, resetVector))
@@ -112,6 +115,10 @@ class Cpu(
     writeback.io.regFile.writeData
   )
 
+  // CSR file connection - read from Execute, write from Writeback
+  execute.io.csrFile.read <> csrFile.io.read
+  csrFile.io.write <> writeback.io.csrFile
+
   // IF -> ID
   // Increased depth from 1 to 4 to handle pipelining and stalls without losing instructions
   val fetchDecodeQueue = Module(
@@ -174,6 +181,9 @@ class Cpu(
   hazardUnit.io.exec := execute.io.hazard
   hazardUnit.io.mem := memory.io.hazard
   hazardUnit.io.wb := writeback.io.hazard
+  hazardUnit.io.execCsr := execute.io.csrHazard
+  hazardUnit.io.memCsr := memory.io.csrHazard
+  hazardUnit.io.wbCsr := writeback.io.csrHazard
   hazardUnit.io.watchpointHit := debug.io.watchpointTriggered
   execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold
   writeback.io.halt := halt

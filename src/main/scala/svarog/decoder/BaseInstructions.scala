@@ -17,7 +17,6 @@ case class BaseInstructions(xlen: Int) extends Module {
     val instruction = Input(UInt(32.W))
   })
 
-  // def decode(instruction: UInt, immGen: ImmGen): MicroOp = {
   val opcode = io.instruction(6, 0)
   val rd = io.instruction(11, 7)
   val rs1 = io.instruction(19, 15)
@@ -25,6 +24,8 @@ case class BaseInstructions(xlen: Int) extends Module {
   val funct3 = io.instruction(14, 12)
   val funct7 = io.instruction(31, 25)
   val inst = io.instruction
+
+  io.decoded := MicroOp.getInvalid(xlen)
 
   io.immGen.instruction := io.instruction
   io.immGen.format := ImmFormat.I // Default format
@@ -34,17 +35,7 @@ case class BaseInstructions(xlen: Int) extends Module {
   io.decoded.rd := rd
   io.decoded.rs1 := rs1
   io.decoded.rs2 := rs2
-  io.decoded.hasImm := false.B
-  io.decoded.memWidth := MemWidth.WORD
-  io.decoded.memUnsigned := false.B
-  io.decoded.branchFunc := BranchOp.INVALID
-  io.decoded.regWrite := false.B
   io.decoded.pc := io.pc
-  io.decoded.isEcall := false.B
-  io.decoded.aluOp := ALUOp.ADD
-  io.decoded.mulOp := MulOp.MUL
-  io.decoded.divOp := DivOp.DIV
-  io.decoded.opType := OpType.INVALID
 
   switch(opcode) {
     is(Opcodes.ALU_REG) {
@@ -195,16 +186,6 @@ case class BaseInstructions(xlen: Int) extends Module {
         io.decoded.opType := OpType.SYSTEM
         io.decoded.regWrite := false.B
         io.decoded.isEcall := true.B
-      }.elsewhen(funct3 =/= 0.U) { // CSR instructions (Zicsr extension)
-        // Note: CSR is not part of base RV32I but commonly supported
-        // Treat CSR reads as ALU operations
-        io.decoded.opType := OpType.ALU
-        io.decoded.aluOp := ALUOp.ADD
-        io.decoded.hasImm := funct3(2) // CSRRxI instructions use immediate
-        io.decoded.regWrite := rd =/= 0.U
-        io.immGen.format := ImmFormat.I
-      }.otherwise {
-        io.decoded.opType := OpType.NOP
       }
     }
   }

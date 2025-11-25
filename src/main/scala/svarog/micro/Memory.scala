@@ -8,8 +8,11 @@ import svarog.decoder.OpType
 class MemResult(xlen: Int) extends Bundle {
   val opType = Output(OpType())
   val rd = Output(UInt(5.W))
-  val regWrite = Output(Bool())
-  val regData = Output(UInt(xlen.W))
+  val gprWrite = Output(Bool())
+  val gprData = Output(UInt(xlen.W))
+  val csrAddr = Output(UInt(12.W))
+  val csrWrite = Output(Bool())
+  val csrData = Output(UInt(xlen.W))
   val pc = Output(UInt(xlen.W))
   val storeAddr = Output(UInt(xlen.W)) // Store address for watchpoint
   val isStore = Output(Bool()) // Flag indicating if this was a store
@@ -20,6 +23,7 @@ class Memory(xlen: Int) extends Module {
     val ex = Flipped(Decoupled(new ExecuteResult(xlen)))
     val res = Decoupled(new MemResult(xlen))
     val hazard = Valid(UInt(5.W))
+    val csrHazard = Valid(new HazardUnitCSRIO)
   })
 
   val mem = IO(new MemIO(xlen, xlen))
@@ -49,18 +53,31 @@ class Memory(xlen: Int) extends Module {
   io.ex.ready := !pendingLoad
   io.hazard.valid := false.B
   io.hazard.bits := 0.U
+  io.csrHazard.valid := false.B
+  io.csrHazard.bits.addr := 0.U
+  io.csrHazard.bits.isWrite := false.B
+
   when(pendingLoad) {
     io.hazard.valid := pendingRd =/= 0.U
     io.hazard.bits := pendingRd
-  }.elsewhen(io.ex.valid && io.ex.bits.regWrite && io.ex.bits.rd =/= 0.U) {
+  }.elsewhen(io.ex.valid && io.ex.bits.gprWrite && io.ex.bits.rd =/= 0.U) {
     io.hazard.valid := true.B
     io.hazard.bits := io.ex.bits.rd
+  }
+
+  when(io.ex.valid && io.ex.bits.csrWrite) {
+    io.csrHazard.valid := true.B
+    io.csrHazard.bits.addr := io.ex.bits.csrAddr
+    io.csrHazard.bits.isWrite := true.B
   }
 
   val wbOpType = Wire(OpType())
   val wbRd = Wire(UInt(5.W))
   val wbRegWrite = Wire(Bool())
   val wbResult = Wire(UInt(xlen.W))
+  val wbCsrAddr = Wire(UInt(12.W))
+  val wbCsrWrite = Wire(Bool())
+  val wbCsrData = Wire(UInt(xlen.W))
   val resValid = WireDefault(false.B)
   val wbPC = Wire(UInt(xlen.W))
   val wbStoreAddr = Wire(UInt(xlen.W))
@@ -68,8 +85,11 @@ class Memory(xlen: Int) extends Module {
 
   wbOpType := io.ex.bits.opType
   wbRd := io.ex.bits.rd
-  wbRegWrite := io.ex.bits.regWrite
-  wbResult := io.ex.bits.intResult
+  wbRegWrite := io.ex.bits.gprWrite
+  wbResult := io.ex.bits.gprResult
+  wbCsrAddr := io.ex.bits.csrAddr
+  wbCsrWrite := io.ex.bits.csrWrite
+  wbCsrData := io.ex.bits.csrResult
   wbPC := io.ex.bits.pc
   wbStoreAddr := 0.U
   wbIsStore := false.B
@@ -133,7 +153,7 @@ class Memory(xlen: Int) extends Module {
         pendingLoad := true.B
         pendingRd := io.ex.bits.rd
         pendingPC := io.ex.bits.pc
-        pendingRegWrite := io.ex.bits.regWrite
+        pendingRegWrite := io.ex.bits.gprWrite
         pendingUnsigned := io.ex.bits.memUnsigned
         pendingWidth := io.ex.bits.memWidth
         pendingAddress := io.ex.bits.memAddress
@@ -155,8 +175,11 @@ class Memory(xlen: Int) extends Module {
 
   io.res.bits.opType := wbOpType
   io.res.bits.rd := wbRd
-  io.res.bits.regWrite := wbRegWrite
-  io.res.bits.regData := wbResult
+  io.res.bits.gprWrite := wbRegWrite
+  io.res.bits.gprData := wbResult
+  io.res.bits.csrAddr := wbCsrAddr
+  io.res.bits.csrWrite := wbCsrWrite
+  io.res.bits.csrData := wbCsrData
   io.res.valid := resValid
   io.res.bits.pc := wbPC
   io.res.bits.storeAddr := wbStoreAddr

@@ -7,9 +7,22 @@ import svarog.bits.MulOp
 import svarog.bits.DivOp
 
 object OpType extends ChiselEnum {
-  val INVALID, NOP, ALU, LOAD, STORE, BRANCH, JAL, JALR, LUI, AUIPC, MUL, DIV,
-      SYSTEM =
-    Value
+  val INVALID = Value
+  val NOP = Value
+  val ALU = Value
+  val LOAD = Value
+  val STORE = Value
+  val BRANCH = Value
+  val JAL = Value
+  val JALR = Value
+  val LUI = Value
+  val AUIPC = Value
+  val MUL = Value
+  val DIV = Value
+  val CSRRW = Value
+  val CSRRS = Value
+  val CSRRC = Value
+  val SYSTEM = Value
 }
 
 class MicroOp(xlen: Int) extends Bundle {
@@ -28,6 +41,7 @@ class MicroOp(xlen: Int) extends Bundle {
   val regWrite = Output(Bool())
   val pc = Output(UInt(xlen.W))
   val isEcall = Output(Bool())
+  val csrAddr = Output(UInt(12.W))
 }
 
 object MicroOp {
@@ -48,6 +62,7 @@ object MicroOp {
     invalid.regWrite := false.B
     invalid.pc := 0.U
     invalid.isEcall := false.B
+    invalid.csrAddr := 0.U
     invalid
   }
 }

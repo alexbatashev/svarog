@@ -40,11 +40,11 @@ class ExecuteSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
       // Check outputs
       dut.io.res.valid.expect(true.B)
-      dut.io.res.bits.intResult.expect(8.U)
+      dut.io.res.bits.gprResult.expect(8.U)
       dut.io.res.bits.rd.expect(10.U)
-      dut.io.res.bits.regWrite.expect(true.B)
+      dut.io.res.bits.gprWrite.expect(true.B)
 
-      println(s"ADDI test: result = ${dut.io.res.bits.intResult.peek().litValue}")
+      println(s"ADDI test: result = ${dut.io.res.bits.gprResult.peek().litValue}")
     }
   }
 
@@ -75,11 +75,11 @@ class ExecuteSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
       // Check outputs
       dut.io.res.valid.expect(true.B)
-      dut.io.res.bits.intResult.expect(3.U)
+      dut.io.res.bits.gprResult.expect(3.U)
       dut.io.res.bits.rd.expect(10.U)
-      dut.io.res.bits.regWrite.expect(true.B)
+      dut.io.res.bits.gprWrite.expect(true.B)
 
-      println(s"ADD test: result = ${dut.io.res.bits.intResult.peek().litValue}")
+      println(s"ADD test: result = ${dut.io.res.bits.gprResult.peek().litValue}")
     }
   }
 
@@ -111,7 +111,7 @@ class ExecuteSpec extends AnyFlatSpec with Matchers with ChiselSim {
       // Ready signal to upstream should be false
       dut.io.uop.ready.expect(false.B)
 
-      println(s"Stall test: result = ${dut.io.res.bits.intResult.peek().litValue}, ready = ${dut.io.uop.ready.peek().litValue}")
+      println(s"Stall test: result = ${dut.io.res.bits.gprResult.peek().litValue}, ready = ${dut.io.uop.ready.peek().litValue}")
     }
   }
 }

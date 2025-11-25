@@ -5,10 +5,10 @@ Svarog Micro is a 5-stage pipelined in-order RISC-V processor implementing RV32I
 ## Quick Overview
 
 - **Pipeline**: 5 stages (Fetch, Decode, Execute, Memory, Writeback)
-- **ISA**: RV32IM (32-bit base integer + multiply/divide)
+- **ISA**: RV32IM_Zicsr (32-bit base integer + multiply/divide + CSR access)
 - **Execution**: In-order, single-issue
 - **HDL**: Chisel (generates Verilog)
-- **Hazard Handling**: Stall-based with limited bypass
+- **Hazard Handling**: Stall-based with CSR and register hazard detection
 - **Branch Prediction**: Static not-taken
 
 ## Documentation
@@ -24,7 +24,7 @@ Svarog Micro is a 5-stage pipelined in-order RISC-V processor implementing RV32I
 |-----------|-------------|--------|
 | **RV32I** | Base Integer Instruction Set (2.1) | ✅ 38 instructions implemented |
 | **M** | Integer Multiplication and Division | ✅ 8 instructions implemented |
-| **Zicsr** | Control and Status Register | 🚧 Partial (CSR reads only) |
+| **Zicsr** | Control and Status Register | ✅ 6 instructions implemented (CSRRW/CSRRS/CSRRC + immediate forms) |
 | **A** | Atomic Instructions | ❌ Not implemented |
 | **F** | Single-Precision Floating-Point | ❌ Not implemented |
 | **D** | Double-Precision Floating-Point | ❌ Not implemented |
@@ -67,10 +67,12 @@ src/main/scala/svarog/
 ├── decoder/            # Instruction decode
 │   ├── SimpleDecoder.scala
 │   ├── BaseInstructions.scala
+│   ├── ZicsrInstructions.scala
 │   └── ImmGen.scala
 ├── bits/               # Basic components
 │   ├── ALU.scala
-│   └── RegFile.scala
+│   ├── RegFile.scala
+│   └── CSR.scala       # CSR file and execution
 ├── memory/             # Memory subsystem
 │   └── MemoryInterface.scala
 └── soc/                # SoC integration
