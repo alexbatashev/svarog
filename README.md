@@ -2,12 +2,6 @@
 
 A RISC-V processor core written in Chisel.
 
-## Current Status
-
-**Svarog Micro** - 5-stage in-order RV32IM pipeline
-- ✅ Implemented and tested
-- See [docs/micro/](docs/micro/) for architecture and usage
-
 ## Prerequisites
 
 ### For Chisel Development
@@ -88,29 +82,6 @@ Set `SVAROG_MAX_CYCLES` to control simulation timeout:
 SVAROG_MAX_CYCLES=50000 cargo test
 ```
 
-## Project Structure
-
-```
-svarog/
-├── src/
-│   ├── main/scala/svarog/
-│   │   ├── micro/          # Micro core pipeline stages
-│   │   ├── decoder/        # Instruction decoder
-│   │   ├── bits/           # Basic components (ALU, RegFile)
-│   │   ├── memory/         # Memory interfaces
-│   │   ├── soc/            # SoC integration
-│   │   ├── debug/          # Debug interface
-│   │   └── GenerateVerilatorTop.scala
-│   └── test/scala/svarog/  # Unit tests
-├── testbench/              # Integration tests (Rust + Verilator)
-│   ├── src/lib.rs
-│   ├── tests/riscv-tests.rs
-│   └── build.rs
-├── docs/                   # Documentation
-│   └── micro/              # Micro core docs
-└── build.mill              # Mill build configuration
-```
-
 ## Documentation
 
 - **[Getting Started](docs/micro/getting-started.md)** - Detailed setup and build instructions
@@ -123,27 +94,11 @@ svarog/
 - **ISA**: RV32IM (base integer + multiply/divide)
 - **Pipeline**: 5 stages (Fetch, Decode, Execute, Memory, Writeback)
 - **Execution**: In-order, single-issue
-- **CPI**: ~1.0 for straight-line code
 - **Branch Prediction**: Static not-taken
 - **Debug**: Optional hardware debug interface
 
 See [docs/micro/README.md](docs/micro/README.md) for detailed specifications.
 
-## Build Requirements
-
-The build system expects a `.mill-jvm-opts` file in the repository root:
-```
--Dchisel.project.root=${PWD}
-```
-
-This is needed for Chisel to properly locate test directories and output files.
-
 ## License
 
 See LICENSE file in the repository root.
-
-## Resources
-
-- **Chisel**: [chisel-lang.org](https://www.chisel-lang.org/)
-- **RISC-V**: [riscv.org](https://riscv.org/)
-- **Chisel Bootcamp**: [github.com/freechipsproject/chisel-bootcamp](https://github.com/freechipsproject/chisel-bootcamp)

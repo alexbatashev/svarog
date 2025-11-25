@@ -1,6 +1,6 @@
 # Configuration Reference
 
-This document describes configuration options for Svarog Micro SoC.
+This document describes configuration options for Svarog SoC.
 
 ## SvarogConfig
 
@@ -105,68 +105,6 @@ enableDebugInterface = true  // Development
 enableDebugInterface = false // Production
 ```
 
-## Configuration Presets
-
-### Development/Simulation
-
-**Purpose**: Maximum flexibility for testing
-
-```scala
-val devConfig = SvarogConfig(
-  xlen = 32,
-  memSizeBytes = 1024 * 1024,  // 1 MB - plenty of space
-  clockHz = 50_000_000,
-  uartInitialBaud = 115200,
-  programEntryPoint = 0x80000000L,
-  enableDebugInterface = true   // Enable debugging
-)
-```
-
-### FPGA Deployment (Small)
-
-**Purpose**: Minimal resource usage
-
-```scala
-val fpgaSmallConfig = SvarogConfig(
-  xlen = 32,
-  memSizeBytes = 8192,         // 8 KB - fits in BRAM
-  clockHz = 100_000_000,       // 100 MHz
-  uartInitialBaud = 115200,
-  programEntryPoint = 0x00000000L,
-  enableDebugInterface = false // Save area
-)
-```
-
-### FPGA Deployment (Medium)
-
-**Purpose**: Balance between resources and functionality
-
-```scala
-val fpgaMediumConfig = SvarogConfig(
-  xlen = 32,
-  memSizeBytes = 32768,        // 32 KB
-  clockHz = 75_000_000,        // 75 MHz
-  uartInitialBaud = 115200,
-  programEntryPoint = 0x80000000L,
-  enableDebugInterface = true  // Keep debugging
-)
-```
-
-### Testing Configuration
-
-**Purpose**: Quick tests, minimal memory
-
-```scala
-val testConfig = SvarogConfig(
-  xlen = 32,
-  memSizeBytes = 1024,         // 1 KB - tiny
-  clockHz = 50_000_000,
-  uartInitialBaud = 115200,
-  programEntryPoint = 0x00000000L,
-  enableDebugInterface = true  // Debug tests
-)
-```
-
 ## Memory Map
 
 The SoC memory map is determined by configuration:
@@ -174,9 +112,8 @@ The SoC memory map is determined by configuration:
 ### Default Memory Map (16 KB TCM)
 
 ```
-0x00000000 - 0x00003FFF : Tightly-Coupled Memory (16 KB)
-0x00004000 - 0x7FFFFFFF : Reserved
-0x80000000 - 0x80003FFF : Mirror of TCM (if entry point is 0x80000000)
+0x00000000 - 0x7FFFFFFF : Reserved
+0x80000000 - 0x80003FFF : TCM (if entry point is 0x80000000)
 0x80004000 - 0xFFFFFFFF : Reserved
 ```
 
@@ -192,35 +129,6 @@ when (io.req.bits.address >= baseAddr.U &&
   // Access TCM
 }
 ```
-
-## UART Configuration
-
-### Baud Rate Calculation
-
-The UART divider is calculated as:
-
-```
-divider = clockHz / uartInitialBaud
-```
-
-**Example** (50 MHz clock, 115200 baud):
-```
-divider = 50_000_000 / 115200 ≈ 434
-```
-
-### Custom Baud Rates
-
-For non-standard baud rates:
-
-```scala
-val customBaud = SvarogConfig(
-  clockHz = 50_000_000,
-  uartInitialBaud = 125000  // Custom rate
-)
-// divider = 50_000_000 / 125000 = 400
-```
-
-**Note**: Ensure `clockHz / uartInitialBaud` results in an integer divider.
 
 ## Debug Interface
 
@@ -319,102 +227,3 @@ configs.foreach { config =>
   }
 }
 ```
-
-## Resource Estimates
-
-Approximate FPGA resource usage (Xilinx 7-series):
-
-| Configuration | LUTs | FFs | BRAM | Fmax (est) |
-|---------------|------|-----|------|------------|
-| Minimal (8KB, no debug) | ~1500 | ~800 | 4 | 100+ MHz |
-| Medium (16KB, debug) | ~2000 | ~1000 | 8 | 75-100 MHz |
-| Large (64KB, debug) | ~2500 | ~1200 | 32 | 50-75 MHz |
-
-**Note**: Actual results depend on synthesis tool, optimization settings, and target device.
-
-## ASIC Considerations
-
-For ASIC implementation:
-
-```scala
-val asicConfig = SvarogConfig(
-  memSizeBytes = 0,  // Use external memory
-  clockHz = 500_000_000,  // Target high frequency
-  enableDebugInterface = false  // Minimize area
-)
-```
-
-**Modifications needed**:
-- Replace TCM with external memory interface
-- Add clock gating for power savings
-- Consider scan chain insertion for testing
-
-## Advanced Configuration
-
-### Adding Custom Parameters
-
-Edit `SvarogConfig.scala`:
-
-```scala
-case class SvarogConfig(
-  // Existing parameters
-  xlen: Int = 32,
-  memSizeBytes: Int = 16384,
-
-  // Custom parameters
-  enablePerformanceCounters: Boolean = false,
-  cacheSize: Int = 0,  // 0 = no cache
-  enableBranchPredictor: Boolean = false
-)
-```
-
-### Configuration Validation
-
-Add validation to prevent invalid configurations:
-
-```scala
-case class SvarogConfig(
-  xlen: Int = 32,
-  memSizeBytes: Int = 16384,
-  // ... other parameters
-) {
-  require(xlen == 32, "Only RV32 supported")
-  require(memSizeBytes > 0 && isPowerOfTwo(memSizeBytes),
-          "Memory size must be power of 2")
-  require(clockHz > 0, "Clock frequency must be positive")
-}
-```
-
-## Configuration File
-
-For complex projects, use external configuration file:
-
-**config.conf** (HOCON format):
-```hocon
-svarog {
-  xlen = 32
-  memSizeBytes = 32768
-  clockHz = 100000000
-  uartInitialBaud = 115200
-  programEntryPoint = 0x80000000
-  enableDebugInterface = true
-}
-```
-
-Load with:
-```scala
-import com.typesafe.config.ConfigFactory
-
-val conf = ConfigFactory.load()
-val config = SvarogConfig(
-  memSizeBytes = conf.getInt("svarog.memSizeBytes"),
-  enableDebugInterface = conf.getBoolean("svarog.enableDebugInterface")
-  // ... other parameters
-)
-```
-
-## See Also
-
-- [Getting Started](getting-started.md) - Build and test
-- [Architecture](architecture.md) - Pipeline details
-- [Development](development.md) - Contributing guide

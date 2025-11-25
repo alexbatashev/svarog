@@ -15,12 +15,6 @@ This directory contains documentation for the Svarog RISC-V processor.
 3. [Development Guide](micro/development.md)
 4. [Configuration Reference](micro/configuration.md)
 
-## Project Resources
-
-- **Repository**: [github.com/alexbatashev/svarog](https://github.com/alexbatashev/svarog)
-- **Chisel**: [chisel-lang.org](https://www.chisel-lang.org/)
-- **RISC-V**: [riscv.org](https://riscv.org/)
-
 ## Contributing
 
 See the [Development Guide](micro/development.md) for information on:
@@ -28,7 +22,3 @@ See the [Development Guide](micro/development.md) for information on:
 - Running tests
 - Code style guidelines
 - Contribution workflow
-
-## License
-
-See the LICENSE file in the repository root.

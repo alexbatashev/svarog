@@ -85,7 +85,7 @@ IF → fetchDecodeQueue → ID → decodeExecQueue → EX → execMemQueue → M
 **Location**: `src/main/scala/svarog/micro/Execute.scala`
 
 **Responsibilities**:
-- Perform ALU operations (10 operations: ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND)
+- Perform ALU operations
 - Calculate memory addresses
 - Resolve branches and jumps
 - Generate branch feedback
@@ -97,17 +97,6 @@ All operations complete in one cycle, fully combinational.
 - Branches resolved in Execute stage
 - Static not-taken prediction
 - Misprediction penalty: 2 cycles
-
-**Bypass Logic**:
-Writeback-to-Execute bypass for immediate register availability:
-```scala
-def bypass(readAddr: UInt, readData: UInt): UInt = {
-  Mux(wbWriteEn && (wbWriteAddr =/= 0.U) && (wbWriteAddr === readAddr),
-    wbWriteData,  // Use bypassed value
-    readData      // Use register file value
-  )
-}
-```
 
 ### Stage 4: Memory Access (MEM)
 
@@ -183,57 +172,6 @@ io.stall := hazardExec || hazardMem || hazardWb
 - `decodeExecQueue.flush` on branch taken
 - Memory and Writeback not flushed (already past branch point)
 
-## Pipeline Timing
-
-### Instruction Latency
-
-```
-┌──────────────────┬─────────┬────────────────────┐
-│ Instruction Type │ Latency │ Notes              │
-├──────────────────┼─────────┼────────────────────┤
-│ ALU              │ 5 cycles│ No dependencies    │
-│ Load             │ 5+ cyc  │ + memory latency   │
-│ Store            │ 5 cycles│ Fire-and-forget    │
-│ Branch not taken │ 5 cycles│ Correct prediction │
-│ Branch taken     │ 7 cycles│ 2-cycle penalty    │
-│ JAL/JALR         │ 7 cycles│ Always taken       │
-└──────────────────┴─────────┴────────────────────┘
-```
-
-### Example: Instruction Timeline
-
-```
-Cycle │  IF   │  ID   │  EX   │  MEM  │  WB   │
-──────┼───────┼───────┼───────┼───────┼───────┤
-  1   │ Inst1 │       │       │       │       │
-  2   │ Inst2 │ Inst1 │       │       │       │
-  3   │ Inst3 │ Inst2 │ Inst1 │       │       │
-  4   │ Inst4 │ Inst3 │ Inst2 │ Inst1 │       │
-  5   │ Inst5 │ Inst4 │ Inst3 │ Inst2 │ Inst1 │ ← Inst1 completes
-  6   │ Inst6 │ Inst5 │ Inst4 │ Inst3 │ Inst2 │ ← Inst2 completes
-```
-
-**Ideal throughput**: 1 instruction per cycle (CPI = 1.0)
-
-### Example: Data Hazard
-
-```
-Instructions:
-  addi x1, x0, 5   (Inst1)
-  addi x2, x1, 3   (Inst2) - depends on x1
-
-Cycle │  IF   │  ID   │  EX   │  MEM  │  WB   │
-──────┼───────┼───────┼───────┼───────┼───────┤
-  1   │ Inst1 │       │       │       │       │
-  2   │ Inst2 │ Inst1 │       │       │       │
-  3   │ Inst3 │ Inst2 │ Inst1 │       │       │ ← HAZARD! x1 dependency
-  4   │ Inst3 │ STALL │ STALL │ Inst1 │       │ ← Stall until x1 ready
-  5   │ Inst3 │ STALL │ STALL │ STALL │ Inst1 │ ← x1 written
-  6   │ Inst3 │ Inst2 │ Inst2 │ STALL │ STALL │ ← Resume
-```
-
-**Stall penalty**: 3 cycles for Execute-stage dependency
-
 ## Memory Interface
 
 **Location**: `src/main/scala/svarog/memory/MemoryInterface.scala`
@@ -261,53 +199,6 @@ Response:
 - Byte-addressable (4-byte words)
 - Byte-granular write enables
 
-## Performance Characteristics
-
-### Best Case Performance
-
-**Straight-line ALU code (no dependencies)**:
-- CPI = 1.0
-- One instruction retires per cycle
-
-### Typical Performance
-
-Depends on code characteristics:
-- **Data hazards**: +3 cycles per RAW dependency (without bypass elimination)
-- **Branches taken**: +2 cycles per misprediction
-- **Loads**: +memory latency cycles
-
-### Bottlenecks
-
-1. **Load-use dependencies**: No forwarding from Memory to Execute
-2. **Branch mispredictions**: Static not-taken prediction (50% accuracy for taken branches)
-3. **Serial execution**: No instruction-level parallelism
-
-## Optimization Opportunities
-
-### Forwarding Paths
-
-**Execute → Execute forwarding**:
-- Eliminate 1-cycle ALU dependencies
-- Requires adding forwarding mux in Execute stage
-
-**Memory → Execute forwarding**:
-- Reduce load-use penalty from 3 cycles to 1 cycle
-- Requires forwarding from Memory stage output
-
-### Branch Prediction
-
-**1-bit predictor**:
-- Track last outcome per branch
-- ~80% accuracy improvement
-
-**2-bit saturating counter**:
-- More stable predictions
-- ~85-90% accuracy
-
-**Branch Target Buffer (BTB)**:
-- Cache branch targets
-- Eliminate fetch latency on taken branches
-
 ## Debug Support
 
 **Location**: `src/main/scala/svarog/debug/HartDebug.scala`
@@ -324,36 +215,8 @@ Depends on code characteristics:
 - Hardware verification
 - System bring-up
 
-## File Reference
-
-```
-src/main/scala/svarog/
-├── micro/
-│   ├── Cpu.scala          # Top-level CPU integration
-│   ├── Fetch.scala        # Stage 1
-│   ├── Execute.scala      # Stage 3
-│   ├── Memory.scala       # Stage 4
-│   ├── Writeback.scala    # Stage 5
-│   └── HazardUnit.scala   # Hazard detection
-├── decoder/
-│   ├── SimpleDecoder.scala     # Stage 2 (top-level)
-│   ├── BaseInstructions.scala  # Instruction decode logic
-│   ├── ImmGen.scala            # Immediate generation
-│   ├── MicroOp.scala           # MicroOp bundle definition
-│   └── Opcodes.scala           # Opcode constants
-├── bits/
-│   ├── ALU.scala          # Arithmetic Logic Unit
-│   └── RegFile.scala      # Register file
-├── memory/
-│   ├── MemoryInterface.scala  # Memory protocol
-│   └── TCM.scala              # Tightly-Coupled Memory
-└── soc/
-    ├── SvarogSoC.scala    # SoC top-level
-    └── SvarogConfig.scala # Configuration
-```
-
 ## Related Documentation
 
-- [Getting Started](getting-started.md) - Setup and build
-- [Development Guide](development.md) - Testing and contribution
-- [Configuration](configuration.md) - SoC parameters
+- [Getting Started](../getting-started.md) - Setup and build
+- [Development Guide](../development.md) - Testing and contribution
+- [Configuration](../configuration.md) - SoC parameters

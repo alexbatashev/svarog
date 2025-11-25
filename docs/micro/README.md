@@ -13,7 +13,7 @@ Svarog Micro is a 5-stage pipelined in-order RISC-V processor implementing RV32I
 
 ## Documentation
 
-- **[Getting Started](getting-started.md)** - Setup and build instructions
+- **[Getting Started](../getting-started.md)** - Setup and build instructions
 - **[Architecture](architecture.md)** - Pipeline and microarchitecture details
 - **[Development](development.md)** - Testing and contribution guide
 - **[Configuration](configuration.md)** - SoC configuration options
