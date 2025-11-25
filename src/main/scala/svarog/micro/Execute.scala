@@ -9,16 +9,19 @@ import svarog.bits.{DivOp, SimpleDivider}
 import svarog.decoder.BranchOp
 import svarog.decoder.{MicroOp, OpType}
 import svarog.memory.MemWidth
+import svarog.bits.{CSREx, CSRReadIO}
 
 class ExecuteResult(xlen: Int) extends Bundle {
   val opType = Output(OpType())
 
   val rd = Output(UInt(5.W))
-  val regWrite = Output(Bool())
+  val gprWrite = Output(Bool())
+  val gprResult = Output(UInt(xlen.W))
 
-  val intResult = Output(UInt(xlen.W))
+  val csrAddr = Output(UInt(12.W))
+  val csrWrite = Output(Bool())
+  val csrResult = Output(UInt(xlen.W))
 
-  // TODO can we re-use intResult here with a better naming?
   val memAddress = Output(UInt(xlen.W))
   val memWidth = Output(MemWidth())
   val memUnsigned = Output(Bool())
@@ -39,9 +42,13 @@ class Execute(xlen: Integer) extends Module {
     val branch = Valid(new BranchFeedback(xlen))
 
     val regFile = Flipped(new RegFileReadIO(xlen))
+    val csrFile = new Bundle {
+      val read = Flipped(new CSRReadIO())
+    }
 
     // Write register for hazard control
     val hazard = Valid(UInt(5.W))
+    val csrHazard = Valid(new HazardUnitCSRIO)
     val stall = Input(Bool())
   })
 
@@ -53,6 +60,7 @@ class Execute(xlen: Integer) extends Module {
   val alu = Module(new ALU(xlen))
   val mul = Module(new SimpleMultiplier(xlen))
   val div = Module(new SimpleDivider(xlen))
+  val csr = Module(new CSREx(xlen))
 
   // Single-cycle execute: current instruction always completes
   // Output is valid only when we have an instruction AND (downstream is ready AND not stalled)
@@ -64,11 +72,19 @@ class Execute(xlen: Integer) extends Module {
   io.hazard.valid := io.uop.valid && io.uop.bits.regWrite && !(io.uop.bits.rd === 0.U)
   io.hazard.bits := io.uop.bits.rd
 
+  io.csrHazard.valid := io.uop.valid && (
+    io.uop.bits.opType === OpType.CSRRW ||
+      io.uop.bits.opType === OpType.CSRRS ||
+      io.uop.bits.opType === OpType.CSRRC
+  )
+  io.csrHazard.bits.addr := io.uop.bits.csrAddr
+  io.csrHazard.bits.isWrite := csr.io.csr.write.en
+
   io.res.bits.opType := io.uop.bits.opType
   io.res.bits.pc := io.uop.bits.pc
 
   // ALU result
-  io.res.bits.intResult := 0.U
+  io.res.bits.gprResult := 0.U
 
   // Branch/jump target address
   io.branch.bits.targetPC := 0.U
@@ -83,7 +99,12 @@ class Execute(xlen: Integer) extends Module {
   io.res.bits.storeData := 0.U
 
   io.res.bits.rd := io.uop.bits.rd
-  io.res.bits.regWrite := io.uop.bits.regWrite
+  io.res.bits.gprWrite := io.uop.bits.regWrite
+
+  // CSR defaults
+  io.res.bits.csrAddr := io.uop.bits.csrAddr
+  io.res.bits.csrWrite := false.B
+  io.res.bits.csrResult := 0.U
 
   io.regFile.readAddr1 := io.uop.bits.rs1
   io.regFile.readAddr2 := io.uop.bits.rs2
@@ -108,16 +129,23 @@ class Execute(xlen: Integer) extends Module {
   div.io.inp.bits.divisor := io.regFile.readData2
   div.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.DIV)
 
+  // CSR wiring
+  csr.io.uop.valid := io.uop.valid
+  csr.io.uop.bits := io.uop.bits
+  csr.io.rs1Value := io.regFile.readData1
+
+  io.csrFile.read <> csr.io.csr.read
+
   when(io.uop.valid && !needFlush) {
     switch(io.uop.bits.opType) {
       is(OpType.ALU) {
-        io.res.bits.intResult := alu.io.output
+        io.res.bits.gprResult := alu.io.output
       }
       is(OpType.LUI) {
-        io.res.bits.intResult := io.uop.bits.imm
+        io.res.bits.gprResult := io.uop.bits.imm
       }
       is(OpType.AUIPC) {
-        io.res.bits.intResult := io.uop.bits.pc + io.uop.bits.imm
+        io.res.bits.gprResult := io.uop.bits.pc + io.uop.bits.imm
       }
       is(OpType.LOAD) {
         io.res.bits.memAddress := io.regFile.readData1 + io.uop.bits.imm
@@ -163,7 +191,7 @@ class Execute(xlen: Integer) extends Module {
         // Unconditional jump
         io.branch.valid := true.B
         io.branch.bits.targetPC := io.uop.bits.pc + io.uop.bits.imm
-        io.res.bits.intResult := io.uop.bits.pc + 4.U // Save return address
+        io.res.bits.gprResult := io.uop.bits.pc + 4.U // Save return address
       }
 
       is(OpType.JALR) {
@@ -171,17 +199,24 @@ class Execute(xlen: Integer) extends Module {
         io.branch.valid := true.B
         val target = io.regFile.readData1 + io.uop.bits.imm
         io.branch.bits.targetPC := Cat(target(31, 1), 0.U(1.W)) // Clear LSB
-        io.res.bits.intResult := io.uop.bits.pc + 4.U // Save return address
+        io.res.bits.gprResult := io.uop.bits.pc + 4.U // Save return address
       }
 
       is(OpType.MUL) {
         // Multiplication operations
-        io.res.bits.intResult := mul.io.result.bits
+        io.res.bits.gprResult := mul.io.result.bits
       }
 
       is(OpType.DIV) {
         // Division/remainder operations
-        io.res.bits.intResult := div.io.result.bits
+        io.res.bits.gprResult := div.io.result.bits
+      }
+
+      is(OpType.CSRRW, OpType.CSRRS, OpType.CSRRC) {
+        // CSR operations - result goes to GPR, write signal propagates to writeback
+        io.res.bits.gprResult := csr.io.result.bits
+        io.res.bits.csrWrite := csr.io.csr.write.en
+        io.res.bits.csrResult := csr.io.csr.write.data
       }
     }
   }

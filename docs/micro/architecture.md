@@ -90,13 +90,21 @@ IF → fetchDecodeQueue → ID → decodeExecQueue → EX → execMemQueue → M
 - Resolve branches and jumps
 - Generate branch feedback
 
-**ALU Operations** (`src/main/scala/svarog/bits/ALU.scala`):
-All operations complete in one cycle, fully combinational.
+**Execution Units**:
+- **ALU** (`src/main/scala/svarog/bits/ALU.scala`): Arithmetic and logic operations, 1 cycle
+- **Multiplier** (`src/main/scala/svarog/bits/SimpleMultiplier.scala`): Multi-cycle multiply/divide
+- **CSREx** (`src/main/scala/svarog/bits/CSR.scala`): CSR read/modify/write operations, 1 cycle
 
 **Branch Resolution**:
 - Branches resolved in Execute stage
 - Static not-taken prediction
 - Misprediction penalty: 2 cycles
+
+**CSR Operations**:
+- CSR reads happen in Execute stage (combinational)
+- CSR writes propagate to Writeback stage
+- Three operations: CSRRW (read/write), CSRRS (read/set), CSRRC (read/clear)
+- Immediate forms (CSRRWI, CSRRSI, CSRRCI) use zero-extended 5-bit immediate
 
 ### Stage 4: Memory Access (MEM)
 
@@ -139,6 +147,12 @@ Fire-and-forget - no pipeline stall.
 - Dual-read ports, single write port
 - Synchronous write, combinational read
 
+**CSR File** (`src/main/scala/svarog/bits/CSR.scala`):
+- Read-only CSRs: mvendorid, marchid, mimpid, mhartid, misa
+- Single-read port, single write port
+- CSR writes deferred to Writeback stage
+- Read-only registers ignore writes
+
 ## Hazard Detection and Handling
 
 **Location**: `src/main/scala/svarog/micro/HazardUnit.scala`
@@ -154,11 +168,27 @@ def hazardOn(reg: UInt, rs: UInt): Bool =
 val hazardExec = hazardOn(execRd, decodeRs1) || hazardOn(execRd, decodeRs2)
 val hazardMem  = hazardOn(memRd, decodeRs1)  || hazardOn(memRd, decodeRs2)
 val hazardWb   = hazardOn(wbRd, decodeRs1)   || hazardOn(wbRd, decodeRs2)
-
-io.stall := hazardExec || hazardMem || hazardWb
 ```
 
 **Resolution**: Pipeline stall until dependency clears.
+
+### CSR Hazards
+
+Detected when a CSR instruction in Decode depends on a pending CSR write:
+
+```scala
+def csrHazardOn(csrAddr: UInt, decodeCsrAddr: UInt, isWrite: Bool): Bool =
+  isWrite && csrAddr === decodeCsrAddr
+
+val csrHazardExec = decode.isCsrOp && csrHazardOn(execCsr, decodeCsr, execCsrWrite)
+val csrHazardMem  = decode.isCsrOp && csrHazardOn(memCsr, decodeCsr, memCsrWrite)
+val csrHazardWb   = decode.isCsrOp && csrHazardOn(wbCsr, decodeCsr, wbCsrWrite)
+
+io.stall := hazardExec || hazardMem || hazardWb ||
+            csrHazardExec || csrHazardMem || csrHazardWb
+```
+
+**Resolution**: Pipeline stall until CSR write completes in Writeback stage.
 
 ### Control Hazards (Branches)
 

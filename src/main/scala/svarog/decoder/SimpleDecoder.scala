@@ -6,6 +6,8 @@ import chisel3.util.{Decoupled, Valid}
 class SimpleDecodeHazardIO extends Bundle {
   val rs1 = Output(UInt(5.W))
   val rs2 = Output(UInt(5.W))
+  val csrAddr = Output(UInt(12.W))
+  val isCsrOp = Output(Bool())
 }
 
 class SimpleDecoder(xlen: Int) extends Module {
@@ -29,12 +31,18 @@ class SimpleDecoder(xlen: Int) extends Module {
   baseDecoder.io.instruction := io.inst.bits.word
   baseDecoder.io.pc := io.inst.bits.pc
 
+  val zicsrDecoder = Module(new ZicsrInstructions(xlen))
+  zicsrDecoder.io.instruction := io.inst.bits.word
+  zicsrDecoder.io.pc := io.inst.bits.pc
+
   val mDecoder = Some(Module(new MInstructions(xlen)))
 
   io.decoded.bits := MicroOp.getInvalid(xlen)
 
   when(baseDecoder.io.decoded.opType =/= OpType.INVALID) {
     io.decoded.bits := baseDecoder.io.decoded
+  }.elsewhen(zicsrDecoder.io.decoded.opType =/= OpType.INVALID) {
+    io.decoded.bits := zicsrDecoder.io.decoded
   }
 
   mDecoder.foreach { mDecoder =>
@@ -49,4 +57,10 @@ class SimpleDecoder(xlen: Int) extends Module {
   io.hazard.valid := io.inst.valid
   io.hazard.bits.rs1 := io.decoded.bits.rs1
   io.hazard.bits.rs2 := io.decoded.bits.rs2
+  io.hazard.bits.csrAddr := io.decoded.bits.csrAddr
+  io.hazard.bits.isCsrOp := (
+    io.decoded.bits.opType === OpType.CSRRW ||
+    io.decoded.bits.opType === OpType.CSRRS ||
+    io.decoded.bits.opType === OpType.CSRRC
+  )
 }

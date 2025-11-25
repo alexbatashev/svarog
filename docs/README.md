@@ -4,7 +4,7 @@ This directory contains documentation for the Svarog RISC-V processor.
 
 ## Svarog Micro
 
-- **[Micro](micro/)** - 5-stage in-order pipeline, RV32IM
+- **[Micro](micro/)** - 5-stage in-order pipeline, RV32IM_Zicsr
   - Target: Educational, embedded, low-area applications
   - Status: ✅ Implemented
 

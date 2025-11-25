@@ -24,7 +24,7 @@ case class MInstructions(xlen: Int) extends Module {
   val funct3 = io.instruction(14, 12)
   val funct7 = io.instruction(31, 25)
 
-  when (opcode === 0b0110011.U && funct7 === 0b1.U) {
+  when (opcode === Opcodes.MULDIV && funct7 === 0b1.U) {
     io.decoded.rd := rd
     io.decoded.rs1 := rs1
     io.decoded.rs2 := rs2
