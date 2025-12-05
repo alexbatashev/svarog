@@ -442,7 +442,7 @@ impl Simulator {
     }
 
     #[allow(dead_code)]
-    fn read_mem_word(&self, addr: u32) -> u32 {
+    pub fn read_mem_word(&self, addr: u32) -> u32 {
         self.drive_mem_request(addr, 0, 2, false);
 
         loop {
