@@ -24,10 +24,10 @@ object `svarog` extends SbtModule { m =>
     "-Ymacro-annotations",
   )
   override def ivyDeps = Agg(
-    ivy"org.chipsalliance::chisel:7.0.0-RC1",
+    ivy"org.chipsalliance::chisel:7.5.0",
   )
   override def scalacPluginIvyDeps = Agg(
-    ivy"org.chipsalliance:::chisel-plugin:7.0.0-RC1",
+    ivy"org.chipsalliance:::chisel-plugin:7.5.0",
   )
   object test extends SbtTests with TestModule.ScalaTest {
     override def ivyDeps = m.ivyDeps() ++ Agg(

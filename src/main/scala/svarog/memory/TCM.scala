@@ -5,7 +5,7 @@ import chisel3.util._
 import chisel3.util.experimental.BoringUtils
 import svarog.soc.SvarogConfig
 
-/// Tightly Coupled Memory (TCM)
+// Tightly Coupled Memory (TCM)
 class TCM(
     xlen: Int,
     memSizeBytes: Int,
@@ -25,8 +25,6 @@ class TCM(
   private val mem =
     SyncReadMem(memSizeBytes / wordSize, Vec(wordSize, UInt(8.W)))
 
-  private val offsetWidth = log2Ceil(wordSize)
-
   for (i <- 0 until numPorts) {
     // Single cycle memory, always ready
     io.ports(i).req.ready := true.B
@@ -39,7 +37,6 @@ class TCM(
         .U(xlen.W) && addr < (baseAddr.U(xlen.W) + memSizeBytes.U(xlen.W))
 
     val wordIdx = (addr - baseAddr.U) / wordSize.U
-    val wordOffset = (addr - baseAddr.U)(offsetWidth - 1, 0)
 
     val enable = addrInRange && reqFire
 
@@ -79,35 +76,52 @@ class TCMWB(
     )
   )
 
-  tcm.io.ports(0).req.valid := io.cycleActive && io.strobe
-  // Wishbone address is byte-based; pass through.
-  val wordBytes = xlen / 8
-  tcm.io.ports(0).req.bits.address := io.addr
-  tcm.io.ports(0).req.bits.write := io.writeEnable
+  private val wordBytes = xlen / 8
 
-  // Pass byte mask directly from Wishbone sel
-  tcm.io.ports(0).req.bits.mask := io.sel
+  val lastReqValid = RegInit(false.B)
+  val lastReq = RegInit(0.U.asTypeOf(new MemoryRequest(xlen, xlen)))
 
-  // Split Wishbone write data into bytes
-  val wbDataBytes = Wire(Vec(wordBytes, UInt(8.W)))
-  for (i <- 0 until wordBytes) {
-    wbDataBytes(i) := io.dataToSlave(8 * (i + 1) - 1, 8 * i)
+  val curReq = Wire(new MemoryRequest(xlen, xlen))
+  curReq := lastReq
+
+  val reqValid = WireInit(lastReqValid)
+
+  when(io.cycleActive && io.strobe) {
+    val wbDataBytes = Wire(Vec(wordBytes, UInt(8.W)))
+    for (i <- 0 until wordBytes) {
+      wbDataBytes(i) := io.dataToSlave(8 * (i + 1) - 1, 8 * i)
+    }
+
+    lastReqValid := true.B
+    lastReq.address := io.addr
+    lastReq.dataWrite := wbDataBytes
+    lastReq.write := io.writeEnable
+    lastReq.mask := io.sel
+
+    reqValid := true.B
+    curReq.address := io.addr
+    curReq.dataWrite := wbDataBytes
+    curReq.write := io.writeEnable
+    curReq.mask := io.sel
+  }.elsewhen(io.cycleActive === false.B) {
+    lastReqValid := false.B
+    reqValid := false.B
   }
-  tcm.io.ports(0).req.bits.dataWrite := wbDataBytes
 
-  // TCM is single-cycle and always ready; no backpressure
+  tcm.io.ports(0).req.valid := reqValid
+  tcm.io.ports(0).req.bits := curReq
+
+  io.ack := false.B
   io.stall := false.B
-
-  // Drive Wishbone response from TCM response
-  val respValid = tcm.io.ports(0).resp.valid
-  io.ack := respValid
+  io.dataToMaster := 0.U
   io.error := false.B
 
-  // Pack bytes back into xlen data word (little-endian)
-  val respBytes = tcm.io.ports(0).resp.bits.dataRead
-  io.dataToMaster := Cat(respBytes.reverse)
-
-  // Tie off unused ready on response channel
   tcm.io.ports(0).resp.ready := true.B
 
+  when(reqValid) {
+    io.ack := tcm.io.ports(0).resp.valid
+    io.dataToMaster := Cat(tcm.io.ports(0).resp.bits.dataRead.reverse)
+    io.error := tcm.io.ports(0).resp.bits.valid
+    io.stall := !tcm.io.ports(0).resp.valid
+  }
 }
