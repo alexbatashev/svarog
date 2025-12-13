@@ -41,46 +41,36 @@ class SvarogSoC(
   // ============================================================================
 
   // CPU instruction fetch master
-  private val instMaster = Module(new MemoryToWishbone(config.xlen))
-  instMaster.memIO <> cpu.io.instmem
-
-  // CPU data memory master
-  private val dataMaster = Module(new MemoryToWishbone(config.xlen))
-  dataMaster.memIO <> cpu.io.datamem
+  // Expose CPU memory ports through Wishbone hosts
+  private val cpuInstHost = Module(new MemWishboneHost(config.xlen, config.xlen))
+  private val cpuDataHost = Module(new MemWishboneHost(config.xlen, config.xlen))
+  cpu.io.instmem <> cpuInstHost.mem
+  cpu.io.datamem <> cpuDataHost.mem
 
   // Debug interface masters (if enabled)
   private val debugInstMaster = if (config.enableDebugInterface) {
-    Some(Module(new MemoryToWishbone(config.xlen)))
+    Some(Module(new MemWishboneHost(config.xlen, config.xlen)))
   } else None
 
   private val debugDataMaster = if (config.enableDebugInterface) {
-    Some(Module(new MemoryToWishbone(config.xlen)))
+    Some(Module(new MemWishboneHost(config.xlen, config.xlen)))
   } else None
 
-  // ============================================================================
-  // Wishbone Slaves
-  // ============================================================================
-
-  // TCM wrapped as Wishbone slave
-  private val tcmSlave = Module(
-    new WishboneTCM(
+  private val tcm = Module(
+    new TCMWB(
       xlen = config.xlen,
       memSizeBytes = config.memSizeBytes,
       baseAddr = config.programEntryPoint
     )
   )
 
-  // ============================================================================
-  // Wishbone Router
-  // ============================================================================
+  private val allMasters: Seq[WishboneMaster] = Seq(cpuDataHost, cpuInstHost) ++
+    (if (config.enableDebugInterface)
+       Seq(debugInstMaster.get, debugDataMaster.get)
+     else Seq.empty)
 
-  // Collect all masters and slaves
-  private val allMasters: Seq[WishboneMaster] = Seq(instMaster, dataMaster) ++
-    (if (config.enableDebugInterface) Seq(debugInstMaster.get, debugDataMaster.get) else Seq.empty)
+  private val allSlaves: Seq[WishboneSlave] = Seq(tcm)
 
-  private val allSlaves: Seq[WishboneSlave] = Seq(tcmSlave)
-
-  // Connect them using the typesafe WishboneRouter
   WishboneRouter(allMasters, allSlaves)
 
   // ============================================================================
@@ -94,8 +84,8 @@ class SvarogSoC(
 
   if (config.enableDebugInterface) {
     // Connect debug module memory interfaces to Wishbone masters
-    debug.get.io.dmem_iface <> debugDataMaster.get.memIO
-    debug.get.io.imem_iface <> debugInstMaster.get.memIO
+    debug.get.io.dmem_iface <> debugDataMaster.get.mem
+    debug.get.io.imem_iface <> debugInstMaster.get.mem
 
     // Connect debug control interfaces
     debug.get.io.harts(0) <> cpu.io.debug

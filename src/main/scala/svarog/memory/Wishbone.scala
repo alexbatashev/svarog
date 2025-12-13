@@ -30,8 +30,8 @@ trait WishboneSlave extends Module {
   val io: WishboneIO
 
   // Address space for this slave
-  def addrStart: BigInt
-  def addrEnd: BigInt
+  def addrStart: Long
+  def addrEnd: Long
 
   def pipelined: Boolean = false
 
@@ -57,58 +57,111 @@ object WishboneRouter {
   }
 
   def generateBus(masters: Seq[WishboneMaster], slaves: Seq[WishboneSlave]) = {
-    val chosen = RegInit(0.U)
-    val fire = RegInit(false.B)
-    val lastGrant = RegEnable(chosen, fire)
+    val m = masters.length
 
-    lazy val grantMask = (0 until masters.length).map(_.asUInt > lastGrant)
-    lazy val validMask =
-      masters.map(_.io).zip(grantMask).map { case (in, g) =>
-        in.cycleActive && g
+    if (m == 1) {
+      // Trivial case: single master, just decode to slaves.
+      val master = masters.head
+      slaves.foreach { s =>
+        when(s.inAddrSpace(master.io.addr)) {
+          s.io <> master.io
+        }.otherwise {
+          s.io.cycleActive := false.B
+          s.io.strobe := false.B
+          s.io.writeEnable := false.B
+        }
+      }
+      // No arbitration needed.
+    } else {
+      val idxWidth = log2Ceil(m.max(2))
+      val chosen = RegInit(0.U(idxWidth.W)) // index of granted master
+      val hasGrant = RegInit(false.B) // whether a master currently holds the bus
+
+      val reqVec = VecInit(masters.map(_.io.cycleActive))
+      val anyReq = reqVec.asUInt.orR
+
+      // Round-robin search starting after current grant
+      val start = chosen + 1.U
+      val doubleReq = Cat(reqVec.asUInt, reqVec.asUInt)
+      val shifted = (doubleReq >> start)(m - 1, 0)
+      val foundNext = shifted.orR
+      val enc = PriorityEncoder(shifted) // valid only if foundNext
+      val rawNext = start + enc
+      val nextGrant = Mux(rawNext >= m.U, rawNext - m.U, rawNext)
+
+      when(hasGrant && reqVec(chosen)) {
+        // keep current grant while cyc stays high
+        hasGrant := true.B
+      }.elsewhen(anyReq && foundNext) {
+        hasGrant := true.B
+        chosen := nextGrant
+      }.otherwise {
+        hasGrant := false.B
       }
 
-    val ctrl = ArbiterCtrl(
-      (0 until masters.length).map(i => validMask(i)) ++ masters.map(
-        _.io.cycleActive
-      )
-    )
-    val grant =
-      (0 until masters.length).map(i =>
-        ctrl(i) && grantMask(i) || ctrl(i + masters.length)
+      // Defaults for responses to masters
+      val stallToMaster = Wire(Vec(m, Bool()))
+      val ackToMaster = Wire(Vec(m, Bool()))
+      val errToMaster = Wire(Vec(m, Bool()))
+      val dataToMaster = Wire(
+        Vec(m, UInt(masters.head.io.dataToMaster.getWidth.W))
       )
 
-    val choice = WireDefault((masters.length - 1).asUInt)
-
-    chosen := choice
-
-    for (i <- masters.length - 2 to 0 by -1) {
-      when(masters(i).io.cycleActive) { choice := i.asUInt }
-    }
-    for (i <- masters.length - 1 to 1 by -1) {
-      when(validMask(i)) { choice := i.asUInt }
-    }
-
-    for (i <- 0 to masters.length) {
-      when(chosen =/= i.asUInt && masters(i).io.cycleActive) {
-        masters(i).io.stall := true.B
+      for (i <- 0 until m) {
+        stallToMaster(i) := reqVec(i) && !(hasGrant && chosen === i.U)
+        ackToMaster(i) := false.B
+        errToMaster(i) := false.B
+        dataToMaster(i) := 0.U
       }
-      when(chosen === i.asUInt && masters(i).io.cycleActive) {
-        fire := true.B
-        chosen := i.asUInt
 
-        slaves.foreach { s =>
-          when(
-            s.addrStart.asUInt <= masters(
-              i
-            ).io.addr && s.addrEnd.asUInt >= masters(
-              i
-            ).io.addr
-          ) {
-            s.io <> masters(i).io
-          }.otherwise {
-            s.io.cycleActive := false.B
+      // Defaults for requests to slaves
+      slaves.foreach { s =>
+        s.io.cycleActive := false.B
+        s.io.strobe := false.B
+        s.io.writeEnable := false.B
+        s.io.addr := 0.U
+        s.io.dataToSlave := 0.U
+        s.io.sel.foreach(_ := false.B)
+      }
+
+      // Connect granted master to addressed slave and return path
+      when(hasGrant) {
+        for (i <- 0 until m) {
+          when(chosen === i.U) {
+            val mi = masters(i)
+            val hit = WireInit(false.B)
+            slaves.foreach { s =>
+              when(s.inAddrSpace(mi.io.addr)) {
+                hit := true.B
+                s.io.cycleActive := mi.io.cycleActive
+                s.io.strobe := mi.io.strobe
+                s.io.writeEnable := mi.io.writeEnable
+                s.io.addr := mi.io.addr
+                s.io.dataToSlave := mi.io.dataToSlave
+                s.io.sel := mi.io.sel
+
+                stallToMaster(i) := s.io.stall
+                ackToMaster(i) := s.io.ack
+                errToMaster(i) := s.io.error
+                dataToMaster(i) := s.io.dataToMaster
+              }
+            }
+            // If no slave claimed the address, return an error + ack so master can proceed.
+            when(!hit) {
+              ackToMaster(i) := true.B
+              errToMaster(i) := true.B
+              stallToMaster(i) := false.B
+              dataToMaster(i) := 0.U
+            }
           }
         }
+      }
+
+      for (i <- 0 until m) {
+        masters(i).io.stall := stallToMaster(i)
+        masters(i).io.ack := ackToMaster(i)
+        masters(i).io.error := errToMaster(i)
+        masters(i).io.dataToMaster := dataToMaster(i)
       }
     }
   }

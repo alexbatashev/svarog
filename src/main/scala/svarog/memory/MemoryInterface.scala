@@ -75,3 +75,76 @@ abstract class CpuMemoryInterface(xlen: Int, maxReqWidth: Int) extends Module {
     val data = Flipped(new MemoryIO(xlen, maxReqWidth))
   })
 }
+
+class MemWishboneHost(xlen: Int, maxReqWidth: Int)
+    extends Module
+    with WishboneMaster {
+  val mem = IO(Flipped(new MemoryIO(xlen, maxReqWidth)))
+
+  val io = IO(new WishboneIO(xlen, maxReqWidth))
+
+  private val wordBytes = xlen / 8
+  private val offsetWidth = log2Ceil(wordBytes)
+
+  // Track an outstanding Wishbone transaction
+  val busy = RegInit(false.B)
+  val respPending = RegInit(false.B)
+  val savedReq = RegInit(0.U.asTypeOf(new MemoryRequest(xlen, maxReqWidth)))
+  val savedOffset = RegInit(0.U(offsetWidth.W))
+
+  // Default Wishbone outputs
+  io.cycleActive := busy
+  io.strobe := busy
+  io.writeEnable := savedReq.write
+  io.addr := savedReq.address // byte address on the bus
+  io.dataToSlave := Cat(savedReq.dataWrite.reverse)
+
+  // Derive byte selects based on request width and address offset
+  val baseMask = MemWidth.mask(xlen)(savedReq.reqWidth)
+  val selVec = Wire(Vec(wordBytes, Bool()))
+  for (i <- 0 until wordBytes) {
+    val rel = i.U - savedOffset
+    selVec(i) := (i.U >= savedOffset) && (rel < baseMask.length.U) && baseMask(
+      rel
+    )
+  }
+  io.sel := selVec
+
+  // Accept a new memory request only when idle and no pending response
+  val canAccept = !busy && !respPending
+  mem.req.ready := canAccept
+  when(mem.req.fire) {
+    savedReq := mem.req.bits
+    savedOffset := mem.req.bits.address(offsetWidth - 1, 0)
+    busy := true.B
+  }
+
+  // Detect transaction completion
+  val done = busy && (io.ack || io.error)
+  when(done) {
+    busy := false.B
+    respPending := true.B
+  }
+
+  // Capture return data on ack
+  val wbDataBytesReg = Reg(Vec(wordBytes, UInt(8.W)))
+  when(io.ack) {
+    for (i <- 0 until wordBytes) {
+      wbDataBytesReg(i) := io.dataToMaster(8 * (i + 1) - 1, 8 * i)
+    }
+  }
+
+  val respData = Wire(Vec(wordBytes, UInt(8.W)))
+  for (i <- 0 until wordBytes) {
+    val srcIdx = i.U + savedOffset
+    respData(i) := Mux(srcIdx < wordBytes.U, wbDataBytesReg(srcIdx), 0.U)
+  }
+
+  // Drive memory response; hold until consumer ready
+  mem.resp.valid := respPending
+  mem.resp.bits.valid := respPending
+  mem.resp.bits.dataRead := respData
+  when(respPending && mem.resp.ready) {
+    respPending := false.B
+  }
+}

@@ -5,7 +5,7 @@ import chisel3.util._
 import chisel3.util.experimental.BoringUtils
 import svarog.soc.SvarogConfig
 
-// Tightly Coupled Memory (TCM)
+/// Tightly Coupled Memory (TCM)
 class TCM(
     xlen: Int,
     memSizeBytes: Int,
@@ -56,4 +56,74 @@ class TCM(
     io.ports(i).resp.bits.valid := respValid
     io.ports(i).resp.bits.dataRead := readData
   }
+}
+
+/// Wishbone adapter for TCM
+class TCMWB(
+    xlen: Int,
+    memSizeBytes: Int,
+    baseAddr: Long = 0
+) extends Module
+    with WishboneSlave {
+  val io = IO(Flipped(new WishboneIO(addrWidth = xlen, dataWidth = xlen)))
+
+  def addrStart: Long = baseAddr
+  def addrEnd: Long = baseAddr + memSizeBytes
+
+  val tcm = Module(
+    new TCM(
+      xlen,
+      memSizeBytes = memSizeBytes,
+      baseAddr = baseAddr,
+      numPorts = 1
+    )
+  )
+
+  tcm.io.ports(0).req.valid := io.cycleActive && io.strobe
+  // Wishbone addresses are byte addresses on the bus; pass through.
+  val wordBytes = xlen / 8
+  val offsetWidth = log2Ceil(wordBytes)
+
+  val byteOffset = io.addr(offsetWidth - 1, 0)
+  tcm.io.ports(0).req.bits.address := io.addr
+  tcm.io.ports(0).req.bits.write := io.writeEnable
+
+  // Derive request width from sel (contiguous assumption).
+  val selUInt = io.sel.asUInt
+  val selAfterOffset = selUInt >> byteOffset
+  val activeLen = PopCount(selAfterOffset)
+  val reqWidth = Wire(MemWidth.Type())
+  reqWidth := MemWidth.WORD
+  when(activeLen === 1.U) { reqWidth := MemWidth.BYTE }
+    .elsewhen(activeLen === 2.U) { reqWidth := MemWidth.HALF }
+    .elsewhen(activeLen === 4.U && (wordBytes >= 4).B) {
+      reqWidth := MemWidth.WORD
+    }
+    .elsewhen(activeLen === 8.U && (wordBytes >= 8).B) {
+      reqWidth := MemWidth.DWORD
+    }
+  tcm.io.ports(0).req.bits.reqWidth := reqWidth
+
+  // Split Wishbone write data into bytes
+  val wbDataBytes = Wire(Vec(wordBytes, UInt(8.W)))
+  for (i <- 0 until wordBytes) {
+    wbDataBytes(i) := io.dataToSlave(8 * (i + 1) - 1, 8 * i)
+  }
+  tcm.io.ports(0).req.bits.dataWrite := wbDataBytes
+
+  // TCM is single-cycle and always ready; no backpressure
+  io.stall := false.B
+
+  // Drive Wishbone response from TCM response
+  val respValid = tcm.io.ports(0).resp.valid
+  io.ack := respValid
+  io.error := false.B
+
+  // Pack bytes back into xlen data word (little-endian)
+  val respBytes = tcm.io.ports(0).resp.bits.dataRead
+  io.dataToMaster := Cat(respBytes.reverse)
+
+  // Tie off unused ready on response channel
+  tcm.io.ports(0).resp.ready := true.B
+
 }
