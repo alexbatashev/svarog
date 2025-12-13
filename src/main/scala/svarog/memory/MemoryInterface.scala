@@ -90,23 +90,20 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int)
   val busy = RegInit(false.B)
   val respPending = RegInit(false.B)
   val savedReq = RegInit(0.U.asTypeOf(new MemoryRequest(xlen, maxReqWidth)))
-  val savedOffset = RegInit(0.U(offsetWidth.W))
+  // Drive Wishbone outputs combinationally from incoming request when ready to accept,
+  // otherwise from saved request
+  val activeReq = Mux(mem.req.fire, mem.req.bits, savedReq)
 
-  // Default Wishbone outputs
   io.cycleActive := busy
   io.strobe := busy
-  io.writeEnable := savedReq.write
-  io.addr := savedReq.address // byte address on the bus
-  io.dataToSlave := Cat(savedReq.dataWrite.reverse)
+  io.writeEnable := activeReq.write
+  io.addr := activeReq.address // word-aligned address
+  io.dataToSlave := Cat(activeReq.dataWrite.reverse)
 
-  // Derive byte selects based on request width and address offset
-  val baseMask = MemWidth.mask(xlen)(savedReq.reqWidth)
+  // Pass through the already-shifted mask from Memory stage
   val selVec = Wire(Vec(wordBytes, Bool()))
   for (i <- 0 until wordBytes) {
-    val rel = i.U - savedOffset
-    selVec(i) := (i.U >= savedOffset) && (rel < baseMask.length.U) && baseMask(
-      rel
-    )
+    selVec(i) := activeReq.mask(i)
   }
   io.sel := selVec
 
@@ -115,7 +112,6 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int)
   mem.req.ready := canAccept
   when(mem.req.fire) {
     savedReq := mem.req.bits
-    savedOffset := mem.req.bits.address(offsetWidth - 1, 0)
     busy := true.B
   }
 
@@ -134,10 +130,10 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int)
     }
   }
 
+  // Return data as-is; Memory stage will unshift based on saved offset
   val respData = Wire(Vec(wordBytes, UInt(8.W)))
   for (i <- 0 until wordBytes) {
-    val srcIdx = i.U + savedOffset
-    respData(i) := Mux(srcIdx < wordBytes.U, wbDataBytesReg(srcIdx), 0.U)
+    respData(i) := wbDataBytesReg(i)
   }
 
   // Drive memory response; hold until consumer ready

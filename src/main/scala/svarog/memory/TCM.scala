@@ -80,29 +80,13 @@ class TCMWB(
   )
 
   tcm.io.ports(0).req.valid := io.cycleActive && io.strobe
-  // Wishbone addresses are byte addresses on the bus; pass through.
+  // Wishbone address is byte-based; pass through.
   val wordBytes = xlen / 8
-  val offsetWidth = log2Ceil(wordBytes)
-
-  val byteOffset = io.addr(offsetWidth - 1, 0)
   tcm.io.ports(0).req.bits.address := io.addr
   tcm.io.ports(0).req.bits.write := io.writeEnable
 
-  // Derive request width from sel (contiguous assumption).
-  val selUInt = io.sel.asUInt
-  val selAfterOffset = selUInt >> byteOffset
-  val activeLen = PopCount(selAfterOffset)
-  val reqWidth = Wire(MemWidth.Type())
-  reqWidth := MemWidth.WORD
-  when(activeLen === 1.U) { reqWidth := MemWidth.BYTE }
-    .elsewhen(activeLen === 2.U) { reqWidth := MemWidth.HALF }
-    .elsewhen(activeLen === 4.U && (wordBytes >= 4).B) {
-      reqWidth := MemWidth.WORD
-    }
-    .elsewhen(activeLen === 8.U && (wordBytes >= 8).B) {
-      reqWidth := MemWidth.DWORD
-    }
-  tcm.io.ports(0).req.bits.reqWidth := reqWidth
+  // Pass byte mask directly from Wishbone sel
+  tcm.io.ports(0).req.bits.mask := io.sel
 
   // Split Wishbone write data into bytes
   val wbDataBytes = Wire(Vec(wordBytes, UInt(8.W)))

@@ -65,6 +65,7 @@ object WishboneRouter {
       slaves.foreach { s =>
         when(s.inAddrSpace(master.io.addr)) {
           s.io <> master.io
+          s.io.addr := master.io.addr
         }.otherwise {
           s.io.cycleActive := false.B
           s.io.strobe := false.B
