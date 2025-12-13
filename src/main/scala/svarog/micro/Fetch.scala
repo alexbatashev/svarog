@@ -37,7 +37,7 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   val canRequest = !reqPending && !respPending && !io.halt
   io.mem.req.valid := canRequest
   io.mem.req.bits.address := pc_reg
-  io.mem.req.bits.reqWidth := MemWidth.WORD
+  io.mem.req.bits.mask := VecInit(Seq.fill(xlen / 8)(true.B)) // Always fetch full word
   io.mem.req.bits.write := false.B
   io.mem.req.bits.dataWrite := VecInit(Seq.fill(xlen / 8)(0.U(8.W)))
 

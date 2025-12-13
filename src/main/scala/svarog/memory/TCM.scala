@@ -35,81 +35,25 @@ class TCM(
 
     val addr = io.ports(i).req.bits.address
     val addrInRange =
-      addr >= baseAddr.U(xlen.W) && addr < (baseAddr.U(xlen.W) + memSizeBytes.U(xlen.W))
+      addr >= baseAddr
+        .U(xlen.W) && addr < (baseAddr.U(xlen.W) + memSizeBytes.U(xlen.W))
 
     val wordIdx = (addr - baseAddr.U) / wordSize.U
     val wordOffset = (addr - baseAddr.U)(offsetWidth - 1, 0)
 
     val enable = addrInRange && reqFire
 
-    // Generate mask and shift it based on byte offset
-    val baseMask = MemWidth.mask(xlen)(io.ports(i).req.bits.reqWidth)
-    val shiftedMask = Wire(Vec(wordSize, Bool()))
-    for (j <- 0 until wordSize) {
-      // Compute offset with explicit width to avoid Verilator warnings
-      // Cast to UInt(32.W) for arithmetic, then extract result
-      val jWide = j.U(32.W)
-      val offsetWide = jWide - wordOffset
-      val offset = offsetWide(offsetWidth - 1, 0)
-      shiftedMask(j) := Mux(
-        (j.U >= wordOffset) && (offset < baseMask.length.U),
-        baseMask(offset),
-        false.B
-      )
-    }
-
-    // Shift write data to align with byte offset
-    val shiftedWriteData = Wire(Vec(wordSize, UInt(8.W)))
-    for (j <- 0 until wordSize) {
-      // Compute offset with explicit width to avoid Verilator warnings
-      val jWide = j.U(32.W)
-      val offsetWide = jWide - wordOffset
-      val offset = offsetWide(offsetWidth - 1, 0)
-      shiftedWriteData(j) := Mux(
-        (j.U >= wordOffset) && (offset < io.ports(i).req.bits.dataWrite.length.U),
-        io.ports(i).req.bits.dataWrite(offset),
-        0.U
-      )
-    }
-
-    val size = MemWidth.size(io.ports(i).req.bits.reqWidth)
     val readData = mem.readWrite(
       wordIdx,
-      shiftedWriteData,
-      shiftedMask,
+      io.ports(i).req.bits.dataWrite,
+      io.ports(i).req.bits.mask,
       enable,
       io.ports(i).req.bits.write
     )
 
-    // Register request metadata to line up with the registered resp.valid
-    val respWordOffset = RegInit(0.U(offsetWidth.W))
-    val respSize = RegInit(0.U(log2Ceil(wordSize + 1).W))
-    when(reqFire) {
-      respWordOffset := wordOffset
-      respSize := MemWidth.size(io.ports(i).req.bits.reqWidth)
-    }
-
     val respValid = RegNext(enable, false.B)
     io.ports(i).resp.valid := respValid
     io.ports(i).resp.bits.valid := respValid
-
-    // Avoid narrow arithmetic by using explicit case-based indexing
-    // This prevents Verilator width expansion warnings
-    for (j <- 0 until wordSize) {
-      val readValue = Wire(UInt(8.W))
-      readValue := 0.U
-
-      for (offset <- 0 until wordSize) {
-        when(respWordOffset === offset.U) {
-          val targetIdx = (offset + j) % wordSize
-          readValue := readData(targetIdx.U)
-        }
-      }
-
-      io.ports(i)
-        .resp
-        .bits
-        .dataRead(j) := Mux(j.U < respSize, readValue, 0.U)
-    }
+    io.ports(i).resp.bits.dataRead := readData
   }
 }

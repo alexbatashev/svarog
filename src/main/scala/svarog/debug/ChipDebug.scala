@@ -68,22 +68,59 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
   // Memory interface - route debug memory requests to imem or dmem
   val memPending = RegInit(false.B)
   val memIsInstr = RegInit(false.B)
+  val memWordOffset = RegInit(0.U(log2Ceil(xlen / 8).W))
+  val memReqWidth = RegInit(MemWidth.WORD)
 
   // Accept new memory requests when not pending
   io.mem_in.ready := !memPending
 
   // Convert debug memory request to MemoryRequest format
   val memReqBits = Wire(new MemoryRequest(xlen, xlen))
-  memReqBits.address := io.mem_in.bits.addr
-  memReqBits.write := io.mem_in.bits.write
-  memReqBits.reqWidth := io.mem_in.bits.reqWidth
 
-  // Convert scalar data to Vec of bytes for write data
-  val writeDataBytes = Wire(Vec(xlen / 8, UInt(8.W)))
-  for (i <- 0 until xlen / 8) {
+  val wordSize = xlen / 8
+  val offsetWidth = log2Ceil(wordSize)
+
+  // Compute word-aligned address and byte offset
+  val byteAddr = io.mem_in.bits.addr
+  val wordAlignedAddr = (byteAddr / wordSize.U) * wordSize.U
+  val wordOffset = byteAddr(offsetWidth - 1, 0)
+
+  memReqBits.address := wordAlignedAddr
+  memReqBits.write := io.mem_in.bits.write
+
+  // Generate base mask and shift it based on byte offset
+  val baseMask = MemWidth.mask(xlen)(io.mem_in.bits.reqWidth)
+  val shiftedMask = Wire(Vec(wordSize, Bool()))
+  for (j <- 0 until wordSize) {
+    val jWide = j.U(32.W)
+    val offsetWide = jWide - wordOffset
+    val offset = offsetWide(offsetWidth - 1, 0)
+    shiftedMask(j) := Mux(
+      (j.U >= wordOffset) && (offset < baseMask.length.U),
+      baseMask(offset),
+      false.B
+    )
+  }
+  memReqBits.mask := shiftedMask
+
+  // Convert scalar data to Vec of bytes and shift based on byte offset
+  val writeDataBytes = Wire(Vec(wordSize, UInt(8.W)))
+  for (i <- 0 until wordSize) {
     writeDataBytes(i) := io.mem_in.bits.data((i + 1) * 8 - 1, i * 8)
   }
-  memReqBits.dataWrite := writeDataBytes
+
+  val shiftedWriteData = Wire(Vec(wordSize, UInt(8.W)))
+  for (j <- 0 until wordSize) {
+    val jWide = j.U(32.W)
+    val offsetWide = jWide - wordOffset
+    val offset = offsetWide(offsetWidth - 1, 0)
+    shiftedWriteData(j) := Mux(
+      (j.U >= wordOffset) && (offset < writeDataBytes.length.U),
+      writeDataBytes(offset),
+      0.U
+    )
+  }
+  memReqBits.dataWrite := shiftedWriteData
 
   // Route to instruction or data memory based on 'instr' bit
   io.imem_iface.req.valid := io.mem_in.valid && io.mem_in.bits.instr && !memPending
@@ -96,18 +133,37 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
   when(io.mem_in.valid && io.mem_in.ready) {
     memPending := true.B
     memIsInstr := io.mem_in.bits.instr
+    memWordOffset := wordOffset
+    memReqWidth := io.mem_in.bits.reqWidth
   }
 
   // Handle responses
   io.imem_iface.resp.ready := memPending && memIsInstr
   io.dmem_iface.resp.ready := memPending && !memIsInstr
 
-  // Convert response back to scalar for mem_res
-  val respData = Mux(
+  // Get raw response data
+  val rawRespBytes = Mux(
     memIsInstr,
-    io.imem_iface.resp.bits.dataRead.asUInt,
-    io.dmem_iface.resp.bits.dataRead.asUInt
+    io.imem_iface.resp.bits.dataRead,
+    io.dmem_iface.resp.bits.dataRead
   )
+
+  // Shift read data back based on byte offset
+  val shiftedRespBytes = Wire(Vec(wordSize, UInt(8.W)))
+  for (j <- 0 until wordSize) {
+    val readValue = Wire(UInt(8.W))
+    readValue := 0.U
+    for (offset <- 0 until wordSize) {
+      when(memWordOffset === offset.U) {
+        val targetIdx = (offset + j) % wordSize
+        readValue := rawRespBytes(targetIdx)
+      }
+    }
+    shiftedRespBytes(j) := readValue
+  }
+
+  // Extract only the requested bytes based on width and convert to scalar
+  val respData = shiftedRespBytes.asUInt
 
   io.mem_res.valid := (io.imem_iface.resp.valid && memIsInstr) ||
     (io.dmem_iface.resp.valid && !memIsInstr)
