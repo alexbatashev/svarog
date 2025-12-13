@@ -54,7 +54,7 @@ class MemoryRequest(xlen: Int, maxReqWidth: Int) extends Bundle {
   val address = UInt(xlen.W)
   val dataWrite = Vec(maxReqWidth / 8, UInt(8.W))
   val write = Bool()
-  val reqWidth = MemWidth.Type()
+  val mask = Vec(maxReqWidth / 8, Bool())
 }
 
 // Memory response - only response fields

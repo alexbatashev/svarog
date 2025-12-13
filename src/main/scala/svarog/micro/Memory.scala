@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import svarog.memory.{MemoryRequest, MemoryIO => MemIO, MemWidth}
 import svarog.decoder.OpType
+import svarog.bits.MemoryUtils
 
 class MemResult(xlen: Int) extends Bundle {
   val opType = Output(OpType())
@@ -30,15 +31,19 @@ class Memory(xlen: Int) extends Module {
 
   mem.req.valid := false.B
 
-  // Split store data into bytes; Memory backend applies address offset itself
-  val storeDataBytes = Wire(Vec(xlen / 8, UInt(8.W)))
-  for (i <- 0 until (xlen / 8)) {
+  val wordSize = xlen / 8
+  val offsetWidth = log2Ceil(wordSize)
+
+  // Split store data into bytes
+  val storeDataBytes = Wire(Vec(wordSize, UInt(8.W)))
+  for (i <- 0 until wordSize) {
     storeDataBytes(i) := io.ex.bits.storeData(8 * (i + 1) - 1, 8 * i)
   }
 
-  mem.req.bits.dataWrite := storeDataBytes
+  // Default values
+  mem.req.bits.dataWrite := VecInit(Seq.fill(wordSize)(0.U(8.W)))
   mem.req.bits.write := false.B
-  mem.req.bits.reqWidth := io.ex.bits.memWidth
+  mem.req.bits.mask := VecInit(Seq.fill(wordSize)(false.B))
   mem.resp.ready := true.B
   mem.req.bits.address := 0.U
 
@@ -49,6 +54,7 @@ class Memory(xlen: Int) extends Module {
   val pendingUnsigned = RegInit(false.B)
   val pendingWidth = RegInit(MemWidth.WORD)
   val pendingAddress = RegInit(0.U(xlen.W))
+  val pendingWordOffset = RegInit(0.U(offsetWidth.W))
 
   io.ex.ready := !pendingLoad
   io.hazard.valid := false.B
@@ -97,13 +103,18 @@ class Memory(xlen: Int) extends Module {
   def extractData(
       bytes: Vec[UInt],
       width: MemWidth.Type,
-      unsigned: Bool
+      unsigned: Bool,
+      wordOffset: UInt
   ): UInt = {
     val extracted = Wire(UInt(xlen.W))
     extracted := 0.U
+
+    // Unshift read data based on byte offset
+    val shiftedBytes = MemoryUtils.unshiftReadData(bytes, wordOffset, wordSize)
+
     switch(width) {
       is(MemWidth.BYTE) {
-        val byteData = bytes(0)
+        val byteData = shiftedBytes(0)
         extracted := Mux(
           unsigned,
           Cat(0.U((xlen - 8).W), byteData),
@@ -111,7 +122,7 @@ class Memory(xlen: Int) extends Module {
         )
       }
       is(MemWidth.HALF) {
-        val halfData = Cat(bytes(1), bytes(0))
+        val halfData = Cat(shiftedBytes(1), shiftedBytes(0))
         extracted := Mux(
           unsigned,
           Cat(0.U((xlen - 16).W), halfData),
@@ -119,10 +130,10 @@ class Memory(xlen: Int) extends Module {
         )
       }
       is(MemWidth.WORD) {
-        extracted := bytes.asUInt
+        extracted := shiftedBytes.asUInt
       }
       is(MemWidth.DWORD) {
-        extracted := bytes.asUInt
+        extracted := shiftedBytes.asUInt
       }
     }
     extracted
@@ -137,19 +148,29 @@ class Memory(xlen: Int) extends Module {
     wbIsStore := false.B
     when(mem.resp.valid) {
       val loadedBytes = mem.resp.bits.dataRead
-      wbResult := extractData(loadedBytes, pendingWidth, pendingUnsigned)
+      wbResult := extractData(loadedBytes, pendingWidth, pendingUnsigned, pendingWordOffset)
       pendingLoad := false.B
       resValid := true.B
     }.otherwise {
       wbResult := 0.U
     }
   }.elsewhen(io.ex.valid) {
-    mem.req.bits.address := io.ex.bits.memAddress
+    // Compute word-aligned address and byte offset
+    val byteAddr = io.ex.bits.memAddress
+    val (wordAlignedAddr, wordOffset) = MemoryUtils.alignAddress(byteAddr, wordSize)
+
+    mem.req.bits.address := wordAlignedAddr
     resValid := true.B
+
+    // Generate shifted mask and write data
+    val shiftedMask = MemoryUtils.generateShiftedMask(io.ex.bits.memWidth, wordOffset, xlen)
+    val shiftedWriteData = MemoryUtils.shiftWriteData(storeDataBytes, wordOffset, wordSize)
+
     switch(io.ex.bits.opType) {
       is(OpType.LOAD) {
         mem.req.valid := true.B
         mem.req.bits.write := false.B
+        mem.req.bits.mask := shiftedMask
         pendingLoad := true.B
         pendingRd := io.ex.bits.rd
         pendingPC := io.ex.bits.pc
@@ -157,6 +178,7 @@ class Memory(xlen: Int) extends Module {
         pendingUnsigned := io.ex.bits.memUnsigned
         pendingWidth := io.ex.bits.memWidth
         pendingAddress := io.ex.bits.memAddress
+        pendingWordOffset := wordOffset
         wbOpType := OpType.NOP
         wbRegWrite := false.B
         resValid := false.B
@@ -165,6 +187,8 @@ class Memory(xlen: Int) extends Module {
       is(OpType.STORE) {
         mem.req.valid := true.B
         mem.req.bits.write := true.B
+        mem.req.bits.mask := shiftedMask
+        mem.req.bits.dataWrite := shiftedWriteData
         wbRegWrite := false.B
         wbResult := 0.U
         wbStoreAddr := io.ex.bits.memAddress

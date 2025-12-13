@@ -5,6 +5,7 @@ import chisel3.util._
 import svarog.memory.MemWidth
 import svarog.memory.MemoryRequest
 import svarog.memory.MemoryIO
+import svarog.bits.MemoryUtils
 
 class ChipHartDebugIO(xlen: Int) extends Bundle {
   val id = Valid(UInt(8.W))
@@ -68,22 +69,36 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
   // Memory interface - route debug memory requests to imem or dmem
   val memPending = RegInit(false.B)
   val memIsInstr = RegInit(false.B)
+  val memWordOffset = RegInit(0.U(log2Ceil(xlen / 8).W))
+  val memReqWidth = RegInit(MemWidth.WORD)
 
   // Accept new memory requests when not pending
   io.mem_in.ready := !memPending
 
   // Convert debug memory request to MemoryRequest format
   val memReqBits = Wire(new MemoryRequest(xlen, xlen))
-  memReqBits.address := io.mem_in.bits.addr
-  memReqBits.write := io.mem_in.bits.write
-  memReqBits.reqWidth := io.mem_in.bits.reqWidth
 
-  // Convert scalar data to Vec of bytes for write data
-  val writeDataBytes = Wire(Vec(xlen / 8, UInt(8.W)))
-  for (i <- 0 until xlen / 8) {
+  val wordSize = xlen / 8
+
+  // Compute word-aligned address and byte offset
+  val byteAddr = io.mem_in.bits.addr
+  val (wordAlignedAddr, wordOffset) = MemoryUtils.alignAddress(byteAddr, wordSize)
+
+  memReqBits.address := wordAlignedAddr
+  memReqBits.write := io.mem_in.bits.write
+
+  // Generate shifted mask
+  val shiftedMask = MemoryUtils.generateShiftedMask(io.mem_in.bits.reqWidth, wordOffset, xlen)
+  memReqBits.mask := shiftedMask
+
+  // Convert scalar data to Vec of bytes and shift based on byte offset
+  val writeDataBytes = Wire(Vec(wordSize, UInt(8.W)))
+  for (i <- 0 until wordSize) {
     writeDataBytes(i) := io.mem_in.bits.data((i + 1) * 8 - 1, i * 8)
   }
-  memReqBits.dataWrite := writeDataBytes
+
+  val shiftedWriteData = MemoryUtils.shiftWriteData(writeDataBytes, wordOffset, wordSize)
+  memReqBits.dataWrite := shiftedWriteData
 
   // Route to instruction or data memory based on 'instr' bit
   io.imem_iface.req.valid := io.mem_in.valid && io.mem_in.bits.instr && !memPending
@@ -96,18 +111,26 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
   when(io.mem_in.valid && io.mem_in.ready) {
     memPending := true.B
     memIsInstr := io.mem_in.bits.instr
+    memWordOffset := wordOffset
+    memReqWidth := io.mem_in.bits.reqWidth
   }
 
   // Handle responses
   io.imem_iface.resp.ready := memPending && memIsInstr
   io.dmem_iface.resp.ready := memPending && !memIsInstr
 
-  // Convert response back to scalar for mem_res
-  val respData = Mux(
+  // Get raw response data
+  val rawRespBytes = Mux(
     memIsInstr,
-    io.imem_iface.resp.bits.dataRead.asUInt,
-    io.dmem_iface.resp.bits.dataRead.asUInt
+    io.imem_iface.resp.bits.dataRead,
+    io.dmem_iface.resp.bits.dataRead
   )
+
+  // Unshift read data back based on byte offset
+  val shiftedRespBytes = MemoryUtils.unshiftReadData(rawRespBytes, memWordOffset, wordSize)
+
+  // Convert to scalar
+  val respData = shiftedRespBytes.asUInt
 
   io.mem_res.valid := (io.imem_iface.resp.valid && memIsInstr) ||
     (io.dmem_iface.resp.valid && !memIsInstr)
