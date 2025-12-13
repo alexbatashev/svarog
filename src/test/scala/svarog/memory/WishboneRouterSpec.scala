@@ -5,12 +5,164 @@ import chisel3.simulator.scalatest.ChiselSim
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
+// Internal master module for router connectivity
+class InternalWishboneMaster(addrWidth: Int, dataWidth: Int)
+    extends Module
+    with WishboneMaster {
+  val io = IO(new WishboneIO(addrWidth, dataWidth))
+}
+
+// Internal slave module for router connectivity
+class InternalWishboneSlave(
+    val addrStart: BigInt,
+    val addrEnd: BigInt,
+    addrWidth: Int,
+    dataWidth: Int
+) extends Module
+    with WishboneSlave {
+  val io = IO(Flipped(new WishboneIO(addrWidth, dataWidth)))
+}
+
+// Test wrapper that exposes controllable master with proper IO directions
+class TestMasterWrapper(addrWidth: Int, dataWidth: Int) extends Module {
+  val masterOutputs = IO(Input(new Bundle {
+    val cyc = Bool()
+    val stb = Bool()
+    val we = Bool()
+    val addr = UInt(addrWidth.W)
+    val dataToSlave = UInt(dataWidth.W)
+    val sel = Vec(dataWidth / 8, Bool())
+  }))
+
+  val masterInputs = IO(Output(new Bundle {
+    val ack = Bool()
+    val stall = Bool()
+    val dataToMaster = UInt(dataWidth.W)
+    val err = Bool()
+  }))
+
+  val internalMaster = Module(new InternalWishboneMaster(addrWidth, dataWidth))
+
+  // Connect test-driven outputs to internal master
+  internalMaster.io.cyc := masterOutputs.cyc
+  internalMaster.io.stb := masterOutputs.stb
+  internalMaster.io.we := masterOutputs.we
+  internalMaster.io.addr := masterOutputs.addr
+  internalMaster.io.dataToSlave := masterOutputs.dataToSlave
+  internalMaster.io.sel.zip(masterOutputs.sel).foreach { case (dst, src) => dst := src }
+
+  // Connect router-driven inputs back to test
+  masterInputs.ack := internalMaster.io.ack
+  masterInputs.stall := internalMaster.io.stall
+  masterInputs.dataToMaster := internalMaster.io.dataToMaster
+  masterInputs.err := internalMaster.io.err
+}
+
+// Test wrapper that exposes controllable slave with proper IO directions
+class TestSlaveWrapper(
+    addrStart: BigInt,
+    addrEnd: BigInt,
+    addrWidth: Int,
+    dataWidth: Int
+) extends Module {
+  val slaveInputs = IO(Output(new Bundle {
+    val cyc = Bool()
+    val stb = Bool()
+    val we = Bool()
+    val addr = UInt(addrWidth.W)
+    val dataToSlave = UInt(dataWidth.W)
+    val sel = Vec(dataWidth / 8, Bool())
+  }))
+
+  val slaveOutputs = IO(Input(new Bundle {
+    val ack = Bool()
+    val stall = Bool()
+    val dataToMaster = UInt(dataWidth.W)
+    val err = Bool()
+  }))
+
+  val internalSlave = Module(new InternalWishboneSlave(addrStart, addrEnd, addrWidth, dataWidth))
+
+  // Connect router-driven inputs back to test
+  slaveInputs.cyc := internalSlave.io.cyc
+  slaveInputs.stb := internalSlave.io.stb
+  slaveInputs.we := internalSlave.io.we
+  slaveInputs.addr := internalSlave.io.addr
+  slaveInputs.dataToSlave := internalSlave.io.dataToSlave
+  internalSlave.io.sel.zip(slaveInputs.sel).foreach { case (src, dst) => dst := src }
+
+  // Connect test-driven outputs to internal slave
+  internalSlave.io.ack := slaveOutputs.ack
+  internalSlave.io.stall := slaveOutputs.stall
+  internalSlave.io.dataToMaster := slaveOutputs.dataToMaster
+  internalSlave.io.err := slaveOutputs.err
+}
+
+// Test harness that wraps everything
+class WishboneRouterTestHarness(
+    numMasters: Int,
+    numSlaves: Int,
+    slaveAddrRanges: Seq[(BigInt, BigInt)],
+    addrWidth: Int = 32,
+    dataWidth: Int = 32
+) extends Module {
+  val io = IO(new Bundle {
+    val masters = Vec(numMasters, new WishboneIO(addrWidth, dataWidth))
+    val slaves = Vec(numSlaves, Flipped(new WishboneIO(addrWidth, dataWidth)))
+  })
+
+  // Create master wrappers
+  val masterWrappers = Seq.tabulate(numMasters) { _ =>
+    Module(new TestMasterWrapper(addrWidth, dataWidth))
+  }
+
+  // Create slave wrappers
+  val slaveWrappers = Seq.tabulate(numSlaves) { i =>
+    val (start, end) = slaveAddrRanges(i)
+    Module(new TestSlaveWrapper(start, end, addrWidth, dataWidth))
+  }
+
+  // Connect test IO to wrappers
+  masterWrappers.zip(io.masters).foreach { case (wrapper, io_m) =>
+    wrapper.masterOutputs.cyc := io_m.cyc
+    wrapper.masterOutputs.stb := io_m.stb
+    wrapper.masterOutputs.we := io_m.we
+    wrapper.masterOutputs.addr := io_m.addr
+    wrapper.masterOutputs.dataToSlave := io_m.dataToSlave
+    wrapper.masterOutputs.sel.zip(io_m.sel).foreach { case (dst, src) => dst := src }
+
+    io_m.ack := wrapper.masterInputs.ack
+    io_m.stall := wrapper.masterInputs.stall
+    io_m.dataToMaster := wrapper.masterInputs.dataToMaster
+    io_m.err := wrapper.masterInputs.err
+  }
+
+  slaveWrappers.zip(io.slaves).foreach { case (wrapper, io_s) =>
+    io_s.cyc := wrapper.slaveInputs.cyc
+    io_s.stb := wrapper.slaveInputs.stb
+    io_s.we := wrapper.slaveInputs.we
+    io_s.addr := wrapper.slaveInputs.addr
+    io_s.dataToSlave := wrapper.slaveInputs.dataToSlave
+    wrapper.slaveInputs.sel.zip(io_s.sel).foreach { case (src, dst) => dst := src }
+
+    wrapper.slaveOutputs.ack := io_s.ack
+    wrapper.slaveOutputs.stall := io_s.stall
+    wrapper.slaveOutputs.dataToMaster := io_s.dataToMaster
+    wrapper.slaveOutputs.err := io_s.err
+  }
+
+  // Apply router to internal masters and slaves
+  val masters = masterWrappers.map(_.internalMaster)
+  val slaves = slaveWrappers.map(_.internalSlave)
+  WishboneRouter(masters, slaves)
+}
+
 class WishboneRouterSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
   behavior of "WishboneRouter"
 
   it should "route a single master to a single slave" in {
-    simulate(new WishboneRouter(
+    simulate(new WishboneRouterTestHarness(
       numMasters = 1,
       numSlaves = 1,
       slaveAddrRanges = Seq((0x80000000L, 0x80004000L)),
@@ -66,7 +218,7 @@ class WishboneRouterSpec extends AnyFlatSpec with Matchers with ChiselSim {
   }
 
   it should "handle slave backpressure (stall)" in {
-    simulate(new WishboneRouter(
+    simulate(new WishboneRouterTestHarness(
       numMasters = 1,
       numSlaves = 1,
       slaveAddrRanges = Seq((0x80000000L, 0x80004000L)),
@@ -120,7 +272,7 @@ class WishboneRouterSpec extends AnyFlatSpec with Matchers with ChiselSim {
   }
 
   it should "arbitrate between two masters" in {
-    simulate(new WishboneRouter(
+    simulate(new WishboneRouterTestHarness(
       numMasters = 2,
       numSlaves = 1,
       slaveAddrRanges = Seq((0x80000000L, 0x80004000L)),
@@ -191,7 +343,7 @@ class WishboneRouterSpec extends AnyFlatSpec with Matchers with ChiselSim {
   }
 
   it should "handle concurrent requests from two masters (CPU scenario)" in {
-    simulate(new WishboneRouter(
+    simulate(new WishboneRouterTestHarness(
       numMasters = 2,
       numSlaves = 1,
       slaveAddrRanges = Seq((0x80000000L, 0x80004000L)),

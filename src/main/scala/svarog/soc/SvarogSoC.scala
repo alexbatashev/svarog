@@ -74,25 +74,14 @@ class SvarogSoC(
   // Wishbone Router
   // ============================================================================
 
-  private val numMasters = if (config.enableDebugInterface) 4 else 2
-  private val router = Module(new WishboneRouter(
-    numMasters = numMasters,
-    numSlaves = 1,
-    slaveAddrRanges = Seq((tcmSlave.addrStart, tcmSlave.addrEnd)),
-    addrWidth = config.xlen,
-    dataWidth = config.xlen
-  ))
+  // Collect all masters and slaves
+  private val allMasters: Seq[WishboneMaster] = Seq(instMaster, dataMaster) ++
+    (if (config.enableDebugInterface) Seq(debugInstMaster.get, debugDataMaster.get) else Seq.empty)
 
-  // Connect masters
-  router.io.masters(0) <> instMaster.io
-  router.io.masters(1) <> dataMaster.io
-  if (config.enableDebugInterface) {
-    router.io.masters(2) <> debugInstMaster.get.io
-    router.io.masters(3) <> debugDataMaster.get.io
-  }
+  private val allSlaves: Seq[WishboneSlave] = Seq(tcmSlave)
 
-  // Connect slaves
-  router.io.slaves(0) <> tcmSlave.io
+  // Connect them using the typesafe WishboneRouter
+  WishboneRouter(allMasters, allSlaves)
 
   // ============================================================================
   // Debug Interface

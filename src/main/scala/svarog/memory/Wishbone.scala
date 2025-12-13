@@ -9,7 +9,7 @@ class WishboneIO(val addrWidth: Int = 32, val dataWidth: Int = 32)
   // Master -> Slave signals
   val cyc = Output(Bool()) // Bus cycle active
   val stb = Output(Bool()) // Valid transaction
-  val we = Output(Bool()) // Write enable
+  val writeEnable = Output(Bool()) // Write enable
   val addr = Output(UInt(addrWidth.W)) // Address
   val dataToSlave = Output(UInt(dataWidth.W)) // Write data
   val sel = Output(Vec(dataWidth / 8, Bool())) // Byte select (one per byte)
@@ -34,11 +34,36 @@ trait WishboneSlave extends Module {
   def addrStart: BigInt
   def addrEnd: BigInt
 
+  def pipelined: Boolean = false
+
   def inAddrSpace(addr: UInt): Bool = {
     addr >= addrStart.U && addr < addrEnd.U
   }
 }
 
 object WishboneRouter {
-  def apply(masters: Seq[WishboneMaster], slaves: Seq[WishboneSlave]): Unit = {}
+  def apply(masters: Seq[WishboneMaster], slaves: Seq[WishboneSlave]): Unit = {
+    require(masters.nonEmpty, "WishboneRouter requires at least one master")
+    require(slaves.nonEmpty, "WishboneRouter requires at least one slave")
+
+    generateBus(masters, slaves)
+
+    // val numMasters = masters.length
+    // val numSlaves = slaves.length
+    //
+
+    // val busyMap = Vec(numSlaves, new BusyItem(log2Ceil(numMasters)))
+
+    // slaves.foreach { slave =>
+    //   // val arb = Module(new RRArbiter(new WishboneIO(), numMasters))
+
+    //   val busy = RegInit(new BusyItem(log2Ceil(numMasters)))
+
+    //   for (i <- 0 until numMasters) {
+    //     when(masters(i).io.stb) {}
+    //   }
+    // }
+  }
+
+  def generateBus(masters: Seq[WishboneMaster], slaves: Seq[WishboneSlave]) = {}
 }
