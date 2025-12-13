@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import svarog.memory.{MemoryRequest, MemoryIO => MemIO, MemWidth}
 import svarog.decoder.OpType
+import svarog.bits.MemoryUtils
 
 class MemResult(xlen: Int) extends Bundle {
   val opType = Output(OpType())
@@ -108,19 +109,8 @@ class Memory(xlen: Int) extends Module {
     val extracted = Wire(UInt(xlen.W))
     extracted := 0.U
 
-    // Shift read data based on byte offset
-    val shiftedBytes = Wire(Vec(wordSize, UInt(8.W)))
-    for (j <- 0 until wordSize) {
-      val readValue = Wire(UInt(8.W))
-      readValue := 0.U
-      for (offset <- 0 until wordSize) {
-        when(wordOffset === offset.U) {
-          val targetIdx = (offset + j) % wordSize
-          readValue := bytes(targetIdx)
-        }
-      }
-      shiftedBytes(j) := readValue
-    }
+    // Unshift read data based on byte offset
+    val shiftedBytes = MemoryUtils.unshiftReadData(bytes, wordOffset, wordSize)
 
     switch(width) {
       is(MemWidth.BYTE) {
@@ -167,39 +157,14 @@ class Memory(xlen: Int) extends Module {
   }.elsewhen(io.ex.valid) {
     // Compute word-aligned address and byte offset
     val byteAddr = io.ex.bits.memAddress
-    val wordAlignedAddr = (byteAddr / wordSize.U) * wordSize.U
-    val wordOffset = byteAddr(offsetWidth - 1, 0)
+    val (wordAlignedAddr, wordOffset) = MemoryUtils.alignAddress(byteAddr, wordSize)
 
     mem.req.bits.address := wordAlignedAddr
     resValid := true.B
-    // Generate base mask
-    val baseMask = MemWidth.mask(xlen)(io.ex.bits.memWidth)
 
-    // Shift mask based on byte offset
-    val shiftedMask = Wire(Vec(wordSize, Bool()))
-    for (j <- 0 until wordSize) {
-      val jWide = j.U(32.W)
-      val offsetWide = jWide - wordOffset
-      val offset = offsetWide(offsetWidth - 1, 0)
-      shiftedMask(j) := Mux(
-        (j.U >= wordOffset) && (offset < baseMask.length.U),
-        baseMask(offset),
-        false.B
-      )
-    }
-
-    // Shift write data to align with byte offset
-    val shiftedWriteData = Wire(Vec(wordSize, UInt(8.W)))
-    for (j <- 0 until wordSize) {
-      val jWide = j.U(32.W)
-      val offsetWide = jWide - wordOffset
-      val offset = offsetWide(offsetWidth - 1, 0)
-      shiftedWriteData(j) := Mux(
-        (j.U >= wordOffset) && (offset < storeDataBytes.length.U),
-        storeDataBytes(offset),
-        0.U
-      )
-    }
+    // Generate shifted mask and write data
+    val shiftedMask = MemoryUtils.generateShiftedMask(io.ex.bits.memWidth, wordOffset, xlen)
+    val shiftedWriteData = MemoryUtils.shiftWriteData(storeDataBytes, wordOffset, wordSize)
 
     switch(io.ex.bits.opType) {
       is(OpType.LOAD) {

@@ -5,6 +5,7 @@ import chisel3.util._
 import svarog.memory.{MemoryRequest, MemoryIO}
 import svarog.decoder.InstWord
 import svarog.memory.MemWidth
+import svarog.bits.MemoryUtils
 
 class FetchIO(xlen: Int) extends Bundle {
   val inst_out = Decoupled(new InstWord(xlen))
@@ -37,7 +38,7 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   val canRequest = !reqPending && !respPending && !io.halt
   io.mem.req.valid := canRequest
   io.mem.req.bits.address := pc_reg
-  io.mem.req.bits.mask := VecInit(Seq.fill(xlen / 8)(true.B)) // Always fetch full word
+  io.mem.req.bits.mask := MemoryUtils.fullWordMask(xlen / 8)
   io.mem.req.bits.write := false.B
   io.mem.req.bits.dataWrite := VecInit(Seq.fill(xlen / 8)(0.U(8.W)))
 

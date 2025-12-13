@@ -5,6 +5,7 @@ import chisel3.util._
 import svarog.memory.MemWidth
 import svarog.memory.MemoryRequest
 import svarog.memory.MemoryIO
+import svarog.bits.MemoryUtils
 
 class ChipHartDebugIO(xlen: Int) extends Bundle {
   val id = Valid(UInt(8.W))
@@ -78,29 +79,16 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
   val memReqBits = Wire(new MemoryRequest(xlen, xlen))
 
   val wordSize = xlen / 8
-  val offsetWidth = log2Ceil(wordSize)
 
   // Compute word-aligned address and byte offset
   val byteAddr = io.mem_in.bits.addr
-  val wordAlignedAddr = (byteAddr / wordSize.U) * wordSize.U
-  val wordOffset = byteAddr(offsetWidth - 1, 0)
+  val (wordAlignedAddr, wordOffset) = MemoryUtils.alignAddress(byteAddr, wordSize)
 
   memReqBits.address := wordAlignedAddr
   memReqBits.write := io.mem_in.bits.write
 
-  // Generate base mask and shift it based on byte offset
-  val baseMask = MemWidth.mask(xlen)(io.mem_in.bits.reqWidth)
-  val shiftedMask = Wire(Vec(wordSize, Bool()))
-  for (j <- 0 until wordSize) {
-    val jWide = j.U(32.W)
-    val offsetWide = jWide - wordOffset
-    val offset = offsetWide(offsetWidth - 1, 0)
-    shiftedMask(j) := Mux(
-      (j.U >= wordOffset) && (offset < baseMask.length.U),
-      baseMask(offset),
-      false.B
-    )
-  }
+  // Generate shifted mask
+  val shiftedMask = MemoryUtils.generateShiftedMask(io.mem_in.bits.reqWidth, wordOffset, xlen)
   memReqBits.mask := shiftedMask
 
   // Convert scalar data to Vec of bytes and shift based on byte offset
@@ -109,17 +97,7 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
     writeDataBytes(i) := io.mem_in.bits.data((i + 1) * 8 - 1, i * 8)
   }
 
-  val shiftedWriteData = Wire(Vec(wordSize, UInt(8.W)))
-  for (j <- 0 until wordSize) {
-    val jWide = j.U(32.W)
-    val offsetWide = jWide - wordOffset
-    val offset = offsetWide(offsetWidth - 1, 0)
-    shiftedWriteData(j) := Mux(
-      (j.U >= wordOffset) && (offset < writeDataBytes.length.U),
-      writeDataBytes(offset),
-      0.U
-    )
-  }
+  val shiftedWriteData = MemoryUtils.shiftWriteData(writeDataBytes, wordOffset, wordSize)
   memReqBits.dataWrite := shiftedWriteData
 
   // Route to instruction or data memory based on 'instr' bit
@@ -148,21 +126,10 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
     io.dmem_iface.resp.bits.dataRead
   )
 
-  // Shift read data back based on byte offset
-  val shiftedRespBytes = Wire(Vec(wordSize, UInt(8.W)))
-  for (j <- 0 until wordSize) {
-    val readValue = Wire(UInt(8.W))
-    readValue := 0.U
-    for (offset <- 0 until wordSize) {
-      when(memWordOffset === offset.U) {
-        val targetIdx = (offset + j) % wordSize
-        readValue := rawRespBytes(targetIdx)
-      }
-    }
-    shiftedRespBytes(j) := readValue
-  }
+  // Unshift read data back based on byte offset
+  val shiftedRespBytes = MemoryUtils.unshiftReadData(rawRespBytes, memWordOffset, wordSize)
 
-  // Extract only the requested bytes based on width and convert to scalar
+  // Convert to scalar
   val respData = shiftedRespBytes.asUInt
 
   io.mem_res.valid := (io.imem_iface.resp.valid && memIsInstr) ||
