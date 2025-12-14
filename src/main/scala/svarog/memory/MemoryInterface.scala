@@ -96,6 +96,7 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
   private val state = RegInit(sIdle)
 
   private val savedResp = RegInit(0.U.asTypeOf(new MemoryResponse(maxReqWidth)))
+  private val savedReq = RegInit(0.U.asTypeOf(new MemoryRequest(xlen, maxReqWidth)))
 
   val stateTest = IO(Output(MemWishboneHost.State.Type()))
   stateTest := state
@@ -119,7 +120,7 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
   private def saveResp(resp: MemoryResponse) = {
     val respData = Wire(Vec(wordBytes, UInt(8.W)))
     for (i <- 0 until wordBytes) {
-      respData(i) := io.dataToMaster(i)
+      respData(i) := io.dataToMaster((i+1)*8-1, i*8)
     }
     resp.dataRead := respData
     resp.valid := !io.error
@@ -130,17 +131,24 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
       when(mem.req.valid) {
         state := sRespWait
 
+        // Latch the request for the entire transaction
+        savedReq := mem.req.bits
+
         io.cycleActive := true.B
         io.strobe := true.B
         io.writeEnable := mem.req.bits.write
         io.addr := mem.req.bits.address
-        io.dataToSlave := Cat(mem.req.bits.dataWrite)
+        io.dataToSlave := Cat(mem.req.bits.dataWrite.reverse)
         io.sel := mem.req.bits.mask
       }
     }
     is(sRespWait) {
       io.cycleActive := true.B
       io.strobe := true.B
+      io.writeEnable := savedReq.write
+      io.addr := savedReq.address
+      io.dataToSlave := Cat(savedReq.dataWrite.reverse)
+      io.sel := savedReq.mask
       when(io.ack) {
         when(mem.resp.ready) {
           if (registered) {

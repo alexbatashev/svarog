@@ -90,6 +90,9 @@ object WishboneRouter {
   def generateBus(masters: Seq[WishboneMaster], slaves: Seq[WishboneSlave]) = {
     val grant = WishboneArbiter(masters)
 
+    val cycActives = VecInit(masters.map(_.io.cycleActive))
+    printf(cf"Wishbone: cycActive=$cycActives, grant=$grant\n")
+
     slaves.foreach { s =>
       s.io.cycleActive := false.B
       s.io.strobe := false.B
@@ -113,6 +116,12 @@ object WishboneRouter {
         slaves.foreach { s =>
           when(s.inAddrSpace(m.io.addr)) {
             s.io <> m.io
+            when(m.io.cycleActive && m.io.strobe) {
+              printf(cf"Master $i -> Slave: addr=0x${m.io.addr}%x, write=${m.io.writeEnable}, data=0x${m.io.dataToSlave}%x, sel=${m.io.sel}\n")
+              when(s.io.ack) {
+                printf(cf"Slave -> Master $i: ack=1, data=0x${s.io.dataToMaster}%x\n")
+              }
+            }
           }.otherwise {
             s.io.cycleActive := false.B
             s.io.strobe := false.B
