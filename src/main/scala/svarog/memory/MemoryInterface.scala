@@ -78,11 +78,11 @@ abstract class CpuMemoryInterface(xlen: Int, maxReqWidth: Int) extends Module {
 
 object MemWishboneHost {
   object State extends ChiselEnum {
-    val sIdle, sRespWait, sHostWait = Value
+    val sIdle, sRespWait, sHostWait, sCooldown = Value
   }
 }
 
-class MemWishboneHost(xlen: Int, maxReqWidth: Int)
+class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
     extends Module
     with WishboneMaster {
   import MemWishboneHost.State._
@@ -97,10 +97,14 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int)
 
   private val savedResp = RegInit(0.U.asTypeOf(new MemoryResponse(maxReqWidth)))
 
+  val stateTest = IO(Output(MemWishboneHost.State.Type()))
+  stateTest := state
+
   // By convention, the request must be asserted and valid
   // for the entire duration of transaction. This means we're
-  // ready on each cycle.
-  mem.req.ready := true.B
+  // ready on each cycle, unless master is in cooldown mode
+  // (required for cooperative multitasking).
+  mem.req.ready := state =/= sCooldown
 
   mem.resp.valid := false.B
   mem.resp.bits := 0.U.asTypeOf(new MemoryResponse(maxReqWidth))
@@ -112,12 +116,7 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int)
   io.dataToSlave := 0.U
   io.sel := VecInit(Seq.fill(wordBytes)(false.B))
 
-  // val log = SimLog.file("/tmp/logfile.log")
-  val respValid = mem.resp.valid
-  printf(cf"Current state = $state; resp.valid = $respValid\n")
-  // log.flush()
-
-  def saveResp(resp: MemoryResponse) = {
+  private def saveResp(resp: MemoryResponse) = {
     val respData = Wire(Vec(wordBytes, UInt(8.W)))
     for (i <- 0 until wordBytes) {
       respData(i) := io.dataToMaster(i)
@@ -144,8 +143,13 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int)
       io.strobe := true.B
       when(io.ack) {
         when(mem.resp.ready) {
-          // We're back to idle on next cycle
-          state := sIdle
+          if (registered) {
+            // We're back to idle on next cycle
+            state := sIdle
+          } else {
+            // Let other masters do their job
+            state := sCooldown
+          }
 
           mem.resp.valid := true.B
           saveResp(mem.resp.bits)
@@ -157,71 +161,19 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int)
     }
     is(sHostWait) {
       when(mem.resp.ready) {
-        state := sIdle
+        if (registered) {
+          state := sIdle
+        } else {
+          state := sCooldown
+        }
         mem.resp.valid := true.B
         mem.resp.bits := savedResp
       }
     }
+
+    is(sCooldown) {
+      // Just allow new requests on next cycle
+      state := sIdle
+    }
   }
-
-  // private val wordBytes = xlen / 8
-  // private val offsetWidth = log2Ceil(wordBytes)
-
-  // // Track an outstanding Wishbone transaction
-  // val busy = RegInit(false.B)
-  // val respPending = RegInit(false.B)
-  // val savedReq = RegInit(0.U.asTypeOf(new MemoryRequest(xlen, maxReqWidth)))
-  // // Drive Wishbone outputs combinationally from incoming request when ready to accept,
-  // // otherwise from saved request
-  // val activeReq = Mux(mem.req.fire, mem.req.bits, savedReq)
-
-  // io.cycleActive := busy
-  // io.strobe := busy
-  // io.writeEnable := activeReq.write
-  // io.addr := activeReq.address // word-aligned address
-  // io.dataToSlave := Cat(activeReq.dataWrite.reverse)
-
-  // // Pass through the already-shifted mask from Memory stage
-  // val selVec = Wire(Vec(wordBytes, Bool()))
-  // for (i <- 0 until wordBytes) {
-  //   selVec(i) := activeReq.mask(i)
-  // }
-  // io.sel := selVec
-
-  // // Accept a new memory request only when idle and no pending response
-  // val canAccept = !busy && !respPending
-  // mem.req.ready := canAccept
-  // when(mem.req.fire) {
-  //   savedReq := mem.req.bits
-  //   busy := true.B
-  // }
-
-  // // Detect transaction completion
-  // val done = busy && (io.ack || io.error)
-  // when(done) {
-  //   busy := false.B
-  //   respPending := true.B
-  // }
-
-  // // Capture return data on ack
-  // val wbDataBytesReg = Reg(Vec(wordBytes, UInt(8.W)))
-  // when(io.ack) {
-  //   for (i <- 0 until wordBytes) {
-  //     wbDataBytesReg(i) := io.dataToMaster(8 * (i + 1) - 1, 8 * i)
-  //   }
-  // }
-
-  // // Return data as-is; Memory stage will unshift based on saved offset
-  // val respData = Wire(Vec(wordBytes, UInt(8.W)))
-  // for (i <- 0 until wordBytes) {
-  //   respData(i) := wbDataBytesReg(i)
-  // }
-
-  // // Drive memory response; hold until consumer ready
-  // mem.resp.valid := respPending
-  // mem.resp.bits.valid := respPending
-  // mem.resp.bits.dataRead := respData
-  // when(respPending && mem.resp.ready) {
-  //   respPending := false.B
-  // }
 }

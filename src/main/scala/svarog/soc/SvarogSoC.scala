@@ -42,8 +42,12 @@ class SvarogSoC(
 
   // CPU instruction fetch master
   // Expose CPU memory ports through Wishbone hosts
-  private val cpuInstHost = Module(new MemWishboneHost(config.xlen, config.xlen))
-  private val cpuDataHost = Module(new MemWishboneHost(config.xlen, config.xlen))
+  private val cpuInstHost = Module(
+    new MemWishboneHost(config.xlen, config.xlen)
+  )
+  private val cpuDataHost = Module(
+    new MemWishboneHost(config.xlen, config.xlen)
+  )
   cpu.io.instmem <> cpuInstHost.mem
   cpu.io.datamem <> cpuDataHost.mem
 
@@ -57,7 +61,7 @@ class SvarogSoC(
   } else None
 
   private val tcm = Module(
-    new TCMWB(
+    new TCMWishboneAdapter(
       xlen = config.xlen,
       memSizeBytes = config.memSizeBytes,
       baseAddr = config.programEntryPoint

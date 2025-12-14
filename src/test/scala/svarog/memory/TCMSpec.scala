@@ -1,89 +1,61 @@
 package svarog.memory
 
 import chisel3._
+import chisel3.util._
 import chisel3.simulator.scalatest.ChiselSim
-import org.scalatest.flatspec.AnyFlatSpec
-import org.scalatest.matchers.should.Matchers
+import org.scalatest.funspec.AnyFunSpec
 
-class TCMSpec extends AnyFlatSpec with Matchers with ChiselSim {
-  behavior of "TCM"
+class TCMSpec extends AnyFunSpec with ChiselSim {
+  describe("TCMWishboneAdapter") {
+    it("should correctly respond to stimulus") {
+      simulate(new TCMWishboneAdapter(32, 128)) { dut =>
+        import TCMWishboneAdapter.State._
 
-  private val xlen = 32
-  private val memSizeBytes = 256
-  private val wordBytes = xlen / 8
+        dut.stateTest.expect(sIdle)
 
-  private def bytesFromWord(value: BigInt): Seq[Int] =
-    (0 until wordBytes).map { idx =>
-      ((value >> (8 * idx)) & 0xff).toInt
-    }
+        dut.clock.step(1)
 
-  private def writeWord(dut: TCM, address: BigInt, data: BigInt): Unit = {
-    val port = dut.io.ports(0)
-    port.req.bits.address.poke(address.U)
-    port.req.bits.write.poke(true.B)
-    port.req.bits.reqWidth.poke(MemWidth.WORD)
-    bytesFromWord(data).zipWithIndex.foreach { case (byte, idx) =>
-      port.req.bits.dataWrite(idx).poke(byte.U(8.W))
-    }
-    port.req.valid.poke(true.B)
-    port.resp.ready.poke(true.B)
+        dut.io.cycleActive.poke(true)
+        dut.io.strobe.poke(true)
+        dut.io.addr.poke(0x4)
+        dut.io.writeEnable.poke(true)
+        dut.io.sel.foreach(_.poke(true))
+        dut.io.dataToSlave.poke(42)
 
-    dut.clock.step(1)
+        dut.stateTest.expect(sIdle)
 
-    port.resp.valid.expect(true.B)
-    port.resp.bits.valid.expect(true.B)
+        dut.clock.step(1)
 
-    port.req.valid.poke(false.B)
-    port.req.bits.write.poke(false.B)
-  }
+        dut.io.cycleActive.poke(true)
+        dut.io.strobe.poke(true)
 
-  private def readWordAndExpect(
-      dut: TCM,
-      address: BigInt,
-      expected: BigInt
-  ): Unit = {
-    val port = dut.io.ports(0)
-    port.req.bits.address.poke(address.U)
-    port.req.bits.write.poke(false.B)
-    port.req.bits.reqWidth.poke(MemWidth.WORD)
-    bytesFromWord(0).zipWithIndex.foreach { case (byte, idx) =>
-      port.req.bits.dataWrite(idx).poke(byte.U(8.W))
-    }
-    port.req.valid.poke(true.B)
-    port.resp.ready.poke(true.B)
+        dut.stateTest.expect(sMem)
+        dut.io.ack.expect(true)
+        dut.io.error.expect(false)
 
-    dut.clock.step(1)
-    dut.clock.step(1)
+        dut.clock.step(1)
 
-    port.resp.valid.expect(true.B)
-    port.resp.bits.valid.expect(true.B)
-    bytesFromWord(expected).zipWithIndex.foreach { case (byte, idx) =>
-      port.resp.bits.dataRead(idx).expect(byte.U)
-    }
+        dut.io.cycleActive.poke(true)
+        dut.io.strobe.poke(true)
+        dut.io.addr.poke(0x4)
+        dut.io.writeEnable.poke(false)
+        dut.io.sel.foreach(_.poke(true))
+        dut.io.dataToSlave.poke(0)
 
-    port.req.valid.poke(false.B)
-  }
+        dut.stateTest.expect(sIdle)
+        dut.io.ack.expect(false)
+        dut.io.error.expect(false)
 
-  it should "read and write at base address 0x0" in {
-    simulate(new TCM(xlen, memSizeBytes, baseAddr = 0L, numPorts = 1)) { dut =>
-      val testAddress = BigInt(0)
-      val testData = BigInt("deadbeef", 16)
+        dut.clock.step(1)
 
-      writeWord(dut, testAddress, testData)
-      readWordAndExpect(dut, testAddress, testData)
-    }
-  }
+        dut.io.cycleActive.poke(true)
+        dut.io.strobe.poke(true)
 
-  it should "read and write when base is 0x80000000" in {
-    val baseAddress = BigInt("80000000", 16)
-    simulate(
-      new TCM(xlen, memSizeBytes, baseAddr = baseAddress.toLong, numPorts = 1)
-    ) { dut =>
-      val testAddress = baseAddress
-      val testData = BigInt("cafebabe", 16)
-
-      writeWord(dut, testAddress, testData)
-      readWordAndExpect(dut, testAddress, testData)
+        dut.stateTest.expect(sMem)
+        dut.io.ack.expect(true)
+        dut.io.error.expect(false)
+        dut.io.dataToMaster.expect(42)
+      }
     }
   }
 }

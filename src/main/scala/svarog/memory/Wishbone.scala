@@ -40,11 +40,42 @@ trait WishboneSlave extends Module {
   }
 }
 
-private object ArbiterCtrl {
-  def apply(request: Seq[Bool]): Seq[Bool] = request.length match {
-    case 0 => Seq()
-    case 1 => Seq(true.B)
-    case _ => true.B +: request.tail.init.scanLeft(request.head)(_ || _).map(!_)
+private object WishboneArbiter {
+  def apply(masters: Seq[WishboneMaster]): Vec[Bool] = {
+    val lastGrant = RegInit(VecInit(Seq.fill(masters.length)(false.B)))
+    // ID == numMasters allows to grant access to master 0 on first cycle
+    val lastGrantId =
+      Mux(
+        PopCount(lastGrant) === 1.U,
+        OHToUInt(lastGrant),
+        masters.length.U
+      )
+
+    lazy val valid = masters.map(_.io.cycleActive)
+    lazy val nextValid = (0 until masters.length)
+      .zip(masters)
+      .map { case (i, m) => i.U > lastGrantId && m.io.cycleActive }
+    lazy val prevValid = (0 until masters.length)
+      .zip(masters)
+      .map { case (i, m) => i.U <= lastGrantId && m.io.cycleActive }
+
+    val nextGrant = Mux(
+      PopCount(nextValid) =/= 0.U,
+      VecInit(PriorityEncoderOH(nextValid)),
+      VecInit(PriorityEncoderOH(prevValid))
+    )
+
+    val inactive =
+      lastGrant.zip(masters).map { case (g, m) => g && m.io.cycleActive }
+
+    // If last granted master is inactive, cycle to next master.
+    val grant = Mux(PopCount(inactive) === 0.U, nextGrant, lastGrant)
+
+    lastGrant := grant
+
+    assert(PopCount(grant) <= 1.U)
+
+    grant
   }
 }
 
@@ -57,32 +88,7 @@ object WishboneRouter {
   }
 
   def generateBus(masters: Seq[WishboneMaster], slaves: Seq[WishboneSlave]) = {
-    val hasLast = RegInit(false.B)
-    val granted = RegInit(VecInit(Seq.fill(masters.length)(false.B)))
-    val lastGranted = Mux(hasLast, OHToUInt(granted), 0.U)
-    val locked = RegInit(false.B)
-
-    assert(PopCount(granted) <= 1.U)
-
-    lazy val valid = masters.map(_.io.cycleActive)
-    lazy val nextValid = (0 until masters.length)
-      .zip(masters)
-      .map { case (i, m) => i.U > lastGranted && m.io.cycleActive }
-    lazy val prevValid = (0 until masters.length)
-      .zip(masters)
-      .map { case (i, m) => i.U <= lastGranted && m.io.cycleActive }
-
-    val nextGrant = Mux(
-      locked,
-      granted,
-      Mux(
-        PopCount(nextValid) =/= 0.U,
-        VecInit(PriorityEncoderOH(nextValid)),
-        VecInit(PriorityEncoderOH(prevValid))
-      )
-    )
-
-    granted := nextGrant
+    val grant = WishboneArbiter(masters)
 
     slaves.foreach { s =>
       s.io.cycleActive := false.B
@@ -103,9 +109,7 @@ object WishboneRouter {
     for (i <- 0 until masters.length) {
       val m = masters(i)
 
-      when(granted(i)) {
-        locked := m.io.cycleActive
-
+      when(grant(i)) {
         slaves.foreach { s =>
           when(s.inAddrSpace(m.io.addr)) {
             s.io <> m.io
