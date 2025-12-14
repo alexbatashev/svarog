@@ -89,6 +89,11 @@ class CpuDebugSpec extends AnyFlatSpec with Matchers with ChiselSim {
 
         // Write each byte
         for ((byte, byteIdx) <- bytes.zipWithIndex) {
+          // Wait for mem_in to be ready (memPending must be clear)
+          while (!dut.io.debug.mem_in.ready.peek().litToBoolean) {
+            tick()
+          }
+
           dut.io.debug.mem_in.valid.poke(true.B)
           dut.io.debug.mem_in.bits.addr.poke((addr + byteIdx).U)
           dut.io.debug.mem_in.bits.data.poke(byte.U)
@@ -97,7 +102,10 @@ class CpuDebugSpec extends AnyFlatSpec with Matchers with ChiselSim {
           dut.io.debug.mem_in.bits.reqWidth.poke(MemWidth.BYTE) // Byte width
           tick()
           dut.io.debug.mem_in.valid.poke(false.B)
-          tick() // Wait for response to clear memPending
+
+          // Wait for response to be consumed and memPending to clear
+          tick()
+          tick()
         }
 
         println(f"  Loaded instruction [$idx]: 0x$inst%08x at address 0x$addr%08x")
