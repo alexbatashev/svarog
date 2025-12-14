@@ -120,7 +120,7 @@ class TCMWB(
 
   when(reqValid) {
     io.ack := tcm.io.ports(0).resp.valid
-    io.dataToMaster := Cat(tcm.io.ports(0).resp.bits.dataRead.reverse)
+    io.dataToMaster := Cat(tcm.io.ports(0).resp.bits.dataRead)
     io.error := tcm.io.ports(0).resp.bits.valid
     io.stall := !tcm.io.ports(0).resp.valid
   }
