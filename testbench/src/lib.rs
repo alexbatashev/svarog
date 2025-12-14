@@ -419,6 +419,17 @@ impl Simulator {
     }
 
     fn drive_mem_request(&self, addr: u32, data: u32, req_width: u8, write: bool) {
+        eprintln!("\n>>> drive_mem_request START: addr=0x{:08x}, data=0x{:08x}, width={}, write={}",
+                  addr, data, req_width, write);
+
+        // Check initial state
+        {
+            let model = self.model.borrow();
+            let initial_ready = model.get_debug_mem_in_ready() != 0;
+            let initial_res_valid = model.get_debug_mem_res_valid() != 0;
+            eprintln!("    Initial state: mem_in.ready={}, mem_res.valid={}", initial_ready, initial_res_valid);
+        }
+
         // Wait for ready and send request
         let mut attempts = 0;
         loop {
@@ -436,11 +447,15 @@ impl Simulator {
             };
             self.tick(false);
             attempts += 1;
+            if attempts == 1 {
+                eprintln!("    Sent request, ready={}", ready);
+            }
             if attempts > 10 {
                 eprintln!("ERROR: drive_mem_request timeout waiting for ready, addr=0x{:08x}, write={}", addr, write);
                 panic!("drive_mem_request timeout");
             }
             if ready {
+                eprintln!("    Request accepted after {} attempts", attempts);
                 break;
             }
         }
@@ -451,26 +466,31 @@ impl Simulator {
             model.pin_mut().set_debug_mem_in_valid(0);
             model.pin_mut().set_debug_mem_in_bits_write(0);
         }
+        eprintln!("    Request cleared");
 
         // For writes, wait for response to complete before returning
         // For reads, the caller will wait for and consume the response
         if write {
+            eprintln!("    Waiting for write response...");
             // Wait for response to arrive and memPending to clear
             // Check mem_in.ready to ensure memPending has cleared
             for attempt in 0..30 {
                 self.tick(false);
-                let (ready, mem_res_valid) = {
+                let (ready, mem_res_valid, mem_res_bits) = {
                     let model = self.model.borrow();
-                    (model.get_debug_mem_in_ready() != 0, model.get_debug_mem_res_valid() != 0)
+                    (model.get_debug_mem_in_ready() != 0,
+                     model.get_debug_mem_res_valid() != 0,
+                     model.get_debug_mem_res_bits())
                 };
-                if attempt < 5 || !ready {
-                    eprintln!("DEBUG: write wait attempt {}: ready={}, mem_res_valid={}", attempt, ready, mem_res_valid);
-                }
+                eprintln!("    Write wait [{}]: ready={}, mem_res_valid={}, mem_res_bits=0x{:08x}",
+                          attempt, ready, mem_res_valid, mem_res_bits);
                 if ready {
+                    eprintln!("    Write complete after {} attempts", attempt);
                     break;
                 }
             }
         }
+        eprintln!("<<< drive_mem_request END\n");
     }
 
     #[allow(dead_code)]

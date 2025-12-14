@@ -109,6 +109,7 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
 
   // Track pending requests
   when(io.mem_in.valid && io.mem_in.ready) {
+    printf(cf"ChipDebug: mem_in fires, addr=0x${io.mem_in.bits.addr}%x, write=${io.mem_in.bits.write}, instr=${io.mem_in.bits.instr}\n")
     memPending := true.B
     memIsInstr := io.mem_in.bits.instr
     memWordOffset := wordOffset
@@ -138,6 +139,7 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
 
   // Clear pending when response is consumed
   when(io.mem_res.valid && io.mem_res.ready) {
+    printf(cf"ChipDebug: memPending cleared, mem_res.bits=0x${io.mem_res.bits}%x\n")
     memPending := false.B
   }
 }
