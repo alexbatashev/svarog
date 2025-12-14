@@ -56,7 +56,7 @@ class Memory(xlen: Int) extends Module {
   val pendingAddress = RegInit(0.U(xlen.W))
   val pendingWordOffset = RegInit(0.U(offsetWidth.W))
 
-  io.ex.ready := !pendingLoad
+  io.ex.ready := !pendingLoad && mem.req.ready
   io.hazard.valid := false.B
   io.hazard.bits := 0.U
   io.csrHazard.valid := false.B

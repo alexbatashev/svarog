@@ -96,16 +96,14 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
   private val state = RegInit(sIdle)
 
   private val savedResp = RegInit(0.U.asTypeOf(new MemoryResponse(maxReqWidth)))
-  private val savedReq = RegInit(0.U.asTypeOf(new MemoryRequest(xlen, maxReqWidth)))
+  private val savedReq = RegInit(
+    0.U.asTypeOf(new MemoryRequest(xlen, maxReqWidth))
+  )
 
   val stateTest = IO(Output(MemWishboneHost.State.Type()))
   stateTest := state
 
-  // By convention, the request must be asserted and valid
-  // for the entire duration of transaction. This means we're
-  // ready on each cycle, unless master is in cooldown mode
-  // (required for cooperative multitasking).
-  mem.req.ready := state =/= sCooldown
+  mem.req.ready := state === sIdle
 
   mem.resp.valid := false.B
   mem.resp.bits := 0.U.asTypeOf(new MemoryResponse(maxReqWidth))
@@ -120,7 +118,7 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
   private def saveResp(resp: MemoryResponse) = {
     val respData = Wire(Vec(wordBytes, UInt(8.W)))
     for (i <- 0 until wordBytes) {
-      respData(i) := io.dataToMaster((i+1)*8-1, i*8)
+      respData(i) := io.dataToMaster((i + 1) * 8 - 1, i * 8)
     }
     resp.dataRead := respData
     resp.valid := !io.error
@@ -129,7 +127,9 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
   switch(state) {
     is(sIdle) {
       when(mem.req.valid) {
-        printf(cf"MemWishboneHost: sIdle -> sRespWait, addr=0x${mem.req.bits.address}%x, write=${mem.req.bits.write}\n")
+        printf(
+          cf"MemWishboneHost: sIdle -> sRespWait, addr=0x${mem.req.bits.address}%x, write=${mem.req.bits.write}\n"
+        )
         state := sRespWait
 
         // Latch the request for the entire transaction
@@ -150,9 +150,13 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
       io.addr := savedReq.address
       io.dataToSlave := Cat(savedReq.dataWrite.reverse)
       io.sel := savedReq.mask
-      printf(cf"MemWishboneHost: sRespWait addr=0x${savedReq.address}%x, stall=${io.stall}, ack=${io.ack}\n")
+      printf(
+        cf"MemWishboneHost: sRespWait addr=0x${savedReq.address}%x, stall=${io.stall}, ack=${io.ack}\n"
+      )
       when(io.ack) {
-        printf(cf"MemWishboneHost: Got ack, addr=0x${savedReq.address}%x, resp.ready=${mem.resp.ready}\n")
+        printf(
+          cf"MemWishboneHost: Got ack, addr=0x${savedReq.address}%x, resp.ready=${mem.resp.ready}\n"
+        )
         when(mem.resp.ready) {
           if (registered) {
             // We're back to idle on next cycle
@@ -190,24 +194,27 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
     }
 
     is(sCooldown) {
+      state := sIdle
       // Check if there's a new request waiting
-      when(mem.req.valid) {
-        printf(cf"MemWishboneHost: sCooldown -> sRespWait, addr=0x${mem.req.bits.address}%x, write=${mem.req.bits.write}\n")
-        state := sRespWait
+      // when(mem.req.valid) {
+      //   printf(
+      //     cf"MemWishboneHost: sCooldown -> sRespWait, addr=0x${mem.req.bits.address}%x, write=${mem.req.bits.write}\n"
+      //   )
+      //   state := sRespWait
 
-        // Latch the request for the entire transaction
-        savedReq := mem.req.bits
+      //   // Latch the request for the entire transaction
+      //   savedReq := mem.req.bits
 
-        io.cycleActive := true.B
-        io.strobe := true.B
-        io.writeEnable := mem.req.bits.write
-        io.addr := mem.req.bits.address
-        io.dataToSlave := Cat(mem.req.bits.dataWrite.reverse)
-        io.sel := mem.req.bits.mask
-      }.otherwise {
-        // No new request, go back to idle
-        state := sIdle
-      }
+      //   io.cycleActive := true.B
+      //   io.strobe := true.B
+      //   io.writeEnable := mem.req.bits.write
+      //   io.addr := mem.req.bits.address
+      //   io.dataToSlave := Cat(mem.req.bits.dataWrite.reverse)
+      //   io.sel := mem.req.bits.mask
+      // }.otherwise {
+      //   // No new request, go back to idle
+      //   state := sIdle
+      // }
     }
   }
 }

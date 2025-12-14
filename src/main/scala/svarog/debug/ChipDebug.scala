@@ -73,7 +73,7 @@ class ChipDebugModule(xlen: Int, numHarts: Int) extends Module {
   val memReqWidth = RegInit(MemWidth.WORD)
 
   // Accept new memory requests when not pending
-  io.mem_in.ready := !memPending
+  io.mem_in.ready := !memPending && io.imem_iface.req.ready && io.dmem_iface.req.ready
 
   // Convert debug memory request to MemoryRequest format
   val memReqBits = Wire(new MemoryRequest(xlen, xlen))
