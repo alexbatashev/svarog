@@ -52,7 +52,7 @@ object GenerateVerilatorTop extends App {
       targetDir
     ),
     Seq(
-      // FirtoolOption("--disable-all-randomization"),
+      FirtoolOption("--disable-all-randomization"),
       FirtoolOption("--default-layer-specialization=enable"),
       FirtoolOption(
         "--lowering-options=disallowPortDeclSharing,printDebugInfo"
