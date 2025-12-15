@@ -19,6 +19,15 @@ class MemResult(xlen: Int) extends Bundle {
   val isStore = Output(Bool()) // Flag indicating if this was a store
 }
 
+private class MemLatch(xlen: Int) extends Bundle {
+  val rd = UInt(5.W)
+  val pc = UInt(xlen.W)
+  val storeAddr = UInt(xlen.W)
+  val isStore = Bool()
+  val opWidth = MemWidth.Type()
+  val unsigned = Bool()
+}
+
 class Memory(xlen: Int) extends Module {
   val io = IO(new Bundle {
     val ex = Flipped(Decoupled(new ExecuteResult(xlen)))
@@ -27,78 +36,69 @@ class Memory(xlen: Int) extends Module {
     val csrHazard = Valid(new HazardUnitCSRIO)
   })
 
+  val wordSize = xlen / 8
+
   val mem = IO(new MemIO(xlen, xlen))
 
-  mem.req.valid := false.B
-
-  val wordSize = xlen / 8
-  val offsetWidth = log2Ceil(wordSize)
-
-  // Split store data into bytes
-  val storeDataBytes = Wire(Vec(wordSize, UInt(8.W)))
-  for (i <- 0 until wordSize) {
-    storeDataBytes(i) := io.ex.bits.storeData(8 * (i + 1) - 1, 8 * i)
-  }
-
   // Default values
+  mem.req.valid := false.B
   mem.req.bits.dataWrite := VecInit(Seq.fill(wordSize)(0.U(8.W)))
   mem.req.bits.write := false.B
   mem.req.bits.mask := VecInit(Seq.fill(wordSize)(false.B))
   mem.resp.ready := true.B
   mem.req.bits.address := 0.U
-
-  val pendingLoad = RegInit(false.B)
-  val pendingRd = RegInit(0.U(5.W))
-  val pendingPC = RegInit(0.U(xlen.W))
-  val pendingRegWrite = RegInit(false.B)
-  val pendingUnsigned = RegInit(false.B)
-  val pendingWidth = RegInit(MemWidth.WORD)
-  val pendingAddress = RegInit(0.U(xlen.W))
-  val pendingWordOffset = RegInit(0.U(offsetWidth.W))
-
-  io.ex.ready := !pendingLoad && mem.req.ready
   io.hazard.valid := false.B
   io.hazard.bits := 0.U
   io.csrHazard.valid := false.B
   io.csrHazard.bits.addr := 0.U
   io.csrHazard.bits.isWrite := false.B
 
-  when(pendingLoad) {
-    io.hazard.valid := pendingRd =/= 0.U
-    io.hazard.bits := pendingRd
-  }.elsewhen(io.ex.valid && io.ex.bits.gprWrite && io.ex.bits.rd =/= 0.U) {
-    io.hazard.valid := true.B
-    io.hazard.bits := io.ex.bits.rd
+  // Pass through data
+  io.res.valid := io.ex.fire && io.ex.bits.opType =/= OpType.LOAD && io.ex.bits.opType =/= OpType.STORE
+  io.res.bits.opType := io.ex.bits.opType
+  io.res.bits.rd := io.ex.bits.rd
+  io.res.bits.gprWrite := io.ex.bits.gprWrite
+  io.res.bits.gprData := io.ex.bits.gprResult
+  io.res.bits.csrAddr := io.ex.bits.csrAddr
+  io.res.bits.csrWrite := io.ex.bits.csrWrite
+  io.res.bits.csrData := io.ex.bits.csrResult
+  io.res.bits.pc := io.ex.bits.pc
+  io.res.bits.storeAddr := 0.U
+  io.res.bits.isStore := false.B
+
+  private val pendingRequest = RegInit(false.B)
+  private val pendingInst = RegInit(0.U.asTypeOf(new MemLatch(xlen)))
+
+  io.ex.ready := !pendingRequest && mem.req.ready
+
+  def latchInst() = {
+    pendingRequest := true.B
+
+    val inst = Wire(new MemLatch(xlen))
+    inst.pc := io.ex.bits.pc
+    inst.rd := io.ex.bits.rd
+    inst.storeAddr := io.ex.bits.memAddress
+    inst.isStore := io.ex.bits.opType === OpType.STORE
+    inst.opWidth := io.ex.bits.memWidth
+    inst.unsigned := io.ex.bits.memUnsigned
+
+    pendingInst := inst
   }
 
-  when(io.ex.valid && io.ex.bits.csrWrite) {
-    io.csrHazard.valid := true.B
-    io.csrHazard.bits.addr := io.ex.bits.csrAddr
-    io.csrHazard.bits.isWrite := true.B
+  def sendRequest(store: Boolean) = {
+    val (address, offset) = MemoryUtils.alignAddress(io.ex.bits.memAddress, wordSize)
+    mem.req.valid := true.B
+    mem.req.bits.address := address
+    mem.req.bits.write := store.B
+
+    val data = Wire(Vec(wordSize, UInt(8.W)))
+    for (i <- 0 until wordSize) {
+      data(i) := io.ex.bits.storeData(8 * (i + 1) - 1, 8 * i)
+    }
+
+    mem.req.bits.dataWrite := MemoryUtils.shiftWriteData(data, offset, wordSize)
+    mem.req.bits.mask := MemoryUtils.generateShiftedMask(io.ex.bits.memWidth, offset, xlen)
   }
-
-  val wbOpType = Wire(OpType())
-  val wbRd = Wire(UInt(5.W))
-  val wbRegWrite = Wire(Bool())
-  val wbResult = Wire(UInt(xlen.W))
-  val wbCsrAddr = Wire(UInt(12.W))
-  val wbCsrWrite = Wire(Bool())
-  val wbCsrData = Wire(UInt(xlen.W))
-  val resValid = WireDefault(false.B)
-  val wbPC = Wire(UInt(xlen.W))
-  val wbStoreAddr = Wire(UInt(xlen.W))
-  val wbIsStore = Wire(Bool())
-
-  wbOpType := io.ex.bits.opType
-  wbRd := io.ex.bits.rd
-  wbRegWrite := io.ex.bits.gprWrite
-  wbResult := io.ex.bits.gprResult
-  wbCsrAddr := io.ex.bits.csrAddr
-  wbCsrWrite := io.ex.bits.csrWrite
-  wbCsrData := io.ex.bits.csrResult
-  wbPC := io.ex.bits.pc
-  wbStoreAddr := 0.U
-  wbIsStore := false.B
 
   def extractData(
       bytes: Vec[UInt],
@@ -139,73 +139,48 @@ class Memory(xlen: Int) extends Module {
     extracted
   }
 
-  when(pendingLoad) {
-    wbOpType := OpType.LOAD
-    wbRd := pendingRd
-    wbPC := pendingPC
-    wbRegWrite := pendingRegWrite
-    wbStoreAddr := 0.U
-    wbIsStore := false.B
-    when(mem.resp.valid) {
-      val loadedBytes = mem.resp.bits.dataRead
-      wbResult := extractData(loadedBytes, pendingWidth, pendingUnsigned, pendingWordOffset)
-      pendingLoad := false.B
-      resValid := true.B
-    }.otherwise {
-      wbResult := 0.U
-    }
-  }.elsewhen(io.ex.valid) {
-    // Compute word-aligned address and byte offset
-    val byteAddr = io.ex.bits.memAddress
-    val (wordAlignedAddr, wordOffset) = MemoryUtils.alignAddress(byteAddr, wordSize)
+  // Hazard handling
+  when(pendingRequest) {
+    io.hazard.valid := !pendingInst.isStore && pendingInst.rd =/= 0.U
+    io.hazard.bits := pendingInst.rd
+  }.elsewhen(io.ex.valid && io.ex.bits.gprWrite && io.ex.bits.rd =/= 0.U) {
+    io.hazard.valid := true.B
+    io.hazard.bits := io.ex.bits.rd
+  }
 
-    mem.req.bits.address := wordAlignedAddr
-    resValid := true.B
+  when(io.ex.valid && io.ex.bits.csrWrite) {
+    io.csrHazard.valid := true.B
+    io.csrHazard.bits.addr := io.ex.bits.csrAddr
+    io.csrHazard.bits.isWrite := true.B
+  }
 
-    // Generate shifted mask and write data
-    val shiftedMask = MemoryUtils.generateShiftedMask(io.ex.bits.memWidth, wordOffset, xlen)
-    val shiftedWriteData = MemoryUtils.shiftWriteData(storeDataBytes, wordOffset, wordSize)
-
+  when(io.ex.fire) {
     switch(io.ex.bits.opType) {
       is(OpType.LOAD) {
-        mem.req.valid := true.B
-        mem.req.bits.write := false.B
-        mem.req.bits.mask := shiftedMask
-        pendingLoad := true.B
-        pendingRd := io.ex.bits.rd
-        pendingPC := io.ex.bits.pc
-        pendingRegWrite := io.ex.bits.gprWrite
-        pendingUnsigned := io.ex.bits.memUnsigned
-        pendingWidth := io.ex.bits.memWidth
-        pendingAddress := io.ex.bits.memAddress
-        pendingWordOffset := wordOffset
-        wbOpType := OpType.NOP
-        wbRegWrite := false.B
-        resValid := false.B
+        latchInst()
+        sendRequest(false)
       }
-
       is(OpType.STORE) {
-        mem.req.valid := true.B
-        mem.req.bits.write := true.B
-        mem.req.bits.mask := shiftedMask
-        mem.req.bits.dataWrite := shiftedWriteData
-        wbRegWrite := false.B
-        wbResult := 0.U
-        wbStoreAddr := io.ex.bits.memAddress
-        wbIsStore := true.B
+        latchInst()
+        sendRequest(true)
       }
     }
   }
 
-  io.res.bits.opType := wbOpType
-  io.res.bits.rd := wbRd
-  io.res.bits.gprWrite := wbRegWrite
-  io.res.bits.gprData := wbResult
-  io.res.bits.csrAddr := wbCsrAddr
-  io.res.bits.csrWrite := wbCsrWrite
-  io.res.bits.csrData := wbCsrData
-  io.res.valid := resValid
-  io.res.bits.pc := wbPC
-  io.res.bits.storeAddr := wbStoreAddr
-  io.res.bits.isStore := wbIsStore
+  // Writeback stage is guaranteed to take just 1 cycle.
+  // Memory ops are at least 2 cycles long. We can always
+  // issue result after mem op is complete.
+  when(pendingRequest && mem.resp.valid) {
+    pendingRequest := false.B
+    io.res.valid := true.B
+    io.res.bits.pc := pendingInst.pc
+    io.res.bits.rd := pendingInst.rd
+    io.res.bits.storeAddr := pendingInst.storeAddr
+    io.res.bits.isStore := pendingInst.isStore
+    io.res.bits.opType := Mux(pendingInst.isStore, OpType.STORE, OpType.LOAD)
+    io.res.bits.gprWrite := !pendingInst.isStore
+
+    val (_, offset) = MemoryUtils.alignAddress(pendingInst.storeAddr, wordSize)
+    io.res.bits.gprData := extractData(mem.resp.bits.dataRead, pendingInst.opWidth, pendingInst.unsigned, offset)
+  }
 }
