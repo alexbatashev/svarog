@@ -446,9 +446,11 @@ impl Simulator {
                 self.tick(false);
                 let (ready, mem_res_valid, mem_res_bits) = {
                     let model = self.model.borrow();
-                    (model.get_debug_mem_in_ready() != 0,
-                     model.get_debug_mem_res_valid() != 0,
-                     model.get_debug_mem_res_bits())
+                    (
+                        model.get_debug_mem_in_ready() != 0,
+                        model.get_debug_mem_res_valid() != 0,
+                        model.get_debug_mem_res_bits(),
+                    )
                 };
                 if ready {
                     break;
