@@ -371,7 +371,6 @@ impl Simulator {
             self.tick(false);
 
             // Wait for result
-            let mut attempts = 0;
             let val = loop {
                 let model = self.model.borrow();
                 if model.get_debug_reg_res_valid() != 0 {
@@ -379,11 +378,6 @@ impl Simulator {
                 }
                 drop(model);
 
-                attempts += 1;
-                if attempts > 10 {
-                    eprintln!("Warning: Timeout waiting for register {} read result", idx);
-                    break 0;
-                }
                 self.tick(false);
             };
 
@@ -409,7 +403,6 @@ impl Simulator {
 
     fn drive_mem_request(&self, addr: u32, data: u32, req_width: u8, write: bool) {
         // Wait for ready and send request
-        let mut attempts = 0;
         loop {
             let ready = {
                 let mut model = self.model.borrow_mut();
@@ -424,7 +417,6 @@ impl Simulator {
                 model.get_debug_mem_in_ready() != 0
             };
             self.tick(false);
-            attempts += 1;
             if ready {
                 break;
             }
@@ -442,15 +434,11 @@ impl Simulator {
         if write {
             // Wait for response to arrive and memPending to clear
             // Check mem_in.ready to ensure memPending has cleared
-            for attempt in 0..30 {
+            for _ in 0..30 {
                 self.tick(false);
-                let (ready, mem_res_valid, mem_res_bits) = {
+                let ready = {
                     let model = self.model.borrow();
-                    (
-                        model.get_debug_mem_in_ready() != 0,
-                        model.get_debug_mem_res_valid() != 0,
-                        model.get_debug_mem_res_bits(),
-                    )
+                    model.get_debug_mem_in_ready() != 0
                 };
                 if ready {
                     break;
