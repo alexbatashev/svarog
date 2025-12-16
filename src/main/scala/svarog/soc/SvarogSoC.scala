@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 
 import svarog.micro.Cpu
-import svarog.memory.TCM
+import svarog.memory._
 import svarog.debug.ChipDebugModule
 import svarog.debug.ChipHartDebugIO
 import svarog.debug.ChipMemoryDebugIO
@@ -24,6 +24,10 @@ class SvarogSoC(
     }
   })
 
+  // ============================================================================
+  // CPU
+  // ============================================================================
+
   private val cpu = Module(
     new Cpu(
       config,
@@ -32,34 +36,70 @@ class SvarogSoC(
     )
   )
 
-  private val mem = Module(
-    new TCM(
-      config.xlen,
-      config.memSizeBytes,
-      baseAddr = config.programEntryPoint,
-      numPorts = if (config.enableDebugInterface) 4 else 2
+  // ============================================================================
+  // Wishbone Masters
+  // ============================================================================
+
+  // CPU instruction fetch master
+  // Expose CPU memory ports through Wishbone hosts
+  private val cpuInstHost = Module(
+    new MemWishboneHost(config.xlen, config.xlen)
+  )
+  private val cpuDataHost = Module(
+    new MemWishboneHost(config.xlen, config.xlen)
+  )
+  cpu.io.instmem <> cpuInstHost.mem
+  cpu.io.datamem <> cpuDataHost.mem
+
+  // Debug interface masters (if enabled)
+  private val debugInstMaster = if (config.enableDebugInterface) {
+    Some(Module(new MemWishboneHost(config.xlen, config.xlen)))
+  } else None
+
+  private val debugDataMaster = if (config.enableDebugInterface) {
+    Some(Module(new MemWishboneHost(config.xlen, config.xlen)))
+  } else None
+
+  private val tcm = Module(
+    new TCMWishboneAdapter(
+      xlen = config.xlen,
+      memSizeBytes = config.memSizeBytes,
+      baseAddr = config.programEntryPoint
     )
   )
+
+  private val allMasters: Seq[WishboneMaster] = Seq(cpuDataHost, cpuInstHost) ++
+    (if (config.enableDebugInterface)
+       Seq(debugInstMaster.get, debugDataMaster.get)
+     else Seq.empty)
+
+  private val allSlaves: Seq[WishboneSlave] = Seq(tcm)
+
+  WishboneRouter(allMasters, allSlaves)
+
+  // ============================================================================
+  // Debug Interface
+  // ============================================================================
 
   private val debug =
     if (config.enableDebugInterface)
       Some(Module(new ChipDebugModule(config.xlen, numHarts = 1)))
     else None
 
-  cpu.io.instmem <> mem.io.ports(0)
-  cpu.io.datamem <> mem.io.ports(1)
-
   if (config.enableDebugInterface) {
-    debug.get.io.dmem_iface <> mem.io.ports(2)
-    debug.get.io.imem_iface <> mem.io.ports(3)
+    // Connect debug module memory interfaces to Wishbone masters
+    debug.get.io.dmem_iface <> debugDataMaster.get.mem
+    debug.get.io.imem_iface <> debugInstMaster.get.mem
+
+    // Connect debug control interfaces
     debug.get.io.harts(0) <> cpu.io.debug
     debug.get.io.cpuRegData <> cpu.io.debugRegData
-    debug.get.io.cpuHalted(0) := cpu.io.halt // CPU halt status to debug module
+    debug.get.io.cpuHalted(0) := cpu.io.halt
     debug.get.io.hart_in <> io.debug.hart_in
     debug.get.io.mem_in <> io.debug.mem_in
     io.debug.mem_res <> debug.get.io.mem_res
     io.debug.reg_res <> debug.get.io.reg_res
-    io.debug.halted := debug.get.io.halted(0) // Debug module reports halt status
+    io.debug.halted := debug.get.io.halted(0)
   } else {
     // Default debug inputs (no external debugger connected)
     cpu.io.debug.halt.valid := false.B
@@ -68,7 +108,6 @@ class SvarogSoC(
     cpu.io.debug.breakpoint.bits := DontCare
     cpu.io.debug.register.valid := false.B
     cpu.io.debug.register.bits := DontCare
-    io.debug.halted := cpu.io.halt // Direct connection when no debug module
+    io.debug.halted := cpu.io.halt
   }
-
 }

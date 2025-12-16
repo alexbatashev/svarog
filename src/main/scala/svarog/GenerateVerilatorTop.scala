@@ -47,11 +47,18 @@ object GenerateVerilatorTop extends App {
     new VerilatorTop(
       config
     ),
-    Array("--target-dir", targetDir),
+    Array(
+      "--target-dir",
+      targetDir
+    ),
     Seq(
       FirtoolOption("--disable-all-randomization"),
-      FirtoolOption("--default-layer-specialization=disable"),
-      FirtoolOption("--lowering-options=disallowPortDeclSharing")
+      FirtoolOption("--default-layer-specialization=enable"),
+      FirtoolOption(
+        "--lowering-options=disallowPortDeclSharing,printDebugInfo"
+      ),
+      FirtoolOption("--preserve-values=all"),
+      FirtoolOption("--verification-flavor=sva")
     )
   )
 

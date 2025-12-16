@@ -15,6 +15,8 @@ import svarog.bits.RegFileReadIO
 import svarog.bits.RegFileWriteIO
 import svarog.bits.CSRFile
 import svarog.bits.ControlRegister
+import svarog.memory.MemWishboneHost
+import svarog.memory.CpuMemoryInterface
 
 class CpuIO(xlen: Int) extends Bundle {
   val instmem = new MemoryIO(xlen, xlen)
@@ -187,4 +189,19 @@ class Cpu(
   hazardUnit.io.watchpointHit := debug.io.watchpointTriggered
   execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold
   writeback.io.halt := halt
+}
+
+class CpuWishbone(xlen: Int, maxReqWidth: Int)
+    extends CpuMemoryInterface(xlen, maxReqWidth) {
+  val inst = Module(new MemWishboneHost(xlen, maxReqWidth))
+  val data = Module(new MemWishboneHost(xlen, maxReqWidth))
+
+  val instPort = Wire(new MemoryIO(xlen, maxReqWidth))
+  val dataPort = Wire(new MemoryIO(xlen, maxReqWidth))
+
+  inst.mem <> instPort
+  data.mem <> dataPort
+
+  io.inst <> instPort
+  io.data <> dataPort
 }

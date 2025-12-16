@@ -76,11 +76,8 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   }.elsewhen(io.branch.valid) {
     pc_reg := io.branch.bits.targetPC
     respPending := false.B
-    when(reqPending) {
-      dropResponse := true.B
-    }.otherwise {
-      dropResponse := false.B
-    }
+    val needDrop = reqPending && !io.mem.resp.valid
+    dropResponse := needDrop
     reqPending := false.B
   }
 }
