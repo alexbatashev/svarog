@@ -12,13 +12,20 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     steps:
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+      - name: Set caching env vars
+        if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
       - name: Setup Spike
         run: |
           sudo apt-get install -yqq device-tree-compiler libboost-regex-dev libboost-system-dev
           git clone https://github.com/riscv-software-src/riscv-isa-sim.git
           cd riscv-isa-sim
           mkdir build && cd build
-          ../configure --prefix=/opt/spike
+          ../configure CC="sccache gcc" CXX="sccache g++" --prefix=/opt/spike
           sudo make install
           echo "/opt/spike/bin" >> $GITHUB_PATH
           cd ../../
