@@ -3,20 +3,21 @@ package svarog.micro
 import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.BoringUtils
-import svarog.bits.RegFile
-import svarog.soc.SvarogConfig
-import svarog.memory.{MemoryRequest, MemoryIO}
-import svarog.decoder.SimpleDecoder
-import svarog.decoder.InstWord
-import svarog.decoder.MicroOp
-import svarog.debug.HartDebugModule
-import svarog.debug.HartDebugIO
-import svarog.bits.RegFileReadIO
-import svarog.bits.RegFileWriteIO
 import svarog.bits.CSRFile
 import svarog.bits.ControlRegister
-import svarog.memory.MemWishboneHost
+import svarog.bits.RegFile
+import svarog.bits.RegFileReadIO
+import svarog.bits.RegFileWriteIO
+import svarog.debug.HartDebugIO
+import svarog.debug.HartDebugModule
+import svarog.decoder.InstWord
+import svarog.decoder.MicroOp
+import svarog.decoder.SimpleDecoder
 import svarog.memory.CpuMemoryInterface
+import svarog.memory.MemWishboneHost
+import svarog.memory.MemoryIO
+import svarog.memory.MemoryRequest
+import svarog.MicroCoreConfig
 
 class CpuIO(xlen: Int) extends Bundle {
   val instmem = new MemoryIO(xlen, xlen)
@@ -27,9 +28,8 @@ class CpuIO(xlen: Int) extends Bundle {
 }
 
 class Cpu(
-    config: SvarogConfig,
-    regfileProbeId: Option[String] = None,
-    resetVector: BigInt = 0
+    config: MicroCoreConfig,
+    startAddress: Long,
 ) extends Module {
   // Public interface
   val io = IO(new CpuIO(config.xlen))
@@ -48,7 +48,7 @@ class Cpu(
   val csrFile = Module(new CSRFile(ControlRegister.getDefaultRegisters()))
 
   // Stages
-  val fetch = Module(new Fetch(config.xlen, resetVector))
+  val fetch = Module(new Fetch(config.xlen, startAddress))
   val decode = Module(new SimpleDecoder(config.xlen))
   val execute = Module(new Execute(config.xlen))
   val memory = Module(new Memory(config.xlen))

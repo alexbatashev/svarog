@@ -1,0 +1,9 @@
+soc:
+  enableDebug: true
+cores:
+  - micro:
+      xlen: 32
+memory:
+  - tcm:
+      size: 65536
+      startAddress: 0x80000000
