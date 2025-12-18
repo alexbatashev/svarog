@@ -25,7 +25,7 @@ jobs:
           git clone https://github.com/riscv-software-src/riscv-isa-sim.git
           cd riscv-isa-sim
           mkdir build && cd build
-          ../configure CC="sccache gcc" CXX="sccache g++" --prefix=/opt/spike
+          ../configure CC="${SCCACHE_PATH} gcc" CXX="${SCCACHE_PATH} g++" --prefix=/opt/spike
           sudo make install
           echo "/opt/spike/bin" >> $GITHUB_PATH
           cd ../../
