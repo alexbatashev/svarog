@@ -3,7 +3,8 @@ name: Continuous Integration
 on:
   pull_request:
   workflow_dispatch:
-  merge_group:
+  push:
+    branches: ["main"]
   schedule:
     - cron: '0 0 * * *'
 
@@ -15,7 +16,6 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.9
       - name: Set caching env vars
-        if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
         run: |
           echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
           echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
@@ -26,7 +26,7 @@ jobs:
           cd riscv-isa-sim
           mkdir build && cd build
           ../configure CC="${SCCACHE_PATH} gcc" CXX="${SCCACHE_PATH} g++" --prefix=/opt/spike
-          sudo make install
+          sudo make install -j4
           echo "/opt/spike/bin" >> $GITHUB_PATH
           cd ../../
           rm -rf riscv-isa-sim
