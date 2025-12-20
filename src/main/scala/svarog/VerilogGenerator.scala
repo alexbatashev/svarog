@@ -79,6 +79,11 @@ class VerilatorTop(
         val halted = Output(Bool())
       })
     } else None
+
+    val uarts = Vec(config.soc.uarts.filter(_.enabled).length, new Bundle {
+      val txd = Output(Bool())
+      val rxd = Input(Bool())
+    })
   })
 
   private val soc = Module(
@@ -91,5 +96,10 @@ class VerilatorTop(
     soc.io.debug.mem_res <> io.debug.get.mem_res
     soc.io.debug.reg_res <> io.debug.get.reg_res
     io.debug.get.halted <> soc.io.debug.halted
+  }
+
+  // Connect UART IO
+  for (i <- 0 until config.soc.uarts.filter(_.enabled).length) {
+    soc.io.uarts(i) <> io.uarts(i)
   }
 }

@@ -8,6 +8,7 @@ import svarog.memory._
 import svarog.debug.ChipDebugModule
 import svarog.debug.ChipHartDebugIO
 import svarog.debug.ChipMemoryDebugIO
+import svarog.debug.UartWishbone
 
 class SvarogSoC(
     config: SvarogConfig
@@ -21,6 +22,11 @@ class SvarogSoC(
       val reg_res = Decoupled(UInt(config.cores.head.xlen.W))
       val halted = Output(Bool()) // CPU halt status
     }
+
+    val uarts = Vec(config.soc.uarts.filter(_.enabled).length, new Bundle {
+      val txd = Output(Bool())
+      val rxd = Input(Bool())
+    })
   })
 
   private val debug =
@@ -88,9 +94,25 @@ class SvarogSoC(
     tcm
   }
 
+  // Instantiate UART modules
+  private val uartModules = config.soc.uarts.filter(_.enabled).map { uartConfig =>
+    Module(new UartWishbone(
+      baseAddr = uartConfig.baseAddr,
+      dataWidth = 8,
+      addrWidth = config.cores.head.xlen,
+      busWidth = config.cores.head.xlen
+    ))
+  }
+
+  // Connect UART IO
+  uartModules.zipWithIndex.foreach { case (uart, idx) =>
+    io.uarts(idx).txd := uart.uart.txd
+    uart.uart.rxd := io.uarts(idx).rxd
+  }
+
   private val allMasters: Seq[WishboneMaster] = coreMem ++ debugMasters
 
-  private val allSlaves: Seq[WishboneSlave] = memories
+  private val allSlaves: Seq[WishboneSlave] = memories ++ uartModules
 
   WishboneRouter(allMasters, allSlaves)
 }
