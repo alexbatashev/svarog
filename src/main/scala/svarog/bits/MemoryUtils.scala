@@ -5,6 +5,7 @@ import chisel3.util._
 import svarog.memory.MemWidth
 
 object MemoryUtils {
+
   /** Compute word-aligned address and byte offset from a byte address
     *
     * @param byteAddr
@@ -126,5 +127,13 @@ object MemoryUtils {
     */
   def fullWordMask(wordSize: Int): Vec[Bool] = {
     VecInit(Seq.fill(wordSize)(true.B))
+  }
+}
+
+object masked {
+  def apply[T <: Data](data: Vec[T], mask: Vec[Bool]): Vec[T] = {
+    VecInit(data.zip(mask).map { case (d, m) =>
+      Mux(m, d, 0.U.asTypeOf(d))
+    })
   }
 }
