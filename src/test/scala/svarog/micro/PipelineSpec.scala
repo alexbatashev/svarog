@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.simulator.scalatest.ChiselSim
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
-import svarog.soc.SvarogConfig
+import svarog.MicroCoreConfig
 import svarog.memory.MemWidth
 
 class PipelineSpec extends AnyFlatSpec with Matchers with ChiselSim {
@@ -16,11 +16,11 @@ class PipelineSpec extends AnyFlatSpec with Matchers with ChiselSim {
     (0 until 4).map(i => ((word >> (8 * i)) & 0xff))
 
   def runProgram(program: Seq[Int], cycles: Int = 20): Map[Int, Int] = {
-    val config = SvarogConfig(xlen = xlen, memSizeBytes = 4096)
+    val config = MicroCoreConfig(xlen = xlen)
 
     var results: Map[Int, Int] = Map()
 
-    simulate(new Cpu(config, resetVector = 0x80000000L)) { dut =>
+    simulate(new Cpu(config, 0x80000000L)) { dut =>
       // Initialize
       dut.io.instmem.req.ready.poke(true.B)
       dut.io.instmem.resp.valid.poke(false.B)

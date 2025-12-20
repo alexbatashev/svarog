@@ -3,7 +3,7 @@ package svarog.memory
 import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.BoringUtils
-import svarog.soc.SvarogConfig
+import svarog.SvarogConfig
 
 // Tightly Coupled Memory (TCM)
 class TCM(
