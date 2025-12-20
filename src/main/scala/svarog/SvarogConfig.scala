@@ -3,7 +3,16 @@ package svarog
 import io.circe.generic.semiauto._
 import io.circe.{Decoder, Encoder}
 
-case class SoCConfig(enableDebug: Boolean = true)
+case class SoCConfig(
+    enableDebug: Boolean = true,
+    uarts: List[UartConfig] = List.empty
+)
+
+case class UartConfig(
+    name: String,
+    baseAddr: Long,
+    enabled: Boolean = true
+)
 
 case class MicroCoreConfig(xlen: Int)
 
@@ -65,11 +74,33 @@ case class SvarogConfig(
     val memSize = memory.head.tcm.size
     if (memSize <= 0) return Left(s"Memory size must be > 0, got $memSize")
 
+    // Validate UART configurations
+    soc.uarts.zipWithIndex.foreach { case (uart, idx) =>
+      if (uart.baseAddr < 0)
+        return Left(s"UART '${uart.name}' base address must be non-negative")
+
+      // Check for duplicate names
+      if (soc.uarts.count(_.name == uart.name) > 1)
+        return Left(s"Duplicate UART name: '${uart.name}'")
+
+      // Check for address overlaps with other UARTs
+      soc.uarts.zipWithIndex.foreach { case (other, otherIdx) =>
+        if (idx != otherIdx && uart.enabled && other.enabled) {
+          val uartEnd = uart.baseAddr + 0x10
+          val otherEnd = other.baseAddr + 0x10
+          if (uart.baseAddr < otherEnd && uartEnd > other.baseAddr) {
+            return Left(s"UART '${uart.name}' address range overlaps with '${other.name}'")
+          }
+        }
+      }
+    }
+
     Right(())
   }
 }
 
 object SvarogConfig {
+  implicit val uartConfigDecoder: Decoder[UartConfig] = deriveDecoder
   implicit val microCoreConfigDecoder: Decoder[MicroCoreConfig] = deriveDecoder
   implicit val coreEntryDecoder: Decoder[CoreEntry] = deriveDecoder
   implicit val tcmMemoryConfigDecoder: Decoder[TcmMemoryConfig] = deriveDecoder

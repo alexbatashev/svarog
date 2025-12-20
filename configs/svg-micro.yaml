@@ -1,5 +1,12 @@
 soc:
   enableDebug: true
+  uarts:
+    - name: uart0
+      baseAddr: 0x00100000
+      enabled: true
+    - name: uart1
+      baseAddr: 0x00100010
+      enabled: true
 cores:
   - micro:
       xlen: 32
