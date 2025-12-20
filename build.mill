@@ -25,6 +25,9 @@ object `svarog` extends SbtModule { m =>
   )
   override def ivyDeps = Agg(
     ivy"org.chipsalliance::chisel:7.5.0",
+    ivy"io.circe::circe-yaml:0.15.1",
+    ivy"io.circe::circe-generic:0.14.6",
+    ivy"io.circe::circe-parser:0.14.6",
   )
   override def scalacPluginIvyDeps = Agg(
     ivy"org.chipsalliance:::chisel-plugin:7.5.0",

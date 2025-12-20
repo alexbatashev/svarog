@@ -19,7 +19,7 @@ fn main() -> Result<()> {
     // Generate Verilog using Chisel
     cmd!(
         sh,
-        "./mill -i svarog.runMain svarog.GenerateVerilatorTop --target-dir=target/generated/"
+        "./mill -i svarog.runMain svarog.VerilogGenerator --target-dir=target/generated/ --config=configs/svg-micro.yaml"
     )
     .run()
     .context("Failed to generate Verilog")?;
