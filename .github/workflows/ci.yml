@@ -1,25 +1,32 @@
 name: Continuous Integration
 
 on:
-  push:
-    tags: ["*"]
-    branches: ["main"]
   pull_request:
   workflow_dispatch:
+  push:
+    branches: ["main"]
+  schedule:
+    - cron: '0 0 * * *'
 
 jobs:
   tests:
     name: test
     runs-on: ubuntu-latest
     steps:
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+      - name: Set caching env vars
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
       - name: Setup Spike
         run: |
           sudo apt-get install -yqq device-tree-compiler libboost-regex-dev libboost-system-dev
           git clone https://github.com/riscv-software-src/riscv-isa-sim.git
           cd riscv-isa-sim
           mkdir build && cd build
-          ../configure --prefix=/opt/spike
-          sudo make install
+          ../configure CC="${SCCACHE_PATH} gcc" CXX="${SCCACHE_PATH} g++" --prefix=/opt/spike
+          sudo make install -j4
           echo "/opt/spike/bin" >> $GITHUB_PATH
           cd ../../
           rm -rf riscv-isa-sim

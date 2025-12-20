@@ -62,7 +62,10 @@ fn main() -> Result<()> {
     // Build riscv-tests
     let riscv_tests_dir = cur_dir.join("target/riscv-tests");
 
-    if !riscv_tests_dir.exists() {
+    if !riscv_tests_dir.join("configure.ac").exists() {
+        if riscv_tests_dir.exists() {
+            std::fs::remove_dir_all(&riscv_tests_dir)?;
+        }
         cmd!(sh, "git clone --depth 1 https://github.com/riscv-software-src/riscv-tests {riscv_tests_dir}")
             .run()
             .context("Failed to clone riscv-tests")?;
