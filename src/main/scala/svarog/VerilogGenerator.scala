@@ -59,7 +59,8 @@ object VerilogGenerator extends App {
 
   // Generate Verilog
   emitVerilog(
-    new VerilatorTop(config, validatedBootloader),
+    new SvarogSoC(config, validatedBootloader),
+    // new VerilatorTop(config, validatedBootloader),
     Array("--target-dir", targetDir),
     Seq(
       FirtoolOption("--disable-all-randomization"),
@@ -71,52 +72,4 @@ object VerilogGenerator extends App {
       FirtoolOption("--verification-flavor=sva")
     )
   )
-}
-
-class VerilatorTop(
-    config: SvarogConfig,
-    bootloader: Option[String]
-) extends Module {
-  val io = IO(new Bundle {
-    val debug = if (config.soc.enableDebug) {
-      Some(new Bundle {
-        val hart_in =
-          Flipped(new svarog.debug.ChipHartDebugIO(config.cores.head.xlen))
-        val mem_in =
-          Flipped(
-            Decoupled(
-              new svarog.debug.ChipMemoryDebugIO(config.cores.head.xlen)
-            )
-          )
-        val mem_res = Decoupled(UInt(config.cores.head.xlen.W))
-        val reg_res = Decoupled(UInt(config.cores.head.xlen.W))
-        val halted = Output(Bool())
-      })
-    } else None
-
-    val uarts = Vec(
-      config.soc.uarts.filter(_.enabled).length,
-      new Bundle {
-        val txd = Output(Bool())
-        val rxd = Input(Bool())
-      }
-    )
-  })
-
-  private val soc = Module(
-    new SvarogSoC(config, bootloader)
-  )
-
-  if (config.soc.enableDebug) {
-    soc.io.debug.hart_in <> io.debug.get.hart_in
-    soc.io.debug.mem_in <> io.debug.get.mem_in
-    soc.io.debug.mem_res <> io.debug.get.mem_res
-    soc.io.debug.reg_res <> io.debug.get.reg_res
-    io.debug.get.halted <> soc.io.debug.halted
-  }
-
-  // Connect UART IO
-  for (i <- 0 until config.soc.uarts.filter(_.enabled).length) {
-    soc.io.uarts(i) <> io.uarts(i)
-  }
 }

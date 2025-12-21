@@ -16,14 +16,14 @@ class SvarogSoC(
 ) extends Module {
 
   val io = IO(new Bundle {
-    val debug = new Bundle {
-      val hart_in = Flipped(new ChipHartDebugIO(config.cores.head.xlen))
-      val mem_in =
-        Flipped(Decoupled(new ChipMemoryDebugIO(config.cores.head.xlen)))
-      val mem_res = Decoupled(UInt(config.cores.head.xlen.W))
-      val reg_res = Decoupled(UInt(config.cores.head.xlen.W))
-      val halted = Output(Bool()) // CPU halt status
-    }
+    // val debug = new Bundle {
+    //   val hart_in = Flipped(new ChipHartDebugIO(config.cores.head.xlen))
+    //   val mem_in =
+    //     Flipped(Decoupled(new ChipMemoryDebugIO(config.cores.head.xlen)))
+    //   val mem_res = Decoupled(UInt(config.cores.head.xlen.W))
+    //   val reg_res = Decoupled(UInt(config.cores.head.xlen.W))
+    //   val halted = Output(Bool()) // CPU halt status
+    // }
 
     val uarts = Vec(
       config.soc.uarts.filter(_.enabled).length,
@@ -35,7 +35,7 @@ class SvarogSoC(
   })
 
   private val debug =
-    if (config.soc.enableDebug)
+    if (false)
       Some(
         Module(
           new ChipDebugModule(
@@ -46,7 +46,7 @@ class SvarogSoC(
       )
     else None
 
-  private val debugMasters = if (config.soc.enableDebug) {
+  private val debugMasters = if (false) {
     val debugDataMaster = Module(
       new MemWishboneHost(config.cores.head.xlen, config.cores.head.xlen)
     )
@@ -58,11 +58,11 @@ class SvarogSoC(
     debug.get.io.dmem_iface <> debugDataMaster.mem
     debug.get.io.imem_iface <> debugInstMaster.mem
 
-    debug.get.io.hart_in <> io.debug.hart_in
-    debug.get.io.mem_in <> io.debug.mem_in
-    io.debug.mem_res <> debug.get.io.mem_res
-    io.debug.reg_res <> debug.get.io.reg_res
-    io.debug.halted := debug.get.io.halted(0)
+    // debug.get.io.hart_in <> io.debug.hart_in
+    // debug.get.io.mem_in <> io.debug.mem_in
+    // io.debug.mem_res <> debug.get.io.mem_res
+    // io.debug.reg_res <> debug.get.io.reg_res
+    // io.debug.halted := debug.get.io.halted(0)
 
     Seq(debugDataMaster, debugInstMaster)
   } else Seq.empty
@@ -78,12 +78,12 @@ class SvarogSoC(
         )
       )
 
-    if (config.soc.enableDebug) {
-      // Connect debug control interfaces
-      debug.get.io.harts(0) <> cpu.io.debug
-      debug.get.io.cpuRegData <> cpu.io.debugRegData
-      debug.get.io.cpuHalted(0) := cpu.io.halt
-    } else {
+    // if (config.soc.enableDebug) {
+    //   // Connect debug control interfaces
+    //   debug.get.io.harts(0) <> cpu.io.debug
+    //   debug.get.io.cpuRegData <> cpu.io.debugRegData
+    //   debug.get.io.cpuHalted(0) := cpu.io.halt
+    // } else {
       // Default debug inputs (no external debugger connected)
       cpu.io.debug.halt.valid := false.B
       cpu.io.debug.halt.bits := false.B
@@ -91,8 +91,12 @@ class SvarogSoC(
       cpu.io.debug.breakpoint.bits := DontCare
       cpu.io.debug.register.valid := false.B
       cpu.io.debug.register.bits := DontCare
-      io.debug.halted := cpu.io.halt
-    }
+      cpu.io.debug.watchpoint.valid := false.B
+      cpu.io.debug.watchpoint.bits := DontCare
+      cpu.io.debug.setPC.valid := false.B
+      cpu.io.debug.setPC.bits := DontCare
+      // io.debug.halted := cpu.io.halt
+    // }
 
     val cpuInstHost = Module(
       new MemWishboneHost(core.xlen, core.xlen)
