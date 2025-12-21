@@ -12,7 +12,7 @@ import svarog.debug.UartWishbone
 
 class SvarogSoC(
     config: SvarogConfig,
-    bootloader: Option[String]
+    bootloader: Option[String] = None
 ) extends Module {
 
   val io = IO(new Bundle {
