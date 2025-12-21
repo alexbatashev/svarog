@@ -58,8 +58,8 @@ class Execute(xlen: Integer) extends Module {
   needFlush := false.B // reset at each cycle
 
   val alu = Module(new ALU(xlen))
-  // val mul = Module(new SimpleMultiplier(xlen))
-  // val div = Module(new SimpleDivider(xlen))
+  val mul = Module(new SimpleMultiplier(xlen))
+  val div = Module(new SimpleDivider(xlen))
   val csr = Module(new CSREx(xlen))
 
   // Single-cycle execute: current instruction always completes
@@ -118,16 +118,16 @@ class Execute(xlen: Integer) extends Module {
   )
 
   // Multiplier wiring
-  // mul.io.inp.bits.op := io.uop.bits.mulOp
-  // mul.io.inp.bits.multiplicant := io.regFile.readData1
-  // mul.io.inp.bits.multiplier := io.regFile.readData2
-  // mul.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.MUL)
+  mul.io.inp.bits.op := io.uop.bits.mulOp
+  mul.io.inp.bits.multiplicant := io.regFile.readData1
+  mul.io.inp.bits.multiplier := io.regFile.readData2
+  mul.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.MUL)
 
   // Divider wiring
-  // div.io.inp.bits.op := io.uop.bits.divOp
-  // div.io.inp.bits.dividend := io.regFile.readData1
-  // div.io.inp.bits.divisor := io.regFile.readData2
-  // div.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.DIV)
+  div.io.inp.bits.op := io.uop.bits.divOp
+  div.io.inp.bits.dividend := io.regFile.readData1
+  div.io.inp.bits.divisor := io.regFile.readData2
+  div.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.DIV)
 
   // CSR wiring
   csr.io.uop.valid := io.uop.valid
@@ -202,15 +202,15 @@ class Execute(xlen: Integer) extends Module {
         io.res.bits.gprResult := io.uop.bits.pc + 4.U // Save return address
       }
 
-      // is(OpType.MUL) {
-      //   // Multiplication operations
-      //   io.res.bits.gprResult := mul.io.result.bits
-      // }
+      is(OpType.MUL) {
+        // Multiplication operations
+        io.res.bits.gprResult := mul.io.result.bits
+      }
 
-      // is(OpType.DIV) {
-      //   // Division/remainder operations
-      //   io.res.bits.gprResult := div.io.result.bits
-      // }
+      is(OpType.DIV) {
+        // Division/remainder operations
+        io.res.bits.gprResult := div.io.result.bits
+      }
 
       is(OpType.CSRRW, OpType.CSRRS, OpType.CSRRC) {
         // CSR operations - result goes to GPR, write signal propagates to writeback

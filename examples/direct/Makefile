@@ -1,74 +1,104 @@
-# Makefile for RV32I Hello World UART program
-
-# Toolchain configuration
-CROSS_PREFIX = riscv32-unknown-elf-
-AS = $(CROSS_PREFIX)as
-LD = $(CROSS_PREFIX)ld
-OBJCOPY = $(CROSS_PREFIX)objcopy
-OBJDUMP = $(CROSS_PREFIX)objdump
+# Makefile for RV32I/RV64I Hello World UART program
+# Supports multiple build configurations with different architectures and memory layouts
 
 # Source files
 ASM_SOURCES = hello_world_uart.S
-LINKER_SCRIPT = linker.ld
-
-# Output files
 TARGET = hello_world_uart
-ELF = $(TARGET).elf
-BIN = $(TARGET).rv32.bin
-MAP = $(TARGET).map
-LST = $(TARGET).lst
 
-# Flags
-ASFLAGS = -march=rv32i -mabi=ilp32
-LDFLAGS = -T$(LINKER_SCRIPT) -Map=$(MAP) --print-memory-usage
+# Output directory
+OUTPUT_BASE = ../../target/examples/direct
 
-# Object files
-OBJECTS = $(ASM_SOURCES:.S=.o)
+# Configuration definitions
+# Format: config_name|toolchain_prefix|arch_flags|abi|linker_script
+CONFIGS = \
+	rv32_bootrom|riscv32-unknown-elf-|rv32i|ilp32|linker_rv32_bootrom.ld \
+	rv32_ram|riscv32-unknown-elf-|rv32i|ilp32|linker_rv32_ram.ld \
+	rv64_bootrom|riscv64-unknown-elf-|rv64i|lp64|linker_rv64_bootrom.ld \
+	rv64_ram|riscv64-unknown-elf-|rv64i|lp64|linker_rv64_ram.ld
 
-# Default target
-all: $(BIN) $(LST)
+# Extract configuration names for phony targets
+CONFIG_NAMES := $(foreach cfg,$(CONFIGS),$(word 1,$(subst |, ,$(cfg))))
 
-# Compile assembly to object file
-%.o: %.S
-	@echo "Assembling $<..."
-	$(AS) $(ASFLAGS) -o $@ $<
+# Default target - build all configurations
+all: $(CONFIG_NAMES)
 
-# Link object files to ELF
-$(ELF): $(OBJECTS) $(LINKER_SCRIPT)
-	@echo "Linking $@..."
-	$(LD) $(LDFLAGS) -o $@ $(OBJECTS)
-
-# Convert ELF to binary
-$(BIN): $(ELF)
-	@echo "Creating binary $@..."
-	$(OBJCOPY) -O binary $< $@
+# Template for building a configuration
+# Arguments: config_name, toolchain_prefix, arch, abi, linker_script
+define BUILD_CONFIG
+.PHONY: $(1)
+$(1):
+	@echo "========================================"
+	@echo "Building configuration: $(1)"
+	@echo "  Architecture: $(3)"
+	@echo "  ABI: $(4)"
+	@echo "  Linker script: $(5)"
+	@echo "========================================"
+	@mkdir -p $(OUTPUT_BASE)/$(1)
+	@echo "Assembling $(ASM_SOURCES)..."
+	@$(2)as -march=$(3) -mabi=$(4) -o $(OUTPUT_BASE)/$(1)/$(TARGET).o $(ASM_SOURCES)
+	@echo "Linking $(TARGET).elf..."
+	@$(2)ld -T$(5) -Map=$(OUTPUT_BASE)/$(1)/$(TARGET).map --print-memory-usage \
+		-o $(OUTPUT_BASE)/$(1)/$(TARGET).elf $(OUTPUT_BASE)/$(1)/$(TARGET).o
+	@echo "Creating binary $(TARGET).bin..."
+	@$(2)objcopy -O binary $(OUTPUT_BASE)/$(1)/$(TARGET).elf $(OUTPUT_BASE)/$(1)/$(TARGET).bin
+	@echo "Generating disassembly $(TARGET).lst..."
+	@$(2)objdump -D $(OUTPUT_BASE)/$(1)/$(TARGET).elf > $(OUTPUT_BASE)/$(1)/$(TARGET).lst
 	@echo "Binary size:"
-	@ls -lh $(BIN)
+	@ls -lh $(OUTPUT_BASE)/$(1)/$(TARGET).bin
+	@echo "Build complete: $(OUTPUT_BASE)/$(1)/"
+	@echo ""
 
-# Generate disassembly listing
-$(LST): $(ELF)
-	@echo "Generating disassembly $@..."
-	$(OBJDUMP) -D $< > $@
+.PHONY: clean-$(1)
+clean-$(1):
+	@echo "Cleaning $(1)..."
+	@rm -rf $(OUTPUT_BASE)/$(1)
+endef
 
-# Clean build artifacts
-clean:
-	@echo "Cleaning..."
-	rm -f $(OBJECTS) $(ELF) $(BIN) $(MAP) $(LST)
+# Generate build rules for each configuration
+$(foreach cfg,$(CONFIGS),\
+	$(eval CONFIG_NAME := $(word 1,$(subst |, ,$(cfg))))\
+	$(eval TOOLCHAIN := $(word 2,$(subst |, ,$(cfg))))\
+	$(eval ARCH := $(word 3,$(subst |, ,$(cfg))))\
+	$(eval ABI := $(word 4,$(subst |, ,$(cfg))))\
+	$(eval LINKER := $(word 5,$(subst |, ,$(cfg))))\
+	$(eval $(call BUILD_CONFIG,$(CONFIG_NAME),$(TOOLCHAIN),$(ARCH),$(ABI),$(LINKER))))
 
-# Phony targets
-.PHONY: all clean
+# Clean all configurations
+clean: $(addprefix clean-,$(CONFIG_NAMES))
+	@echo "All configurations cleaned"
+
+# Clean everything including output directory
+clean-all: clean
+	@echo "Removing output directory..."
+	@rm -rf $(OUTPUT_BASE)
 
 # Display help
 help:
-	@echo "Svarog RV32I Hello World UART Build System"
+	@echo "Svarog Hello World UART Build System"
+	@echo ""
+	@echo "Build Configurations:"
+	@echo "  rv32_bootrom - RV32I with code in ROM at 0x00480000"
+	@echo "  rv32_ram     - RV32I with code in RAM at 0x80000000"
+	@echo "  rv64_bootrom - RV64I with code in ROM at 0x00480000"
+	@echo "  rv64_ram     - RV64I with code in RAM at 0x80000000"
 	@echo ""
 	@echo "Targets:"
-	@echo "  all     - Build the binary (default)"
-	@echo "  clean   - Remove all build artifacts"
-	@echo "  help    - Display this help message"
+	@echo "  all          - Build all configurations (default)"
+	@echo "  rv32_bootrom - Build only RV32I bootrom configuration"
+	@echo "  rv32_ram     - Build only RV32I RAM configuration"
+	@echo "  rv64_bootrom - Build only RV64I bootrom configuration"
+	@echo "  rv64_ram     - Build only RV64I RAM configuration"
+	@echo "  clean        - Remove all build artifacts"
+	@echo "  clean-all    - Remove all build artifacts and output directory"
+	@echo "  clean-<cfg>  - Clean specific configuration"
+	@echo "  help         - Display this help message"
 	@echo ""
-	@echo "Output files:"
-	@echo "  $(BIN) - Binary file for Svarog SoC"
-	@echo "  $(ELF) - ELF executable with debug info"
-	@echo "  $(LST) - Disassembly listing"
-	@echo "  $(MAP) - Linker map file"
+	@echo "Output directory: $(OUTPUT_BASE)/<config>/"
+	@echo ""
+	@echo "Output files (per configuration):"
+	@echo "  $(TARGET).bin - Binary file for Svarog SoC"
+	@echo "  $(TARGET).elf - ELF executable with debug info"
+	@echo "  $(TARGET).lst - Disassembly listing"
+	@echo "  $(TARGET).map - Linker map file"
+
+.PHONY: all clean clean-all help
