@@ -1,5 +1,5 @@
 #include "verilator_wrapper.h"
-#include "VVerilatorTop.h"
+#include "VSvarogSoC.h"
 #include "verilated.h"
 #include "verilated_vcd_c.h"
 
@@ -17,7 +17,7 @@ VerilatorModel::VerilatorModel() {
     context_->traceEverOn(true);
 
     // Create the model with the dedicated context
-    model_ = std::make_unique<VVerilatorTop>(context_.get());
+    model_ = std::make_unique<VSvarogSoC>(context_.get());
 }
 
 VerilatorModel::~VerilatorModel() {

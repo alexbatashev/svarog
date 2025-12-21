@@ -32,7 +32,7 @@ fn main() -> Result<()> {
     std::fs::create_dir_all(&verilator_out_dir)?;
 
     let verilator_stamp = verilator_out_dir.join("verilator_build.stamp");
-    let verilog_file = verilog_dir.join("VerilatorTop.sv");
+    let verilog_file = verilog_dir.join("SvarogSoC.sv");
 
     // Check if we need to run Verilator (if stamp doesn't exist or verilog changed)
     let need_verilator = !verilator_stamp.exists()
@@ -161,7 +161,7 @@ fn main() -> Result<()> {
         "cargo:rustc-link-search=native={}",
         verilator_out_dir.display()
     );
-    println!("cargo:rustc-link-lib=static=VVerilatorTop");
+    println!("cargo:rustc-link-lib=static=VSvarogSoC");
     println!("cargo:rustc-link-lib=static=verilated");
 
     Ok(())
