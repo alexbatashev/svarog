@@ -5,6 +5,8 @@ import chisel3.util.{Decoupled, log2Ceil}
 import circt.stage.FirtoolOption
 import svarog.{SvarogSoC, SvarogConfig}
 import svarog.config.{ConfigLoader, BootloaderValidator}
+import svarog.VerilogGenerator.{bootloaderPath => bootloaderPath}
+import svarog.VerilogGenerator.{validatedBootloader => validatedBootloader}
 
 object VerilogGenerator extends App {
   private def parseArgs(args: Array[String]): Map[String, String] = {
@@ -20,11 +22,15 @@ object VerilogGenerator extends App {
   private val cli = parseArgs(args)
 
   // Required arguments
-  private val configPath = cli.getOrElse("config", {
-    System.err.println("Error: --config argument is required")
-    System.err.println("Usage: --config=path/to/config.yaml --target-dir=output/dir [--bootloader=path/to/boot.hex]")
-    sys.exit(1)
-  })
+  private val configPath = cli.getOrElse(
+    "config", {
+      System.err.println("Error: --config argument is required")
+      System.err.println(
+        "Usage: --config=path/to/config.yaml --target-dir=output/dir [--bootloader=path/to/boot.hex]"
+      )
+      sys.exit(1)
+    }
+  )
 
   // Optional arguments
   private val targetDir = cli.getOrElse("target-dir", "target/generated/")
@@ -53,53 +59,17 @@ object VerilogGenerator extends App {
 
   // Generate Verilog
   emitVerilog(
-    new VerilatorTop(config),
+    new SvarogSoC(config, validatedBootloader),
+    // new VerilatorTop(config, validatedBootloader),
     Array("--target-dir", targetDir),
     Seq(
       FirtoolOption("--disable-all-randomization"),
       FirtoolOption("--default-layer-specialization=enable"),
-      FirtoolOption("--lowering-options=disallowPortDeclSharing,printDebugInfo"),
+      FirtoolOption(
+        "--lowering-options=disallowPortDeclSharing,printDebugInfo"
+      ),
       FirtoolOption("--preserve-values=all"),
       FirtoolOption("--verification-flavor=sva")
     )
   )
-}
-
-class VerilatorTop(
-    config: SvarogConfig
-) extends Module {
-  val io = IO(new Bundle {
-    val debug = if (config.soc.enableDebug) {
-      Some(new Bundle {
-        val hart_in = Flipped(new svarog.debug.ChipHartDebugIO(config.cores.head.xlen))
-        val mem_in =
-          Flipped(Decoupled(new svarog.debug.ChipMemoryDebugIO(config.cores.head.xlen)))
-        val mem_res = Decoupled(UInt(config.cores.head.xlen.W))
-        val reg_res = Decoupled(UInt(config.cores.head.xlen.W))
-        val halted = Output(Bool())
-      })
-    } else None
-
-    val uarts = Vec(config.soc.uarts.filter(_.enabled).length, new Bundle {
-      val txd = Output(Bool())
-      val rxd = Input(Bool())
-    })
-  })
-
-  private val soc = Module(
-    new SvarogSoC(config)
-  )
-
-  if (config.soc.enableDebug) {
-    soc.io.debug.hart_in <> io.debug.get.hart_in
-    soc.io.debug.mem_in <> io.debug.get.mem_in
-    soc.io.debug.mem_res <> io.debug.get.mem_res
-    soc.io.debug.reg_res <> io.debug.get.reg_res
-    io.debug.get.halted <> soc.io.debug.halted
-  }
-
-  // Connect UART IO
-  for (i <- 0 until config.soc.uarts.filter(_.enabled).length) {
-    soc.io.uarts(i) <> io.uarts(i)
-  }
 }

@@ -6,7 +6,7 @@
 #include "rust/cxx.h"
 
 // Forward declarations
-class VVerilatorTop;
+class VSvarogSoC;
 class VerilatedVcdC;
 class VerilatedContext;
 
@@ -105,7 +105,7 @@ public:
 
 private:
     std::unique_ptr<VerilatedContext> context_;
-    std::unique_ptr<VVerilatorTop> model_;
+    std::unique_ptr<VSvarogSoC> model_;
     std::unique_ptr<VerilatedVcdC> vcd_;
     bool traced_ = false;
 };
