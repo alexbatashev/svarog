@@ -2,21 +2,29 @@
 ## Path to Competitive Low-End Embedded MCU
 
 **Target Market**: Cortex-M class applications (embedded, automotive, IoT, smart home)
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Date**: 2025-12-22
+**Changelog**: Updated with actual resource measurements (5k LUTs), M extension timing issues, and realistic development timeline based on commit history
 
 ---
 
 ## Executive Summary
 
 ### Current State
-Svarog is a **solid RISC-V RV32IM_Zicsr core** with:
+Svarog is a **solid RISC-V RV32I_Zicsr core** with:
 - ✅ Complete 5-stage pipeline with hazard handling
-- ✅ Full base integer ISA + multiply/divide
+- ✅ Full RV32I base integer ISA (38 instructions)
+- ✅ Zicsr extension (CSR operations)
 - ✅ Basic peripherals (2× UART)
-- ✅ Memory subsystem (64KB TCM, ROM bootloader)
-- ✅ Debug interface
-- ✅ Configuration-driven architecture
+- ✅ Memory subsystem (64KB TCM, ROM bootloader, Wishbone bus)
+- ✅ Debug interface (halt/resume, register access, breakpoints)
+- ✅ Configuration-driven architecture (YAML-based)
+- ✅ **~5000 LUTs on Artix-7** (measured without M extension)
+
+**M Extension Status**: ⚠️ Implemented but has timing failures
+- Issue: Combinational 32×32 multiply and divide operations
+- Current implementation cannot meet 50 MHz timing
+- **Needs rework**: Pipelined multiplier + iterative divider (Priority: Phase 0)
 
 ### Target State
 A **competitive low-end microcontroller** comparable to ARM Cortex-M0+/M3 with:
@@ -356,6 +364,99 @@ Phase 3 (Performance) - depends on stable base
 ---
 
 ## Technical Specifications
+
+### M Extension Rework (P0-0) ⚠️ CRITICAL FIX
+
+**Current Implementation Issues**:
+
+Location: `src/main/scala/svarog/bits/Multipliers.scala`, `Dividers.scala`
+
+**Problem**:
+```scala
+// Current SimpleMultiplier (lines 39, 44, 49, 54)
+val fullMul = multiplicant * multiplier  // Combinational 32×32 multiply!
+io.result.bits := fullMul(xlen - 1, 0)
+
+// Current SimpleDivider (lines 48, 58, 73, 83)
+val quotient = dividend.asSInt / divisor.asSInt  // Combinational divide!
+io.result.bits := quotient.asUInt
+```
+
+These synthesize to huge combinational paths that cannot meet 50 MHz timing.
+
+**Solution: Pipelined/Iterative Implementation**
+
+**Multiplier (3 options)**:
+
+1. **DSP Block Instantiation** (Recommended for Xilinx)
+   ```scala
+   // Use Xilinx DSP48E1 primitive
+   // Latency: 1-3 cycles (configurable)
+   // Resources: 2-4 DSP blocks
+   // Throughput: 1 multiply per cycle (pipelined)
+   ```
+
+2. **Booth Encoding + Wallace Tree** (Generic)
+   ```scala
+   // 3-stage pipeline:
+   // Stage 1: Booth encoding
+   // Stage 2: Partial product reduction (Wallace tree)
+   // Stage 3: Final carry propagate adder
+   // Latency: 3 cycles
+   // Resources: ~600-800 LUTs
+   ```
+
+3. **Iterative Multiplier** (Smallest area)
+   ```scala
+   // Shift-and-add algorithm
+   // Latency: 32 cycles (one per bit)
+   // Resources: ~200-300 LUTs
+   // Not recommended for performance
+   ```
+
+**Divider (2 options)**:
+
+1. **Non-Restoring Divider** (Recommended)
+   ```scala
+   // Iterative algorithm
+   // Latency: 32-34 cycles
+   // Resources: ~400-600 LUTs
+   // Similar to Cortex-M3 (2-12 cycles)
+   // RISC-V allows variable latency
+   ```
+
+2. **Radix-4 SRT Divider** (Faster but larger)
+   ```scala
+   // Latency: 16-18 cycles
+   // Resources: ~800-1200 LUTs
+   // Better performance, more complex
+   ```
+
+**Recommended Configuration**:
+- **Multiplier**: DSP blocks (on Xilinx/Altera) or 3-stage pipelined
+- **Divider**: Non-restoring iterative (32-34 cycles)
+- **Interface**: Keep existing Decoupled interface, add `ready` signal
+- **Impact**: Execute stage may stall waiting for mult/div completion
+
+**Modified Interface**:
+```scala
+class AbstractMultiplier(xlen: Int) extends Module {
+  val io = IO(new Bundle {
+    val inp = Flipped(Decoupled(new MultiplierIO(xlen)))
+    val result = Decoupled(UInt(xlen.W))  // Changed: now has ready signal
+  })
+}
+```
+
+**Integration Changes**:
+- Execute stage: Add stall logic for multi-cycle multiply/divide
+- Hazard unit: Detect multiply/divide in progress, stall pipeline
+- Testing: Verify all M extension tests still pass with new timing
+
+**Estimated Effort**: 2-3 days
+**Priority**: Must complete before other Phase 0 work (timing is critical)
+
+---
 
 ### Interrupt Controller (P0-1)
 
@@ -838,19 +939,62 @@ Features:
 
 ### FPGA Resource Requirements (Xilinx 7-Series)
 
-| Component | LUTs | FFs | BRAM | DSP | Estimated |
-|-----------|------|-----|------|-----|-----------|
-| **Current Svarog Micro** | 3500 | 2000 | 32 | 4 | Measured |
-| + Phase 0 (Interrupts + Timers + GPIO) | +2000 | +1500 | +8 | 0 | +57% LUT |
-| + Phase 1 (Peripherals + DMA) | +3000 | +2000 | +16 | 0 | +86% LUT |
-| + Phase 2 (Security + CAN) | +4000 | +2500 | +24 | 0 | +114% LUT |
-| + Phase 3 (I-Cache + Compressed) | +1500 | +800 | +32 | 0 | +43% LUT |
-| **Total (Full System)** | ~14000 | ~8800 | ~112 | 4 | 4x growth |
+**Measured Baseline** (Artix-7):
+- **RV32I + Zicsr + 2×UART + Wishbone + ROM + Debug** (M extension disabled): **~5000 LUTs**
+
+**M Extension Status**: ⚠️ Current implementation has timing failures
+- Issue: Combinational 32×32 multiply/divide (lines too long for 50 MHz)
+- Solution needed: Pipelined multiplier (2-3 cycles) or DSP block instantiation
+- Estimated rework: +500-800 LUTs with 2-4 DSP blocks when properly implemented
+
+| Component | LUTs | FFs | BRAM | DSP | Notes |
+|-----------|------|-----|------|-----|-------|
+| **Current (RV32I_Zicsr, no M)** | 5000 | ~3000 | 32 | 0 | Measured ✅ |
+| + M Extension (reworked) | +700 | +400 | 0 | 2-4 | Needs pipeline fix |
+| + Phase 0 (Int + Timers + GPIO + Mem) | +2800 | +2000 | +16 | 0 | +56% LUT |
+| + Phase 1 (SPI + I2C + DMA + PM) | +3500 | +2500 | +24 | 0 | +70% LUT |
+| + Phase 2 (Security + CAN + PMP) | +4500 | +3000 | +32 | 1-2 | +90% LUT |
+| + Phase 3 (I-Cache + RV32C) | +2500 | +1500 | +64 | 0 | +50% LUT |
+| **Total (Full System)** | ~19000 | ~12400 | ~168 | 3-6 | 3.8x growth |
+
+**Breakdown by Phase** (cumulative):
+
+| After Phase | Total LUTs | Total FFs | BRAM | Target FPGA |
+|-------------|------------|-----------|------|-------------|
+| **Current** | 5000 | 3000 | 32 | XC7A35T ✅ |
+| **+ M fix** | 5700 | 3400 | 32 | XC7A35T ✅ |
+| **Phase 0** | 8500 | 5400 | 48 | XC7A50T |
+| **Phase 1** | 12000 | 7900 | 72 | XC7A75T |
+| **Phase 2** | 16500 | 10900 | 104 | **XC7A100T** |
+| **Phase 3** | 19000 | 12400 | 168 | **XC7A100T** |
 
 **Target FPGAs**:
-- **Minimum**: Artix-7 XC7A50T (52K LUTs, 65K FFs, 150 BRAM, 120 DSP)
-- **Comfortable**: Artix-7 XC7A100T (101K LUTs, 126K FFs, 240 BRAM, 240 DSP)
-- **For development**: Kintex-7 or better
+- **Current development**: Artix-7 XC7A35T/50T (sufficient for base + Phase 0)
+- **Recommended for Phase 1+**: Artix-7 XC7A100T (101K LUTs, 126K FFs, 240 BRAM, 240 DSP)
+  - Provides headroom: ~80% LUT utilization at Phase 3
+  - Allows for optimization iterations
+  - Cost-effective for development
+- **Production**: Can optimize down to XC7A75T if needed
+
+**Resource Details by Component**:
+
+| Component | LUTs | Reasoning |
+|-----------|------|-----------|
+| **PLIC (32 sources)** | 1000-1500 | Priority logic, gateways, claim/complete |
+| **Timers (6 total)** | 800-1200 | 4× GP timers (32-bit counters, compare), SysTick, WDT |
+| **GPIO (64 pins)** | 500-800 | Configuration registers, interrupt logic per pin |
+| **SPI (2× masters)** | 400-600 | FIFOs (32 bytes each), state machines |
+| **I2C (2× masters)** | 400-600 | Bit-level control, clock stretching, arbitration |
+| **DMA (8 channels)** | 1500-2000 | Arbitration, address generators, channel state |
+| **Power Mgmt** | 300-500 | Clock gating, mode control |
+| **RTC** | 200-400 | Calendar logic, alarm comparators |
+| **PMP (8 regions)** | 600-900 | Address comparison, permission checks |
+| **CLIC** | 1200-1800 | Vectored interrupts, priority preemption |
+| **CAN Controller** | 1500-2000 | Protocol state machine, bit timing, filtering |
+| **AES-128** | 1500-2500 | Encryption/decryption rounds |
+| **TRNG** | 500-800 | Entropy source, conditioning |
+| **I-Cache (4KB)** | 1500-2000 | Tag memory, valid bits, hit logic |
+| **RV32C Decoder** | 800-1200 | Decompression logic, dual-width fetch |
 
 ### ASIC Estimation (for reference)
 
@@ -867,53 +1011,206 @@ Features:
 
 ## Development Timeline
 
-### Phase 0: Foundation (10-12 weeks)
-```
-Week 1-4   : Interrupt/Exception Handling (P0-1)
-             - Trap infrastructure, PLIC, CSR extensions
-Week 5-7   : System Timers (P0-2)
-             - SysTick, GP timers, watchdog
-Week 8-9   : GPIO (P0-3)
-             - Port configuration, interrupts
-Week 10-12 : Memory Expansion (P0-4)
-             - Increase TCM, add flash controller
+**Historical Development Cadence** (from commit history):
+- Project start: July 26, 2025
+- Current state (Dec 22, 2025): ~5 months elapsed
+- Major features implemented: Pipeline, M extension, Zicsr, Wishbone, UART, ROM bootloader
+- **Observed pattern**: Features take 1-3 days of focused work, with variable gaps between sessions
+- **Typical throughput**: 1-2 features per week when actively developing
 
-Milestone: Basic embedded application runs (blinky with timer interrupt)
+**Timeline Estimates** (based on actual development pace):
+
+### Phase 0: Foundation
+**Estimated: 6-10 weeks of active development** (calendar time may vary based on schedule)
+
+```
+M Extension Rework    : 2-3 days
+  - Replace combinational multiply/divide with pipelined version
+  - Use DSP blocks for multiplier
+  - Iterative divider (32-cycle worst case)
+  - CRITICAL: Fixes timing failures at 50 MHz
+
+Interrupt/Exception   : 5-7 days (P0-1)
+  - CSR extensions (mtvec, mepc, mcause, mstatus, etc.)
+  - Trap entry/exit logic in pipeline
+  - PLIC implementation (32 sources, 8 priorities)
+  - Exception handlers (misaligned, illegal inst, ecall, ebreak)
+  - Testing: Interrupt latency, nested interrupts
+
+System Timers        : 4-6 days (P0-2)
+  - SysTick (24-bit, 1ms tick)
+  - 4× General Purpose Timers (32-bit, capture/compare, PWM mode)
+  - Watchdog timer (system reset on timeout)
+  - Testing: Accuracy, interrupt generation
+
+GPIO                 : 2-3 days (P0-3)
+  - 64 pins across 4 ports
+  - Per-pin: direction, pull resistors, drive strength
+  - Edge/level interrupt support
+  - Atomic set/clear/toggle
+
+Memory Expansion     : 2-3 days (P0-4)
+  - Expand TCM to 256KB (configuration)
+  - Flash controller (basic SPI flash interface)
+  - Memory map reorganization
+
+Testing & Debug      : 3-5 days
+  - RTOS bring-up (FreeRTOS or Zephyr)
+  - CoreMark baseline
+  - Interrupt stress tests
+
+Milestone: Basic embedded app runs (RTOS tasks, timer interrupts, GPIO control)
 ```
 
-### Phase 1: Peripherals (12-14 weeks)
-```
-Week 1-2   : SPI (P1-1)
-Week 3-4   : I2C (P1-2)
-Week 5-8   : ADC (P1-3)
-Week 9-10  : PWM (P1-4) [uses timers from Phase 0]
-Week 11-14 : DMA (P1-5)
-             - Parallel: RTC (P1-7) in weeks 11-12
-             - Parallel: Power Management (P1-6) in weeks 13-14
+### Phase 1: Peripherals
+**Estimated: 8-12 weeks of active development**
 
-Milestone: IoT sensor node application (reads temp/humidity via I2C, sends via UART)
+```
+SPI                  : 2-3 days (P1-1)
+  - 2× SPI masters, 25 MHz clock
+  - TX/RX FIFOs (16-32 bytes)
+  - Hardware NSS management
+  - Testing: Loopback, external flash communication
+
+I2C                  : 2-3 days (P1-2)
+  - 2× I2C masters (100/400 kHz)
+  - Clock stretching, multi-master arbitration
+  - Testing: Sensor communication (I2C temp/humidity sensor)
+
+DMA                  : 5-8 days (P1-5)
+  - 8 channels, priority arbitration
+  - Memory↔memory, memory↔peripheral
+  - Circular mode, interrupt on complete
+  - Integration with UART, SPI, I2C, ADC
+  - Testing: Concurrent transfers, priority handling
+
+PWM                  : 1-2 days (P1-4)
+  - Leverage GP timers from Phase 0
+  - 12 channels (3 per timer × 4 timers)
+  - Deadtime insertion for motor control
+  - Testing: Frequency/duty cycle accuracy
+
+ADC                  : 4-6 days (P1-3) *or use external ADC via SPI
+  - Option A: Integrate IP core (12-bit, 8-16 channels)
+  - Option B: External ADC via SPI (faster integration)
+  - DMA support for continuous sampling
+  - Testing: Accuracy, sampling rate
+
+Power Management     : 2-3 days (P1-6)
+  - Clock gating per peripheral
+  - WFI sleep modes (sleep, deep sleep, standby)
+  - Wake-on-interrupt configuration
+  - Testing: Power measurement, wake latency
+
+RTC                  : 2-3 days (P1-7)
+  - Calendar (date/time), subsecond precision
+  - Alarm interrupts, tamper detection
+  - Testing: Long-term accuracy
+
+Integration & Testing: 4-6 days
+  - IoT demo: Sensor → UART/SPI/I2C communication
+  - DMA stress testing
+  - Power mode transitions
+  - CoreMark with peripherals active
+
+Milestone: IoT sensor node application (sensor reads, DMA transfers, low-power modes)
 ```
 
-### Phase 2: Advanced Features (10-12 weeks)
-```
-Week 1-3   : PMP (P2-1)
-Week 4-6   : CLIC (P2-2) [replaces PLIC]
-Week 7-10  : CAN Bus (P2-3)
-Week 11-12 : Security Foundation (P2-4) [TRNG, AES accelerator]
+### Phase 2: Advanced Features
+**Estimated: 7-10 weeks of active development**
 
-Milestone: Automotive demo (CAN bus communication with secure boot)
+```
+PMP                  : 3-4 days (P2-1)
+  - 8-16 regions, R/W/X permissions
+  - Lock bits, fault handling
+  - Testing: Memory protection enforcement
+
+CLIC                 : 4-6 days (P2-2)
+  - Vectored interrupts, fast dispatch
+  - 8-16 priority levels, preemption
+  - Replace basic PLIC from Phase 0
+  - Testing: Latency measurement (<10 cycles target)
+
+CAN Controller       : 6-8 days (P2-3)
+  - CAN 2.0B protocol (1 Mbps)
+  - Message filtering, TX/RX FIFOs
+  - Error detection/handling
+  - Testing: CAN bus compliance, automotive ECU communication
+
+Security (TRNG)      : 2-3 days (P2-4a)
+  - True random number generator
+  - Entropy conditioning
+  - Testing: NIST randomness tests
+
+Security (AES)       : 4-5 days (P2-4b)
+  - AES-128/256 accelerator (use open IP like OpenTitan)
+  - ECB/CBC modes
+  - Testing: NIST test vectors
+
+Secure Boot          : 3-4 days (P2-4c)
+  - Boot ROM signature verification
+  - OTP key storage
+  - Testing: Boot integrity
+
+Enhanced Debug       : 3-4 days (P2-6)
+  - Hardware breakpoints (4-8)
+  - Hardware watchpoints (2-4)
+  - Performance counters
+  - Testing: GDB integration
+
+Integration & Testing: 5-7 days
+  - Automotive demo (CAN + secure boot)
+  - Security testing (boot verification, AES test vectors)
+
+Milestone: Automotive/industrial-grade features operational
 ```
 
-### Phase 3: Performance (6-8 weeks)
-```
-Week 1-4   : Instruction Cache (P3-1)
-Week 5-6   : Compressed ISA (P3-2)
-Week 7-8   : Fast Interrupts (P3-3)
+### Phase 3: Performance
+**Estimated: 4-6 weeks of active development**
 
-Milestone: Benchmark results competitive with Cortex-M3
+```
+Instruction Cache    : 5-7 days (P3-1)
+  - 2-4 KB, direct-mapped or 2-way associative
+  - Cache controller, hit/miss logic
+  - Testing: Hit rate measurement, performance improvement
+
+Compressed ISA (C)   : 4-5 days (P3-2)
+  - RV32C decoder (16-bit instruction expansion)
+  - Mixed 16/32-bit fetch logic
+  - Testing: Code size reduction, execution correctness
+
+Fast Interrupts      : 3-4 days (P3-3)
+  - Tail-chaining (zero-latency between interrupts)
+  - Late-arriving preemption
+  - Stack frame optimization
+  - Testing: Latency <10 cycles
+
+Optimization         : 3-5 days
+  - Timing closure (ensure 50 MHz across all paths)
+  - Area optimization (reduce LUT count if needed)
+  - Power optimization
+
+Benchmarking         : 2-3 days
+  - CoreMark, Dhrystone
+  - EEMBC ULPBench, IoTMark
+  - Comparative analysis vs Cortex-M3
+
+Milestone: Performance competitive with Cortex-M3, benchmarks published
 ```
 
-**Total Timeline**: 38-46 weeks (~9-11 months)
+**Total Active Development Time**: 25-38 weeks (~6-9 months of focused work)
+**Realistic Calendar Time**: 8-14 months (accounting for gaps, parallel activities, unexpected issues)
+
+**Note on Timeline Variability**:
+- Estimates assume 1 developer working part-time (based on historical commit pattern)
+- Can be accelerated with:
+  - Full-time focused development
+  - Using existing open-source IP cores (OpenCores, OpenTitan)
+  - Parallelizing independent features (e.g., SPI + I2C simultaneously)
+- May be extended by:
+  - Timing closure challenges (especially for Phase 3)
+  - Integration issues between components
+  - Extensive testing and validation requirements
 
 ---
 
