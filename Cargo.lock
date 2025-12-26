@@ -345,6 +345,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "simulator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "camino",
+ "clap",
+ "cxx",
+ "cxx-build",
+ "elf",
+ "glob",
+ "snafu",
+ "xshell",
+]
+
+[[package]]
 name = "snafu"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -396,13 +411,10 @@ name = "testbench"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "camino",
- "cxx",
  "cxx-build",
- "elf",
  "glob",
  "libtest-mimic",
- "snafu",
+ "simulator",
  "xshell",
 ]
 

@@ -1,5 +1,5 @@
-#include "verilator_wrapper.h"
-#include "VSvarogSoC.h"
+#include "utils/simulator/cpp/generated/svg_micro/wrapper.h"
+#include "VSvarogSoC_svg_micro.h"
 #include "verilated.h"
 #include "verilated_vcd_c.h"
 
@@ -9,6 +9,7 @@ double sc_time_stamp() {
 }
 
 namespace svarog {
+namespace svg_micro {
 
 VerilatorModel::VerilatorModel() {
     // Create a dedicated context for this model
@@ -17,7 +18,7 @@ VerilatorModel::VerilatorModel() {
     context_->traceEverOn(true);
 
     // Create the model with the dedicated context
-    model_ = std::make_unique<VSvarogSoC>(context_.get());
+    model_ = std::make_unique<VSvarogSoC_svg_micro>(context_.get());
 }
 
 VerilatorModel::~VerilatorModel() {
@@ -241,8 +242,18 @@ uint8_t VerilatorModel::get_debug_halted() const {
     return model_->io_debug_halted;
 }
 
+// UART signals
+uint8_t VerilatorModel::get_uart_0_txd() const {
+    return model_->io_uarts_0_txd;
+}
+
+uint8_t VerilatorModel::get_uart_1_txd() const {
+    return model_->io_uarts_1_txd;
+}
+
 std::unique_ptr<VerilatorModel> create_verilator_model() {
     return std::make_unique<VerilatorModel>();
 }
 
+} // namespace svg_micro
 } // namespace svarog
