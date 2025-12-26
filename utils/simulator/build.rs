@@ -5,11 +5,11 @@ use xshell::{Shell, cmd};
 
 #[derive(Debug, Clone)]
 struct ModelInfo {
-    name: String,           // "svg-micro"
-    yaml_path: PathBuf,     // "configs/svg-micro.yaml"
-    identifier: String,     // "svg_micro"
-    namespace: String,      // "svg_micro"
-    enum_variant: String,   // "SvgMicro"
+    name: String,         // "svg-micro"
+    yaml_path: PathBuf,   // "configs/svg-micro.yaml"
+    identifier: String,   // "svg_micro"
+    namespace: String,    // "svg_micro"
+    enum_variant: String, // "SvgMicro"
 }
 
 impl ModelInfo {
@@ -64,11 +64,7 @@ fn discover_models(workspace_root: &Path) -> Result<Vec<ModelInfo>> {
     Ok(models)
 }
 
-fn generate_verilog(
-    sh: &Shell,
-    workspace_root: &Path,
-    model: &ModelInfo,
-) -> Result<()> {
+fn generate_verilog(sh: &Shell, workspace_root: &Path, model: &ModelInfo) -> Result<()> {
     let output_dir = workspace_root.join(format!("target/generated/{}", model.name));
     fs::create_dir_all(&output_dir)?;
 
@@ -85,11 +81,7 @@ fn generate_verilog(
     Ok(())
 }
 
-fn run_verilator(
-    sh: &Shell,
-    workspace_root: &Path,
-    model: &ModelInfo,
-) -> Result<()> {
+fn run_verilator(sh: &Shell, workspace_root: &Path, model: &ModelInfo) -> Result<()> {
     let verilog_file = workspace_root.join(format!("target/generated/{}/SvarogSoC.sv", model.name));
     let verilator_out_dir = workspace_root.join(format!("target/verilator/{}", model.name));
 
@@ -102,7 +94,10 @@ fn run_verilator(
         || verilog_file.metadata()?.modified()? > verilator_stamp.metadata()?.modified()?;
 
     if !need_verilator {
-        println!("cargo:warning=Verilator build for {} is up-to-date", model.name);
+        println!(
+            "cargo:warning=Verilator build for {} is up-to-date",
+            model.name
+        );
         return Ok(());
     }
 
@@ -133,14 +128,14 @@ fn run_verilator(
     Ok(())
 }
 
-fn generate_cpp_wrapper(
-    workspace_root: &Path,
-    model: &ModelInfo,
-) -> Result<()> {
+fn generate_cpp_wrapper(workspace_root: &Path, model: &ModelInfo) -> Result<()> {
     let template_h = include_str!("cpp/templates/wrapper.h.template");
     let template_cpp = include_str!("cpp/templates/wrapper.cpp.template");
 
-    let output_dir = workspace_root.join(format!("utils/simulator/cpp/generated/{}", model.identifier));
+    let output_dir = workspace_root.join(format!(
+        "utils/simulator/cpp/generated/{}",
+        model.identifier
+    ));
     fs::create_dir_all(&output_dir)?;
 
     // Generate header
@@ -158,11 +153,7 @@ fn generate_cpp_wrapper(
     Ok(())
 }
 
-fn compile_wrapper(
-    workspace_root: &Path,
-    model: &ModelInfo,
-    verilator_root: &str,
-) -> Result<()> {
+fn compile_wrapper(workspace_root: &Path, model: &ModelInfo, verilator_root: &str) -> Result<()> {
     let wrapper_cpp = workspace_root.join(format!(
         "utils/simulator/cpp/generated/{}/wrapper.cpp",
         model.identifier
@@ -185,26 +176,23 @@ fn compile_wrapper(
     Ok(())
 }
 
-fn link_verilator_libs(
-    workspace_root: &Path,
-    model: &ModelInfo,
-) -> Result<()> {
+fn link_verilator_libs(workspace_root: &Path, model: &ModelInfo) -> Result<()> {
     let verilator_dir = workspace_root.join(format!("target/verilator/{}", model.name));
 
     println!("cargo:rustc-link-search=native={}", verilator_dir.display());
 
     // Each config's Verilator build produces its own VSvarogSoC library
     // Because we used --prefix, they have different symbol names
-    println!("cargo:rustc-link-lib=static=VSvarogSoC_{}", model.identifier);
+    println!(
+        "cargo:rustc-link-lib=static=VSvarogSoC_{}",
+        model.identifier
+    );
     println!("cargo:rustc-link-lib=static=verilated");
 
     Ok(())
 }
 
-fn generate_bridge_module(
-    workspace_root: &Path,
-    model: &ModelInfo,
-) -> Result<()> {
+fn generate_bridge_module(workspace_root: &Path, model: &ModelInfo) -> Result<()> {
     let output_dir = workspace_root.join("utils/simulator/src/ffi");
     fs::create_dir_all(&output_dir)?;
 
@@ -324,10 +312,7 @@ pub mod ffi {{
     Ok(())
 }
 
-fn generate_model_registry(
-    workspace_root: &Path,
-    models: &[ModelInfo],
-) -> Result<()> {
+fn generate_model_registry(workspace_root: &Path, models: &[ModelInfo]) -> Result<()> {
     let output_dir = workspace_root.join("utils/simulator/src");
 
     let enum_variants = models
@@ -338,14 +323,24 @@ fn generate_model_registry(
 
     let from_name_arms = models
         .iter()
-        .map(|m| format!(r#"            "{}" => Some(ModelId::{}),
-"#, m.name, m.enum_variant))
+        .map(|m| {
+            format!(
+                r#"            "{}" => Some(ModelId::{}),
+"#,
+                m.name, m.enum_variant
+            )
+        })
         .collect::<String>();
 
     let name_arms = models
         .iter()
-        .map(|m| format!(r#"            ModelId::{} => "{}",
-"#, m.enum_variant, m.name))
+        .map(|m| {
+            format!(
+                r#"            ModelId::{} => "{}",
+"#,
+                m.enum_variant, m.name
+            )
+        })
         .collect::<String>();
 
     let module_imports = models
@@ -422,9 +417,14 @@ fn main() -> Result<()> {
 
     // Discover models
     let models = discover_models(&workspace_root)?;
-    println!("cargo:warning=Found {} model(s): {}",
+    println!(
+        "cargo:warning=Found {} model(s): {}",
         models.len(),
-        models.iter().map(|m| m.name.as_str()).collect::<Vec<_>>().join(", ")
+        models
+            .iter()
+            .map(|m| m.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
     );
 
     // Get Verilator root

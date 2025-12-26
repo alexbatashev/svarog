@@ -8,8 +8,8 @@ pub use core::Simulator;
 pub use register_file::{RegisterFile, TestResult};
 
 // Re-export generated ModelId from models module
-pub use models::ModelId;
 pub use models::AVAILABLE_MODELS;
+pub use models::ModelId;
 
 impl Simulator {
     /// List all available models

@@ -1,6 +1,6 @@
-use std::cell::RefCell;
-use cxx::UniquePtr;
 use anyhow::Result;
+use cxx::UniquePtr;
+use std::cell::RefCell;
 
 // Include auto-generated config registry which declares the module structure
 // The generated.rs file is created by build.rs in the src directory
@@ -81,7 +81,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_id_valid(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_id_valid(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_id_valid(value),
         }
     }
 
@@ -93,7 +96,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_id_bits(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_id_bits(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_id_bits(value),
         }
     }
 
@@ -106,7 +112,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_halt_valid(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_halt_valid(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_halt_valid(value),
         }
     }
 
@@ -118,7 +127,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_halt_bits(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_halt_bits(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_halt_bits(value),
         }
     }
 
@@ -131,7 +143,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_breakpoint_valid(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_breakpoint_valid(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_breakpoint_valid(value),
         }
     }
 
@@ -143,7 +158,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_breakpoint_bits_pc(&self, value: u32) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_breakpoint_bits_pc(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_breakpoint_bits_pc(value),
         }
     }
 
@@ -156,7 +174,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_watchpoint_valid(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_watchpoint_valid(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_watchpoint_valid(value),
         }
     }
 
@@ -168,7 +189,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_watchpoint_bits_addr(&self, value: u32) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_watchpoint_bits_addr(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_watchpoint_bits_addr(value),
         }
     }
 
@@ -181,7 +205,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_setPC_valid(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_setPC_valid(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_setPC_valid(value),
         }
     }
 
@@ -193,7 +220,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_setPC_bits_pc(&self, value: u32) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_setPC_bits_pc(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_setPC_bits_pc(value),
         }
     }
 
@@ -206,7 +236,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_register_valid(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_register_valid(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_register_valid(value),
         }
     }
 
@@ -218,7 +251,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_register_bits_reg(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_register_bits_reg(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_register_bits_reg(value),
         }
     }
 
@@ -230,7 +266,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_register_bits_write(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_register_bits_write(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_register_bits_write(value),
         }
     }
 
@@ -242,7 +281,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_hart_in_bits_register_bits_data(&self, value: u32) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_hart_in_bits_register_bits_data(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_hart_in_bits_register_bits_data(value),
         }
     }
 
@@ -273,7 +315,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_mem_in_bits_addr(&self, value: u32) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_mem_in_bits_addr(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_mem_in_bits_addr(value),
         }
     }
 
@@ -285,7 +330,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_mem_in_bits_write(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_mem_in_bits_write(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_mem_in_bits_write(value),
         }
     }
 
@@ -297,7 +345,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_mem_in_bits_data(&self, value: u32) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_mem_in_bits_data(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_mem_in_bits_data(value),
         }
     }
 
@@ -309,7 +360,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_mem_in_bits_reqWidth(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_mem_in_bits_reqWidth(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_mem_in_bits_reqWidth(value),
         }
     }
 
@@ -321,7 +375,10 @@ impl VerilatorModelVariant {
 
     pub fn set_debug_mem_in_bits_instr(&self, value: u8) {
         match self {
-            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_debug_mem_in_bits_instr(value),
+            Self::SvgMicro(model) => model
+                .borrow_mut()
+                .pin_mut()
+                .set_debug_mem_in_bits_instr(value),
         }
     }
 
@@ -399,8 +456,8 @@ impl VerilatorModelVariant {
 /// Create a simulator for the specified model
 pub(crate) fn create_model(model_id: ModelId) -> Result<VerilatorModelVariant> {
     match model_id {
-        ModelId::SvgMicro => Ok(VerilatorModelVariant::SvgMicro(
-            RefCell::new(ffi::svg_micro::ffi::create_verilator_model())
-        )),
+        ModelId::SvgMicro => Ok(VerilatorModelVariant::SvgMicro(RefCell::new(
+            ffi::svg_micro::ffi::create_verilator_model(),
+        ))),
     }
 }

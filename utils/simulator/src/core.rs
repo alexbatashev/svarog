@@ -1,15 +1,11 @@
-use std::{
-    cell::RefCell,
-    convert::TryInto,
-    path::Path,
-};
+use std::{cell::RefCell, convert::TryInto, path::Path};
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use elf::{ElfBytes, endian::AnyEndian};
 
 use crate::models::{VerilatorModelVariant, create_model};
-use crate::{RegisterFile, TestResult, ModelId};
 use crate::uart::UartDecoder;
+use crate::{ModelId, RegisterFile, TestResult};
 
 pub struct Simulator {
     model: VerilatorModelVariant,
@@ -48,8 +44,7 @@ impl Simulator {
     }
 
     pub fn new(model_id: ModelId) -> Result<Self> {
-        let model = create_model(model_id)
-            .context("Failed to create Verilator model")?;
+        let model = create_model(model_id).context("Failed to create Verilator model")?;
 
         // Initialize debug interface to safe defaults
         Self::init_debug_interface(&model);
@@ -82,8 +77,7 @@ impl Simulator {
         entry_point: Option<u32>,
         watchpoint_addr: Option<u32>,
     ) -> Result<u32> {
-        let file_data = std::fs::read(path.as_ref())
-            .context("Failed to read binary file")?;
+        let file_data = std::fs::read(path.as_ref()).context("Failed to read binary file")?;
 
         eprintln!(
             "Loading raw binary {} ({} bytes) at address 0x{:08x}",
@@ -421,7 +415,8 @@ impl Simulator {
         // Wait for ready and send request
         loop {
             self.model.set_debug_mem_in_bits_addr(addr);
-            self.model.set_debug_mem_in_bits_write(if write { 1 } else { 0 });
+            self.model
+                .set_debug_mem_in_bits_write(if write { 1 } else { 0 });
             self.model.set_debug_mem_in_bits_data(data);
             self.model.set_debug_mem_in_bits_reqWidth(req_width);
             self.model.set_debug_mem_in_bits_instr(0);

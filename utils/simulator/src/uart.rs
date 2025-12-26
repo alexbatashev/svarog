@@ -8,10 +8,10 @@
 /// and decodes bytes by counting how long the line stays at each level.
 pub struct UartDecoder {
     prev_txd: u8,
-    bit_samples: Vec<u8>, // Sampled bit values
+    bit_samples: Vec<u8>,    // Sampled bit values
     cycles_since_start: u32, // Cycles since start bit detected
-    in_byte: bool, // Track if we're currently receiving a byte
-    bit_period: u32, // Bit period in cycles (~434)
+    in_byte: bool,           // Track if we're currently receiving a byte
+    bit_period: u32,         // Bit period in cycles (~434)
 }
 
 impl UartDecoder {
@@ -44,8 +44,11 @@ impl UartDecoder {
             // Sample each data bit in the middle of its period
             // Bit 0 at 1.5 * bit_period, Bit 1 at 2.5 * bit_period, etc.
             for bit_index in 0..8 {
-                let sample_time = self.bit_period + (self.bit_period / 2) + (bit_index * self.bit_period);
-                if self.cycles_since_start == sample_time && self.bit_samples.len() == bit_index as usize {
+                let sample_time =
+                    self.bit_period + (self.bit_period / 2) + (bit_index * self.bit_period);
+                if self.cycles_since_start == sample_time
+                    && self.bit_samples.len() == bit_index as usize
+                {
                     self.bit_samples.push(txd_bit);
                     break;
                 }

@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use glob::glob;
 use libtest_mimic::{Arguments, Failed, Trial};
 use std::path::{Path, PathBuf};
-use testbench::{Simulator, ModelId, compare_results, run_spike_test};
+use testbench::{ModelId, Simulator, compare_results, run_spike_test};
 
 const TARGET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../target/");
 
@@ -62,7 +62,10 @@ fn run_test(test_path: &Path, model_id: ModelId) -> Result<(), Failed> {
 fn run_test_impl(test_path: &Path, model_id: ModelId) -> Result<()> {
     let test_name = test_path.file_name().unwrap().to_str().unwrap().to_owned();
     let model_name = model_id.name();
-    let vcd_path = PathBuf::from(format!("{}/vcd/{}_{}.vcd", TARGET_PATH, model_name, test_name));
+    let vcd_path = PathBuf::from(format!(
+        "{}/vcd/{}_{}.vcd",
+        TARGET_PATH, model_name, test_name
+    ));
 
     // Create simulator with specified model
     let simulator = Simulator::new(model_id)
