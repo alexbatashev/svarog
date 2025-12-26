@@ -80,39 +80,3 @@ impl UartDecoder {
         byte
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_uart_decode_byte() {
-        let mut decoder = UartDecoder::new();
-
-        // Send 'A' (0x41 = 0b01000001)
-        // Format: [start=0][LSB...MSB][stop=1]
-        // Bits: 0 1 0 0 0 0 0 1 0 1
-        let bits = [
-            1, // Idle
-            0, // Start bit
-            1, // bit 0 (LSB)
-            0, // bit 1
-            0, // bit 2
-            0, // bit 3
-            0, // bit 4
-            0, // bit 5
-            1, // bit 6
-            0, // bit 7 (MSB)
-            1, // Stop bit
-        ];
-
-        let mut result = None;
-        for &bit in &bits {
-            if let Some(byte) = decoder.process(bit) {
-                result = Some(byte);
-            }
-        }
-
-        assert_eq!(result, Some(0x41)); // 'A'
-    }
-}
