@@ -51,7 +51,7 @@ class UartTx(val dataWidth: Int = 8) extends Module {
         baudCounter := 0.U
         shiftReg := shiftReg >> 1
         bitCounter := bitCounter + 1.U
-        when(bitCounter === (dataWidth - 1).U) {
+        when(bitCounter === dataWidth.U) {
           state := State.sStop
         }
       }.otherwise {
@@ -232,7 +232,10 @@ class UartWishbone(
       switch(localAddr) {
         is(DATA_REG_OFFSET.U) {
           txDataReg := io.dataToSlave(dataWidth - 1, 0)
-          txValidReg := true.B
+          // Only set valid if not already valid (prevent duplicate transmissions)
+          when(!txValidReg) {
+            txValidReg := true.B
+          }
         }
         is(BAUD_DIV_OFFSET.U) {
           baudDividerReg := io.dataToSlave(15, 0)

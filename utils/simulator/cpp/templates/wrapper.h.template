@@ -6,11 +6,12 @@
 #include "rust/cxx.h"
 
 // Forward declarations
-class VSvarogSoC;
+class VSvarogSoC_{{CONFIG_ID}};
 class VerilatedVcdC;
 class VerilatedContext;
 
 namespace svarog {
+namespace {{CONFIG_NAMESPACE}} {
 
 // Verilator model wrapper providing type-safe access to the DUT
 class VerilatorModel {
@@ -103,9 +104,13 @@ public:
     // Debug status
     uint8_t get_debug_halted() const;
 
+    // UART signals
+    uint8_t get_uart_0_txd() const;
+    uint8_t get_uart_1_txd() const;
+
 private:
     std::unique_ptr<VerilatedContext> context_;
-    std::unique_ptr<VSvarogSoC> model_;
+    std::unique_ptr<VSvarogSoC_{{CONFIG_ID}}> model_;
     std::unique_ptr<VerilatedVcdC> vcd_;
     bool traced_ = false;
 };
@@ -113,4 +118,5 @@ private:
 // Factory function for Rust
 std::unique_ptr<VerilatorModel> create_verilator_model();
 
+} // namespace {{CONFIG_NAMESPACE}}
 } // namespace svarog

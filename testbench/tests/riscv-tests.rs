@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use glob::glob;
 use libtest_mimic::{Arguments, Failed, Trial};
 use std::path::{Path, PathBuf};
-use testbench::{Simulator, compare_results, run_spike_test};
+use testbench::{Simulator, ModelId, compare_results, run_spike_test};
 
 const TARGET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../target/");
 
@@ -23,41 +23,50 @@ fn main() -> Result<()> {
 fn discover_tests() -> Result<Vec<Trial>> {
     let mut trials = Vec::new();
 
-    // Use the generated manifest for test discovery
-    for test_path in glob(&format!("{TARGET_PATH}/riscv-tests/isa/rv32ui-p-*"))? {
-        let test_path = test_path?;
-        let test_name = test_path.file_name().unwrap().to_str().unwrap().to_owned();
-        if test_name.ends_with(".dump") {
-            continue;
+    // Get all available models
+    let models = Simulator::available_models();
+
+    // For each model, create tests
+    for &model_id in models {
+        let model_name = model_id.name();
+
+        // Use the generated manifest for test discovery
+        for test_path in glob(&format!("{TARGET_PATH}/riscv-tests/isa/rv32ui-p-*"))? {
+            let test_path = test_path?;
+            let test_name = test_path.file_name().unwrap().to_str().unwrap().to_owned();
+            if test_name.ends_with(".dump") {
+                continue;
+            }
+            // misaligned unsupported
+            if test_name.starts_with("rv32ui-p-ma") {
+                continue;
+            }
+            trials.push(Trial::test(
+                format!("{}::{}", model_name, test_name),
+                move || run_test(&test_path, model_id),
+            ));
         }
-        // misaligned unsupported
-        if test_name.starts_with("rv32ui-p-ma") {
-            continue;
-        }
-        trials.push(Trial::test(
-            format!("svarog-micro::{}", test_name),
-            move || run_test(&test_path),
-        ));
     }
 
     Ok(trials)
 }
 
 /// Run a single test case
-fn run_test(test_path: &Path) -> Result<(), Failed> {
-    match run_test_impl(test_path) {
+fn run_test(test_path: &Path, model_id: ModelId) -> Result<(), Failed> {
+    match run_test_impl(test_path, model_id) {
         Ok(()) => Ok(()),
         Err(e) => Err(format!("{:#}", e).into()),
     }
 }
 
-fn run_test_impl(test_path: &Path) -> Result<()> {
+fn run_test_impl(test_path: &Path, model_id: ModelId) -> Result<()> {
     let test_name = test_path.file_name().unwrap().to_str().unwrap().to_owned();
-    let vcd_path = PathBuf::from(format!("{}/vcd/{}.vcd", TARGET_PATH, test_name));
+    let model_name = model_id.name();
+    let vcd_path = PathBuf::from(format!("{}/vcd/{}_{}.vcd", TARGET_PATH, model_name, test_name));
 
-    // Create simulator (model is built once during cargo build, no rebuild needed)
-    let simulator =
-        Simulator::new().map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
+    // Create simulator with specified model
+    let simulator = Simulator::new(model_id)
+        .map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
 
     // Load the ELF binary with watchpoint on 'tohost' symbol
     let tohost_addr = simulator
@@ -70,7 +79,7 @@ fn run_test_impl(test_path: &Path) -> Result<()> {
         .and_then(|val| val.parse::<usize>().ok())
         .unwrap_or(20_000);
 
-    println!("Simulating {}...", test_name);
+    println!("Simulating {} on model {}...", test_name, model_name);
     let verilator_result = simulator
         .run(&vcd_path, max_cycles)
         .context("Verilator simulation failed")?;
