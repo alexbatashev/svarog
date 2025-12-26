@@ -51,7 +51,7 @@ class UartTx(val dataWidth: Int = 8) extends Module {
         baudCounter := 0.U
         shiftReg := shiftReg >> 1
         bitCounter := bitCounter + 1.U
-        when(bitCounter === dataWidth.U) {
+        when(bitCounter === (dataWidth - 1).U) {
           state := State.sStop
         }
       }.otherwise {
