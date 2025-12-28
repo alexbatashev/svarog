@@ -1,5 +1,5 @@
 soc:
-  enableDebug: true
+  enableDebug: false
   uarts:
     - name: uart0
       baseAddr: 0x00100000

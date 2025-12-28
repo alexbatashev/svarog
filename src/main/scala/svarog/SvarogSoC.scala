@@ -16,14 +16,14 @@ class SvarogSoC(
 ) extends Module {
 
   val io = IO(new Bundle {
-    val debug = new Bundle {
-      val hart_in = Flipped(new ChipHartDebugIO(config.cores.head.xlen))
-      val mem_in =
-        Flipped(Decoupled(new ChipMemoryDebugIO(config.cores.head.xlen)))
-      val mem_res = Decoupled(UInt(config.cores.head.xlen.W))
-      val reg_res = Decoupled(UInt(config.cores.head.xlen.W))
-      val halted = Output(Bool()) // CPU halt status
-    }
+    // val debug = new Bundle {
+    //   val hart_in = Flipped(new ChipHartDebugIO(config.cores.head.xlen))
+    //   val mem_in =
+    //     Flipped(Decoupled(new ChipMemoryDebugIO(config.cores.head.xlen)))
+    //   val mem_res = Decoupled(UInt(config.cores.head.xlen.W))
+    //   val reg_res = Decoupled(UInt(config.cores.head.xlen.W))
+    //   val halted = Output(Bool()) // CPU halt status
+    // }
 
     val uarts = Vec(
       config.soc.uarts.filter(_.enabled).length,
@@ -58,11 +58,11 @@ class SvarogSoC(
     debug.get.io.dmem_iface <> debugDataMaster.mem
     debug.get.io.imem_iface <> debugInstMaster.mem
 
-    debug.get.io.hart_in <> io.debug.hart_in
-    debug.get.io.mem_in <> io.debug.mem_in
-    io.debug.mem_res <> debug.get.io.mem_res
-    io.debug.reg_res <> debug.get.io.reg_res
-    io.debug.halted := debug.get.io.halted(0)
+    // debug.get.io.hart_in <> io.debug.hart_in
+    // debug.get.io.mem_in <> io.debug.mem_in
+    // io.debug.mem_res <> debug.get.io.mem_res
+    // io.debug.reg_res <> debug.get.io.reg_res
+    // io.debug.halted := debug.get.io.halted(0)
 
     Seq(debugDataMaster, debugInstMaster)
   } else Seq.empty
@@ -95,7 +95,7 @@ class SvarogSoC(
       cpu.io.debug.watchpoint.bits := DontCare
       cpu.io.debug.setPC.valid := false.B
       cpu.io.debug.setPC.bits := DontCare
-      io.debug.halted := cpu.io.halt
+      // io.debug.halted := cpu.io.halt
     }
 
     val cpuInstHost = Module(

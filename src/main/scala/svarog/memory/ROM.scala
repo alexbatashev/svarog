@@ -3,7 +3,7 @@ package svarog.memory
 import chisel3._
 import chisel3.util._
 import svarog.bits.masked
-import chisel3.util.experimental.loadMemoryFromFile
+import chisel3.util.experimental.loadMemoryFromFileInline
 
 /// Read-only memory
 class ROM(
@@ -24,7 +24,7 @@ class ROM(
   private val mem =
     SyncReadMem(memSizeBytes / wordSize, Vec(wordSize, UInt(8.W)))
 
-  loadMemoryFromFile(mem, file)
+  loadMemoryFromFileInline(mem, file)
 
   // Single cycle memory, always ready
   io.req.ready := true.B
