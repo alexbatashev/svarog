@@ -20,40 +20,45 @@ abstract class AbstractMultiplier(xlen: Int) extends Module {
   })
 }
 
-class SimpleMultiplier(xlen: Int) extends AbstractMultiplier(xlen) {
-  // Always ready to accept new inputs
-  io.inp.ready := true.B
+class SimpleMultiplier(xlen: Int, latency: Int = 3) extends AbstractMultiplier(xlen) {
+  require(latency >= 1, "Latency must be at least 1")
 
-  // Default outputs
-  io.result.valid := io.inp.valid
-  io.result.bits := 0.U
+  private val busy = RegInit(false.B)
+  private val (counterValue, counterWrap) = Counter(busy, latency)
 
-  when(io.inp.valid) {
-    val multiplier = io.inp.bits.multiplier
-    val multiplicant = io.inp.bits.multiplicant
+  io.inp.ready := !busy
 
-    // Perform multiplication based on operation type
-    switch(io.inp.bits.op) {
-      is(MulOp.MUL) {
-        // MUL: Lower xlen bits of multiplicant * multiplier (both unsigned)
-        val fullMul = multiplicant * multiplier
-        io.result.bits := fullMul(xlen - 1, 0)
-      }
-      is(MulOp.MULH) {
-        // MULH: Upper xlen bits of signed(multiplicant) * signed(multiplier)
-        val signedMul = multiplicant.asSInt * multiplier.asSInt
-        io.result.bits := signedMul.asUInt(2 * xlen - 1, xlen)
-      }
-      is(MulOp.MULHSU) {
-        // MULHSU: Upper xlen bits of signed(multiplicant) * unsigned(multiplier)
-        val mixedMul = multiplicant.asSInt * multiplier.zext
-        io.result.bits := mixedMul.asUInt(2 * xlen - 1, xlen)
-      }
-      is(MulOp.MULHU) {
-        // MULHU: Upper xlen bits of unsigned(multiplicant) * unsigned(multiplier)
-        val fullMul = multiplicant * multiplier
-        io.result.bits := fullMul(2 * xlen - 1, xlen)
-      }
+  private val multiplicant = RegEnable(io.inp.bits.multiplicant, 0.U, io.inp.fire)
+  private val multiplier = RegEnable(io.inp.bits.multiplier, 0.U, io.inp.fire)
+  private val op = RegEnable(io.inp.bits.op, MulOp.MUL, io.inp.fire)
+
+  private val result = WireDefault(0.U(xlen.W))
+  switch(op) {
+    is(MulOp.MUL) {
+      val fullMul = multiplicant * multiplier
+      result := fullMul(xlen - 1, 0)
     }
+    is(MulOp.MULH) {
+      val signedMul = multiplicant.asSInt * multiplier.asSInt
+      result := signedMul.asUInt(2 * xlen - 1, xlen)
+    }
+    is(MulOp.MULHSU) {
+      val mixedMul = multiplicant.asSInt * multiplier.zext
+      result := mixedMul.asUInt(2 * xlen - 1, xlen)
+    }
+    is(MulOp.MULHU) {
+      val fullMul = multiplicant * multiplier
+      result := fullMul(2 * xlen - 1, xlen)
+    }
+  }
+
+  io.result.bits := ShiftRegister(result, latency - 1, 0.U, true.B)
+  io.result.valid := counterValue === (latency - 1).U && busy
+
+  when(io.inp.fire) {
+    busy := true.B
+  }
+  when(counterWrap) {
+    busy := false.B
   }
 }
