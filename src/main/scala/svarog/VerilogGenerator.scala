@@ -3,10 +3,11 @@ package svarog
 import chisel3._
 import chisel3.util.{Decoupled, log2Ceil}
 import circt.stage.FirtoolOption
-import svarog.{SvarogSoC, SvarogConfig}
-import svarog.config.{ConfigLoader, BootloaderValidator}
+import svarog.SvarogSoC
+import svarog.config.{ConfigLoader, BootloaderValidator, SoC}
 import svarog.VerilogGenerator.{bootloaderPath => bootloaderPath}
 import svarog.VerilogGenerator.{validatedBootloader => validatedBootloader}
+import firrtl.seqToAnnoSeq
 
 object VerilogGenerator extends App {
   private def parseArgs(args: Array[String]): Map[String, String] = {
@@ -26,7 +27,7 @@ object VerilogGenerator extends App {
     "config", {
       System.err.println("Error: --config argument is required")
       System.err.println(
-        "Usage: --config=path/to/config.yaml --target-dir=output/dir [--bootloader=path/to/boot.hex]"
+        "Usage: --config=path/to/config.yaml --target-dir=output/dir [--bootloader=path/to/boot.hex] [--simulator-debug-iface=true|false]"
       )
       sys.exit(1)
     }
@@ -35,6 +36,7 @@ object VerilogGenerator extends App {
   // Optional arguments
   private val targetDir = cli.getOrElse("target-dir", "target/generated/")
   private val bootloaderPath = cli.get("bootloader")
+  private val simulatorDebugIface = cli.get("simulator-debug-iface").exists(_.toLowerCase == "true")
 
   // Validate bootloader if provided
   private val validatedBootloader = bootloaderPath.flatMap { path =>
@@ -46,16 +48,16 @@ object VerilogGenerator extends App {
     }
   }
 
-  // Load and validate config
-  private val config = ConfigLoader.loadSvarogConfig(
-    configPath,
-    validatedBootloader
-  ) match {
+  // Load YAML config
+  private val yamlConfig = ConfigLoader.loadSoCConfig(configPath) match {
     case Right(cfg) => cfg
     case Left(err) =>
       System.err.println(s"Error loading config: $err")
       sys.exit(1)
   }
+
+  // Build complete SoC config with runtime flags
+  private val config = SoC.fromYaml(yamlConfig, simulatorDebugIface)
 
   // Generate Verilog
   emitVerilog(

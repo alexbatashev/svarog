@@ -96,8 +96,11 @@ pub mod ffi {
         // Debug status
         fn get_debug_halted(&self) -> u8;
 
-        // UART signals
+        // UART signals (dynamically generated)
         fn get_uart_0_txd(&self) -> u8;
+        fn set_uart_0_rxd(self: Pin<&mut VerilatorModel>, value: u8);
         fn get_uart_1_txd(&self) -> u8;
+        fn set_uart_1_rxd(self: Pin<&mut VerilatorModel>, value: u8);
+
     }
 }

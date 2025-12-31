@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.simulator.scalatest.ChiselSim
 import org.scalatest.funspec.AnyFunSpec
+import svarog.bits.{Uart, UartRx, UartTx, UartWishbone}
 
 class UARTSpec extends AnyFunSpec with ChiselSim {
   describe("UartTx") {
@@ -20,7 +21,7 @@ class UARTSpec extends AnyFunSpec with ChiselSim {
 
         // Send byte 0xA5 (10100101)
         dut.io.channel.valid.poke(true)
-        dut.io.channel.bits.poke(0xA5)
+        dut.io.channel.bits.poke(0xa5)
         dut.clock.step(1)
 
         // Should have accepted data and started transmission
@@ -33,7 +34,8 @@ class UARTSpec extends AnyFunSpec with ChiselSim {
         }
 
         // Data bits (LSB first): 1, 0, 1, 0, 0, 1, 0, 1
-        val expectedBits = Seq(true, false, true, false, false, true, false, true)
+        val expectedBits =
+          Seq(true, false, true, false, false, true, false, true)
         for (bit <- expectedBits) {
           for (_ <- 0 to 3) {
             dut.io.txd.expect(bit)
@@ -74,7 +76,7 @@ class UARTSpec extends AnyFunSpec with ChiselSim {
 
         // Send second byte immediately
         dut.io.channel.valid.poke(true)
-        dut.io.channel.bits.poke(0xAA)
+        dut.io.channel.bits.poke(0xaa)
         dut.clock.step(1)
 
         // Should start transmission
@@ -123,7 +125,7 @@ class UARTSpec extends AnyFunSpec with ChiselSim {
 
         // Check received data
         dut.io.channel.valid.expect(true)
-        dut.io.channel.bits.expect(0xA5)
+        dut.io.channel.bits.expect(0xa5)
 
         // Read the data
         dut.io.channel.ready.poke(true)
@@ -364,7 +366,7 @@ class UARTSpec extends AnyFunSpec with ChiselSim {
         dut.clock.step(1)
 
         dut.io.ack.expect(true)
-        dut.io.dataToMaster.expect(0xAB)
+        dut.io.dataToMaster.expect(0xab)
 
         // After reading, RX valid should be cleared
         dut.io.addr.poke(0x80000000L + STATUS_REG_OFFSET)
