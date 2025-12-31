@@ -41,7 +41,9 @@ class SimpleDivider(xlen: Int) extends AbstractDivider(xlen) {
         // - Overflow (most negative / -1): result = most negative
         when(divisor === 0.U) {
           io.result.bits := (-1).S(xlen.W).asUInt
-        }.elsewhen(dividend === (1.U << (xlen - 1)) && divisor.asSInt === (-1).S) {
+        }.elsewhen(
+          dividend === (1.U << (xlen - 1)) && divisor.asSInt === (-1).S
+        ) {
           // Overflow case: -2^(xlen-1) / -1 = -2^(xlen-1)
           io.result.bits := dividend
         }.otherwise {
@@ -66,7 +68,9 @@ class SimpleDivider(xlen: Int) extends AbstractDivider(xlen) {
         // - Overflow (most negative % -1): result = 0
         when(divisor === 0.U) {
           io.result.bits := dividend
-        }.elsewhen(dividend === (1.U << (xlen - 1)) && divisor.asSInt === (-1).S) {
+        }.elsewhen(
+          dividend === (1.U << (xlen - 1)) && divisor.asSInt === (-1).S
+        ) {
           // Overflow case: -2^(xlen-1) % -1 = 0
           io.result.bits := 0.U
         }.otherwise {

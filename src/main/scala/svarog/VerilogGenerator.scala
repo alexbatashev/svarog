@@ -36,7 +36,8 @@ object VerilogGenerator extends App {
   // Optional arguments
   private val targetDir = cli.getOrElse("target-dir", "target/generated/")
   private val bootloaderPath = cli.get("bootloader")
-  private val simulatorDebugIface = cli.get("simulator-debug-iface").exists(_.toLowerCase == "true")
+  private val simulatorDebugIface =
+    cli.get("simulator-debug-iface").exists(_.toLowerCase == "true")
 
   // Validate bootloader if provided
   private val validatedBootloader = bootloaderPath.flatMap { path =>

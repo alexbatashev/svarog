@@ -382,15 +382,30 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
       DivVector(100, 0, DivOp.REMU, 100),
 
       // Signed overflow case
-      DivVector(BigInt("80000000", 16), BigInt("FFFFFFFF", 16), DivOp.DIV, BigInt("80000000", 16)),
+      DivVector(
+        BigInt("80000000", 16),
+        BigInt("FFFFFFFF", 16),
+        DivOp.DIV,
+        BigInt("80000000", 16)
+      ),
       DivVector(BigInt("80000000", 16), BigInt("FFFFFFFF", 16), DivOp.REM, 0),
 
       // Sign handling
-      DivVector(BigInt("FFFFFFF6", 16), 5, DivOp.DIV, BigInt("FFFFFFFE", 16)), // -10 / 5 = -2
+      DivVector(
+        BigInt("FFFFFFF6", 16),
+        5,
+        DivOp.DIV,
+        BigInt("FFFFFFFE", 16)
+      ), // -10 / 5 = -2
       DivVector(BigInt("FFFFFFF6", 16), 5, DivOp.REM, 0), // -10 % 5 = 0
 
       // Unsigned treats negative bit patterns as large positive
-      DivVector(BigInt("FFFFFFF6", 16), 5, DivOp.DIVU, BigInt("33333331", 16)), // 4294967286 / 5 = 858993457
+      DivVector(
+        BigInt("FFFFFFF6", 16),
+        5,
+        DivOp.DIVU,
+        BigInt("33333331", 16)
+      ), // 4294967286 / 5 = 858993457
       DivVector(BigInt("FFFFFFF6", 16), 5, DivOp.REMU, 1) // 4294967286 % 5 = 1
     )
 

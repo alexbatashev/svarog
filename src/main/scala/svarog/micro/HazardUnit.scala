@@ -45,15 +45,30 @@ class HazardUnit extends Module {
   )
 
   // CSR hazards - stall if decode has a CSR op and there's a pending CSR write to the same address
-  val csrHazardExec = io.decode.valid && io.decode.bits.isCsrOp && io.execCsr.valid &&
-    csrHazardOn(io.execCsr.bits.addr, io.decode.bits.csrAddr, io.execCsr.bits.isWrite)
+  val csrHazardExec =
+    io.decode.valid && io.decode.bits.isCsrOp && io.execCsr.valid &&
+      csrHazardOn(
+        io.execCsr.bits.addr,
+        io.decode.bits.csrAddr,
+        io.execCsr.bits.isWrite
+      )
 
-  val csrHazardMem = io.decode.valid && io.decode.bits.isCsrOp && io.memCsr.valid &&
-    csrHazardOn(io.memCsr.bits.addr, io.decode.bits.csrAddr, io.memCsr.bits.isWrite)
+  val csrHazardMem =
+    io.decode.valid && io.decode.bits.isCsrOp && io.memCsr.valid &&
+      csrHazardOn(
+        io.memCsr.bits.addr,
+        io.decode.bits.csrAddr,
+        io.memCsr.bits.isWrite
+      )
 
-  val csrHazardWb = io.decode.valid && io.decode.bits.isCsrOp && io.wbCsr.valid &&
-    csrHazardOn(io.wbCsr.bits.addr, io.decode.bits.csrAddr, io.wbCsr.bits.isWrite)
+  val csrHazardWb =
+    io.decode.valid && io.decode.bits.isCsrOp && io.wbCsr.valid &&
+      csrHazardOn(
+        io.wbCsr.bits.addr,
+        io.decode.bits.csrAddr,
+        io.wbCsr.bits.isWrite
+      )
 
   io.stall := io.watchpointHit || hazardExec || hazardMem || hazardWb ||
-              csrHazardExec || csrHazardMem || csrHazardWb
+    csrHazardExec || csrHazardMem || csrHazardWb
 }
