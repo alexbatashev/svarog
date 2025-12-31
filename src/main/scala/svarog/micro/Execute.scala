@@ -62,32 +62,12 @@ class Execute(xlen: Integer) extends Module {
   val div = Module(new SimpleDivider(xlen))
   val csr = Module(new CSREx(xlen))
 
-  // Handle multiplier multi-cycle latency
-  val isMulOp = io.uop.valid && (io.uop.bits.opType === OpType.MUL)
-  val mulReady = !isMulOp || mul.io.inp.ready
-  val mulResultValid = !isMulOp || mul.io.result.valid
-
-  // Capture uop signals when multiply operation is accepted
-  val mulUop = RegEnable(io.uop.bits, io.uop.fire && isMulOp)
-  val mulInFlight = RegInit(false.B)
-  when(io.uop.fire && isMulOp) {
-    mulInFlight := true.B
-  }
-  when(mul.io.result.valid && io.res.ready) {
-    mulInFlight := false.B
-  }
-
-  // Output multiply result when in flight and ready, otherwise process current instruction
-  val outputMulResult = mulInFlight && mul.io.result.valid
-
-  // Can dequeue when downstream is ready, not stalled, and no multiply in flight
-  val canDequeue = io.res.ready && !io.stall && !mulInFlight
-
+  // Single-cycle execute: current instruction always completes
+  // Output is valid only when we have an instruction AND (downstream is ready AND not stalled)
+  // This ensures we don't output the same instruction multiple times
+  val canDequeue = io.res.ready && !io.stall
   io.uop.ready := canDequeue
-  io.res.valid := (io.uop.valid && canDequeue) || outputMulResult
-
-  // Select signals from multiply pipeline or current instruction
-  val activeUop = Mux(outputMulResult, mulUop, io.uop.bits)
+  io.res.valid := io.uop.valid && canDequeue
 
   io.hazard.valid := io.uop.valid && io.uop.bits.regWrite && !(io.uop.bits.rd === 0.U)
   io.hazard.bits := io.uop.bits.rd
@@ -100,8 +80,8 @@ class Execute(xlen: Integer) extends Module {
   io.csrHazard.bits.addr := io.uop.bits.csrAddr
   io.csrHazard.bits.isWrite := csr.io.csr.write.en
 
-  io.res.bits.opType := activeUop.opType
-  io.res.bits.pc := activeUop.pc
+  io.res.bits.opType := io.uop.bits.opType
+  io.res.bits.pc := io.uop.bits.pc
 
   // ALU result
   io.res.bits.gprResult := 0.U
@@ -112,17 +92,17 @@ class Execute(xlen: Integer) extends Module {
 
   // Load/store address
   io.res.bits.memAddress := 0.U
-  io.res.bits.memWidth := activeUop.memWidth
-  io.res.bits.memUnsigned := activeUop.memUnsigned
+  io.res.bits.memWidth := io.uop.bits.memWidth
+  io.res.bits.memUnsigned := io.uop.bits.memUnsigned
 
   // Store data
   io.res.bits.storeData := 0.U
 
-  io.res.bits.rd := activeUop.rd
-  io.res.bits.gprWrite := activeUop.regWrite
+  io.res.bits.rd := io.uop.bits.rd
+  io.res.bits.gprWrite := io.uop.bits.regWrite
 
   // CSR defaults
-  io.res.bits.csrAddr := activeUop.csrAddr
+  io.res.bits.csrAddr := io.uop.bits.csrAddr
   io.res.bits.csrWrite := false.B
   io.res.bits.csrResult := 0.U
 
@@ -156,22 +136,22 @@ class Execute(xlen: Integer) extends Module {
 
   io.csrFile.read <> csr.io.csr.read
 
-  when((io.uop.valid && !needFlush) || outputMulResult) {
-    switch(activeUop.opType) {
+  when(io.uop.valid && !needFlush) {
+    switch(io.uop.bits.opType) {
       is(OpType.ALU) {
         io.res.bits.gprResult := alu.io.output
       }
       is(OpType.LUI) {
-        io.res.bits.gprResult := activeUop.imm
+        io.res.bits.gprResult := io.uop.bits.imm
       }
       is(OpType.AUIPC) {
-        io.res.bits.gprResult := activeUop.pc + activeUop.imm
+        io.res.bits.gprResult := io.uop.bits.pc + io.uop.bits.imm
       }
       is(OpType.LOAD) {
-        io.res.bits.memAddress := io.regFile.readData1 + activeUop.imm
+        io.res.bits.memAddress := io.regFile.readData1 + io.uop.bits.imm
       }
       is(OpType.STORE) {
-        io.res.bits.memAddress := io.regFile.readData1 + activeUop.imm
+        io.res.bits.memAddress := io.regFile.readData1 + io.uop.bits.imm
         io.res.bits.storeData := io.regFile.readData2
       }
 
@@ -181,7 +161,7 @@ class Execute(xlen: Integer) extends Module {
         // Compute branch condition based on funct3
         val taken = WireDefault(false.B)
 
-        switch(activeUop.branchFunc) {
+        switch(io.uop.bits.branchFunc) {
           is(BranchOp.BEQ) {
             taken := (rs1 === rs2)
           }
@@ -204,22 +184,22 @@ class Execute(xlen: Integer) extends Module {
 
         io.branch.valid := taken
         needFlush := taken
-        io.branch.bits.targetPC := activeUop.pc + activeUop.imm
+        io.branch.bits.targetPC := io.uop.bits.pc + io.uop.bits.imm
       }
 
       is(OpType.JAL) {
         // Unconditional jump
         io.branch.valid := true.B
-        io.branch.bits.targetPC := activeUop.pc + activeUop.imm
-        io.res.bits.gprResult := activeUop.pc + 4.U // Save return address
+        io.branch.bits.targetPC := io.uop.bits.pc + io.uop.bits.imm
+        io.res.bits.gprResult := io.uop.bits.pc + 4.U // Save return address
       }
 
       is(OpType.JALR) {
         // Indirect jump
         io.branch.valid := true.B
-        val target = io.regFile.readData1 + activeUop.imm
+        val target = io.regFile.readData1 + io.uop.bits.imm
         io.branch.bits.targetPC := Cat(target(31, 1), 0.U(1.W)) // Clear LSB
-        io.res.bits.gprResult := activeUop.pc + 4.U // Save return address
+        io.res.bits.gprResult := io.uop.bits.pc + 4.U // Save return address
       }
 
       is(OpType.MUL) {
