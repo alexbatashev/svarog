@@ -69,7 +69,9 @@ class WishboneSpec extends AnyFunSpec with ChiselSim {
 
         dut.io.mem1.resp.ready.expect(true)
         dut.io.mem1.resp.valid.expect(true)
-        println(s"After write: state1=${dut.io.state1.peek()}, state2=${dut.io.state2.peek()}")
+        println(
+          s"After write: state1=${dut.io.state1.peek()}, state2=${dut.io.state2.peek()}"
+        )
 
         // Cycle 2: Both masters try to read from address 0x4
         dut.io.mem1.req.valid.poke(true)
@@ -82,11 +84,14 @@ class WishboneSpec extends AnyFunSpec with ChiselSim {
         dut.io.mem2.req.bits.write.poke(false)
         dut.io.mem2.req.bits.mask.foreach(_.poke(true))
 
-        println(s"Before step: state1=${dut.io.state1.peek()}, state2=${dut.io.state2.peek()}")
+        println(
+          s"Before step: state1=${dut.io.state1.peek()}, state2=${dut.io.state2.peek()}"
+        )
 
         dut.clock.step(1)
 
-        println(s"After step 1 (cooldown): state1=${dut.io.state1.peek()}, state2=${dut.io.state2.peek()}")
+        println(s"After step 1 (cooldown): state1=${dut.io.state1
+            .peek()}, state2=${dut.io.state2.peek()}")
 
         // Step again - master 1 exits cooldown, master 2 gets granted and responds
         dut.io.mem1.req.valid.poke(true)
@@ -101,7 +106,8 @@ class WishboneSpec extends AnyFunSpec with ChiselSim {
 
         dut.clock.step(1)
 
-        println(s"After step 2 (master 2 active): state1=${dut.io.state1.peek()}, state2=${dut.io.state2.peek()}")
+        println(s"After step 2 (master 2 active): state1=${dut.io.state1
+            .peek()}, state2=${dut.io.state2.peek()}")
 
         // Keep requests valid
         dut.io.mem1.req.valid.poke(true)

@@ -101,7 +101,8 @@ class CpuDebugSpec extends AnyFlatSpec with Matchers with ChiselSim {
           dut.io.debug.get.mem_in.bits.write.poke(true.B)
           dut.io.debug.get.mem_in.bits.instr
             .poke(true.B) // Writing to instruction memory
-          dut.io.debug.get.mem_in.bits.reqWidth.poke(MemWidth.BYTE) // Byte width
+          dut.io.debug.get.mem_in.bits.reqWidth
+            .poke(MemWidth.BYTE) // Byte width
           tick()
           dut.io.debug.get.mem_in.valid.poke(false.B)
 

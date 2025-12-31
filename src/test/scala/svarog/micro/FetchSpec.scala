@@ -70,7 +70,7 @@ class FetchSpec extends AnyFlatSpec with Matchers with ChiselSim {
       BigInt("00500093", 16), // addi x1, x0, 5
       BigInt("00308113", 16), // addi x2, x1, 3
       BigInt("00710193", 16), // addi x3, x2, 7
-      BigInt("00000013", 16)  // nop
+      BigInt("00000013", 16) // nop
     )
 
     simulate(new Fetch(xlen, resetVector = 0)) { dut =>
@@ -94,7 +94,9 @@ class FetchSpec extends AnyFlatSpec with Matchers with ChiselSim {
               dut.io.mem.resp.bits.dataRead(i).poke(bytes(i).U(8.W))
             }
             dut.io.mem.resp.valid.poke(true.B)
-            println(f"  [Cycle $cycle] Memory response: addr=0x$addr%08x, inst=0x${program(instrIdx)}%08x")
+            println(
+              f"  [Cycle $cycle] Memory response: addr=0x$addr%08x, inst=0x${program(instrIdx)}%08x"
+            )
           }
         }
       }
@@ -112,7 +114,9 @@ class FetchSpec extends AnyFlatSpec with Matchers with ChiselSim {
           val pc = dut.io.inst_out.bits.pc.peek().litValue.toInt
           val inst = dut.io.inst_out.bits.word.peek().litValue
           fetchedInstructions = fetchedInstructions :+ (pc, inst)
-          println(f"  [Cycle $cycle] Fetched: PC=0x$pc%08x, inst=0x$inst%08x, ready=$downstreamReady")
+          println(
+            f"  [Cycle $cycle] Fetched: PC=0x$pc%08x, inst=0x$inst%08x, ready=$downstreamReady"
+          )
         }
 
         respondToMemRequest()
@@ -126,19 +130,19 @@ class FetchSpec extends AnyFlatSpec with Matchers with ChiselSim {
       }
 
       // Verify all 4 instructions were fetched
-      fetchedInstructions.length should be (4)
+      fetchedInstructions.length should be(4)
 
       // Verify correct PCs
-      fetchedInstructions(0)._1 should be (0x00)
-      fetchedInstructions(1)._1 should be (0x04)
-      fetchedInstructions(2)._1 should be (0x08)
-      fetchedInstructions(3)._1 should be (0x0c)
+      fetchedInstructions(0)._1 should be(0x00)
+      fetchedInstructions(1)._1 should be(0x04)
+      fetchedInstructions(2)._1 should be(0x08)
+      fetchedInstructions(3)._1 should be(0x0c)
 
       // Verify correct instructions
-      fetchedInstructions(0)._2 should be (program(0))
-      fetchedInstructions(1)._2 should be (program(1))
-      fetchedInstructions(2)._2 should be (program(2))
-      fetchedInstructions(3)._2 should be (program(3))
+      fetchedInstructions(0)._2 should be(program(0))
+      fetchedInstructions(1)._2 should be(program(1))
+      fetchedInstructions(2)._2 should be(program(2))
+      fetchedInstructions(3)._2 should be(program(3))
     }
   }
 }

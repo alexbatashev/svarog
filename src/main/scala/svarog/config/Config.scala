@@ -124,6 +124,7 @@ case class SoC(
 }
 
 object SoC {
+
   /** Create SoC from YAML config and runtime flags */
   def fromYaml(yaml: SoCYaml, simulatorDebug: Boolean): SoC = {
     SoC(
