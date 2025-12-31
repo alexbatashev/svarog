@@ -8,7 +8,7 @@ struct IoConfig {
     #[serde(rename = "type")]
     io_type: String,
     #[serde(default)]
-    #[allow(dead_code)]  // May be used in future for named accessors or debugging
+    #[allow(dead_code)] // May be used in future for named accessors or debugging
     name: String,
 }
 
@@ -40,14 +40,12 @@ impl ModelInfo {
         let enum_variant = to_pascal_case(&name);
 
         // Parse YAML to count UARTs
-        let yaml_content = fs::read_to_string(&path)
-            .context(format!("Failed to read config file: {:?}", path))?;
+        let yaml_content =
+            fs::read_to_string(&path).context(format!("Failed to read config file: {:?}", path))?;
         let config: SocConfig = serde_yaml::from_str(&yaml_content)
             .context(format!("Failed to parse YAML config: {:?}", path))?;
 
-        let num_uarts = config.io.iter()
-            .filter(|io| io.io_type == "uart")
-            .count();
+        let num_uarts = config.io.iter().filter(|io| io.io_type == "uart").count();
 
         Ok(ModelInfo {
             name,
@@ -233,10 +231,7 @@ fn generate_uart_accessors(num_uarts: usize) -> String {
     let mut accessors = String::from("\n        // UART signals (dynamically generated)\n");
 
     for i in 0..num_uarts {
-        accessors.push_str(&format!(
-            "        fn get_uart_{}_txd(&self) -> u8;\n",
-            i
-        ));
+        accessors.push_str(&format!("        fn get_uart_{}_txd(&self) -> u8;\n", i));
         accessors.push_str(&format!(
             "        fn set_uart_{}_rxd(self: Pin<&mut VerilatorModel>, value: u8);\n",
             i
@@ -262,14 +257,8 @@ fn generate_uart_accessors_header(num_uarts: usize) -> String {
             "    // UART {} - GPIO pins {},{}\n",
             i, txd_pin, rxd_pin
         ));
-        header.push_str(&format!(
-            "    uint8_t get_uart_{}_txd() const;\n",
-            i
-        ));
-        header.push_str(&format!(
-            "    void set_uart_{}_rxd(uint8_t value);\n\n",
-            i
-        ));
+        header.push_str(&format!("    uint8_t get_uart_{}_txd() const;\n", i));
+        header.push_str(&format!("    void set_uart_{}_rxd(uint8_t value);\n\n", i));
     }
 
     header
@@ -285,8 +274,8 @@ fn generate_uart_accessors_impl(num_uarts: usize) -> String {
     for i in 0..num_uarts {
         // GPIO pins are assigned sequentially: each UART uses 2 pins (rxd, txd)
         // UART 0 -> pins 0,1; UART 1 -> pins 2,3; etc.
-        let rxd_pin = i * 2;      // First pin is rxd (input to SoC)
-        let txd_pin = i * 2 + 1;  // Second pin is txd (output from SoC)
+        let rxd_pin = i * 2; // First pin is rxd (input to SoC)
+        let txd_pin = i * 2 + 1; // Second pin is txd (output from SoC)
 
         impl_code.push_str(&format!(
             "// UART {} accessors (GPIO pins {}, {})\n",
@@ -298,10 +287,7 @@ fn generate_uart_accessors_impl(num_uarts: usize) -> String {
             "uint8_t VerilatorModel::get_uart_{}_txd() const {{\n",
             i
         ));
-        impl_code.push_str(&format!(
-            "    return model_->io_gpio_{}_output;\n",
-            txd_pin
-        ));
+        impl_code.push_str(&format!("    return model_->io_gpio_{}_output;\n", txd_pin));
         impl_code.push_str("}\n\n");
 
         // RXD: Write input value to the SoC
@@ -309,10 +295,7 @@ fn generate_uart_accessors_impl(num_uarts: usize) -> String {
             "void VerilatorModel::set_uart_{}_rxd(uint8_t value) {{\n",
             i
         ));
-        impl_code.push_str(&format!(
-            "    model_->io_gpio_{}_input = value;\n",
-            rxd_pin
-        ));
+        impl_code.push_str(&format!("    model_->io_gpio_{}_input = value;\n", rxd_pin));
         impl_code.push_str("}\n\n");
     }
 
@@ -425,7 +408,9 @@ pub mod ffi {{
     }}
 }}
 "#,
-        model.name, model.namespace, model.identifier,
+        model.name,
+        model.namespace,
+        model.identifier,
         generate_uart_accessors(model.num_uarts)
     );
 
