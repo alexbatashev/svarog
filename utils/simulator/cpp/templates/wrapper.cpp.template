@@ -242,15 +242,7 @@ uint8_t VerilatorModel::get_debug_halted() const {
     return model_->io_debug_halted;
 }
 
-// UART signals
-uint8_t VerilatorModel::get_uart_0_txd() const {
-    return model_->io_uarts_0_txd;
-}
-
-uint8_t VerilatorModel::get_uart_1_txd() const {
-    return model_->io_uarts_1_txd;
-}
-
+{{UART_ACCESSORS_IMPL}}
 std::unique_ptr<VerilatorModel> create_verilator_model() {
     return std::make_unique<VerilatorModel>();
 }

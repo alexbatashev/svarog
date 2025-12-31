@@ -242,14 +242,25 @@ uint8_t VerilatorModel::get_debug_halted() const {
     return model_->io_debug_halted;
 }
 
-// UART signals
+// UART signals (dynamically generated from config)
+// UART 0 accessors (GPIO pins 0, 1)
 uint8_t VerilatorModel::get_uart_0_txd() const {
-    return model_->io_uarts_0_txd;
+    return model_->io_gpio_1_output;
 }
 
-uint8_t VerilatorModel::get_uart_1_txd() const {
-    return model_->io_uarts_1_txd;
+void VerilatorModel::set_uart_0_rxd(uint8_t value) {
+    model_->io_gpio_0_input = value;
 }
+
+// UART 1 accessors (GPIO pins 2, 3)
+uint8_t VerilatorModel::get_uart_1_txd() const {
+    return model_->io_gpio_3_output;
+}
+
+void VerilatorModel::set_uart_1_rxd(uint8_t value) {
+    model_->io_gpio_2_input = value;
+}
+
 
 std::unique_ptr<VerilatorModel> create_verilator_model() {
     return std::make_unique<VerilatorModel>();
