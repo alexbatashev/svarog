@@ -35,6 +35,7 @@ public:
     void set_reset(uint8_t value);
 
     // Debug hart interface - ID routing
+    // NOTE: These signals only exist if built with --simulator-debug-iface=true
     uint8_t get_debug_hart_in_id_valid() const;
     void set_debug_hart_in_id_valid(uint8_t value);
     uint8_t get_debug_hart_in_id_bits() const;
@@ -104,9 +105,15 @@ public:
     // Debug status
     uint8_t get_debug_halted() const;
 
-    // UART signals
+    // UART signals (dynamically generated from config)
+    // UART 0 - GPIO pins 0,1
     uint8_t get_uart_0_txd() const;
+    void set_uart_0_rxd(uint8_t value);
+
+    // UART 1 - GPIO pins 2,3
     uint8_t get_uart_1_txd() const;
+    void set_uart_1_rxd(uint8_t value);
+
 
 private:
     std::unique_ptr<VerilatedContext> context_;

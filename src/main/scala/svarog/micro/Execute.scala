@@ -10,6 +10,7 @@ import svarog.decoder.BranchOp
 import svarog.decoder.{MicroOp, OpType}
 import svarog.memory.MemWidth
 import svarog.bits.{CSREx, CSRReadIO}
+import svarog.config.ISA
 
 class ExecuteResult(xlen: Int) extends Bundle {
   val opType = Output(OpType())
@@ -35,7 +36,9 @@ class BranchFeedback(xlen: Int) extends Bundle {
   val targetPC = Output(UInt(xlen.W))
 }
 
-class Execute(xlen: Integer) extends Module {
+class Execute(isa: ISA) extends Module {
+  private val xlen = isa.xlen
+
   val io = IO(new Bundle {
     val uop = Flipped(Decoupled(new MicroOp(xlen)))
     val res = Decoupled(new ExecuteResult(xlen))
@@ -58,8 +61,8 @@ class Execute(xlen: Integer) extends Module {
   needFlush := false.B // reset at each cycle
 
   val alu = Module(new ALU(xlen))
-  val mul = Module(new SimpleMultiplier(xlen))
-  val div = Module(new SimpleDivider(xlen))
+  val mul = if (isa.zmmul) Some(Module(new SimpleMultiplier(xlen))) else None
+  val div = if (isa.mult) Some(Module(new SimpleDivider(xlen))) else None
   val csr = Module(new CSREx(xlen))
 
   // Single-cycle execute: current instruction always completes
@@ -118,16 +121,20 @@ class Execute(xlen: Integer) extends Module {
   )
 
   // Multiplier wiring
-  mul.io.inp.bits.op := io.uop.bits.mulOp
-  mul.io.inp.bits.multiplicant := io.regFile.readData1
-  mul.io.inp.bits.multiplier := io.regFile.readData2
-  mul.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.MUL)
+  mul.foreach { mul =>
+    mul.io.inp.bits.op := io.uop.bits.mulOp
+    mul.io.inp.bits.multiplicant := io.regFile.readData1
+    mul.io.inp.bits.multiplier := io.regFile.readData2
+    mul.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.MUL)
+  }
 
   // Divider wiring
-  div.io.inp.bits.op := io.uop.bits.divOp
-  div.io.inp.bits.dividend := io.regFile.readData1
-  div.io.inp.bits.divisor := io.regFile.readData2
-  div.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.DIV)
+  div.foreach { div =>
+    div.io.inp.bits.op := io.uop.bits.divOp
+    div.io.inp.bits.dividend := io.regFile.readData1
+    div.io.inp.bits.divisor := io.regFile.readData2
+    div.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.DIV)
+  }
 
   // CSR wiring
   csr.io.uop.valid := io.uop.valid
@@ -203,13 +210,15 @@ class Execute(xlen: Integer) extends Module {
       }
 
       is(OpType.MUL) {
-        // Multiplication operations
-        io.res.bits.gprResult := mul.io.result.bits
+        mul.foreach { mul =>
+          io.res.bits.gprResult := mul.io.result.bits
+        }
       }
 
       is(OpType.DIV) {
-        // Division/remainder operations
-        io.res.bits.gprResult := div.io.result.bits
+        div.foreach { div =>
+          io.res.bits.gprResult := div.io.result.bits
+        }
       }
 
       is(OpType.CSRRW, OpType.CSRRS, OpType.CSRRC) {

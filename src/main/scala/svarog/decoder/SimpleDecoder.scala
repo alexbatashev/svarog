@@ -60,7 +60,7 @@ class SimpleDecoder(xlen: Int) extends Module {
   io.hazard.bits.csrAddr := io.decoded.bits.csrAddr
   io.hazard.bits.isCsrOp := (
     io.decoded.bits.opType === OpType.CSRRW ||
-    io.decoded.bits.opType === OpType.CSRRS ||
-    io.decoded.bits.opType === OpType.CSRRC
+      io.decoded.bits.opType === OpType.CSRRS ||
+      io.decoded.bits.opType === OpType.CSRRC
   )
 }

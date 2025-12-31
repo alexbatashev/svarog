@@ -61,7 +61,7 @@ class CSRFile(regs: Seq[ControlRegister]) extends Module {
 class CSREx(xlen: Int) extends Module {
   val io = IO(new Bundle {
     val uop = Input(Valid(new MicroOp(xlen)))
-    val rs1Value = Input(UInt(xlen.W))  // Register value from Execute stage
+    val rs1Value = Input(UInt(xlen.W)) // Register value from Execute stage
     val result = Output(Valid(UInt(xlen.W)))
     val csr = Flipped(new CSRIO())
   })

@@ -25,9 +25,11 @@ case class CoreEntry(
   }
 
   def xlen: Int = {
-    micro.map(_.xlen).getOrElse(
-      throw new IllegalStateException("No core type defined")
-    )
+    micro
+      .map(_.xlen)
+      .getOrElse(
+        throw new IllegalStateException("No core type defined")
+      )
   }
 }
 
@@ -42,7 +44,7 @@ case class SvarogConfig(
     soc: SoCConfig,
     cores: List[CoreEntry],
     memory: List[MemoryEntry],
-    bootloader: Option[String] = None,
+    bootloader: Option[String] = None
 ) {
   def validate(): Either[String, Unit] = {
     if (cores.isEmpty) return Left("No cores defined")
@@ -62,7 +64,9 @@ case class SvarogConfig(
     // Micro core type requires exactly one core
     val microCores = cores.filter(_.coreType == "micro")
     if (microCores.nonEmpty && cores.size != 1) {
-      return Left("Micro core type requires exactly one core, got " + cores.size)
+      return Left(
+        "Micro core type requires exactly one core, got " + cores.size
+      )
     }
 
     if (memory.isEmpty) return Left("No memory defined")
@@ -89,7 +93,9 @@ case class SvarogConfig(
           val uartEnd = uart.baseAddr + 0x10
           val otherEnd = other.baseAddr + 0x10
           if (uart.baseAddr < otherEnd && uartEnd > other.baseAddr) {
-            return Left(s"UART '${uart.name}' address range overlaps with '${other.name}'")
+            return Left(
+              s"UART '${uart.name}' address range overlaps with '${other.name}'"
+            )
           }
         }
       }

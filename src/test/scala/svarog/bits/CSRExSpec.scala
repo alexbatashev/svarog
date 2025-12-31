@@ -42,7 +42,9 @@ class CSRExSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.csr.write.addr.expect(0xf11.U)
       dut.io.csr.write.data.expect(0x12345678L.U)
 
-      println(s"CSRRW: result=${dut.io.result.bits.peek().litValue}, write=${dut.io.csr.write.data.peek().litValue}")
+      println(
+        s"CSRRW: result=${dut.io.result.bits.peek().litValue}, write=${dut.io.csr.write.data.peek().litValue}"
+      )
     }
   }
 
@@ -68,7 +70,9 @@ class CSRExSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.csr.write.en.expect(true.B)
       dut.io.csr.write.data.expect(5.U)
 
-      println(s"CSRRWI: result=${dut.io.result.bits.peek().litValue}, write=${dut.io.csr.write.data.peek().litValue}")
+      println(
+        s"CSRRWI: result=${dut.io.result.bits.peek().litValue}, write=${dut.io.csr.write.data.peek().litValue}"
+      )
     }
   }
 
@@ -95,7 +99,9 @@ class CSRExSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.csr.write.en.expect(true.B)
       dut.io.csr.write.data.expect(0x40001100L.U)
 
-      println(f"CSRRS: result=0x${dut.io.result.bits.peek().litValue}%x, write=0x${dut.io.csr.write.data.peek().litValue}%x")
+      println(
+        f"CSRRS: result=0x${dut.io.result.bits.peek().litValue}%x, write=0x${dut.io.csr.write.data.peek().litValue}%x"
+      )
     }
   }
 
@@ -120,7 +126,9 @@ class CSRExSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.result.bits.expect(0x40000100L.U)
       dut.io.csr.write.en.expect(false.B) // No write when rs1=0
 
-      println(f"CSRRS (x0): result=0x${dut.io.result.bits.peek().litValue}%x, write_en=${dut.io.csr.write.en.peek().litToBoolean}")
+      println(f"CSRRS (x0): result=0x${dut.io.result.bits
+          .peek()
+          .litValue}%x, write_en=${dut.io.csr.write.en.peek().litToBoolean}")
     }
   }
 
@@ -147,7 +155,9 @@ class CSRExSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.csr.write.en.expect(true.B)
       dut.io.csr.write.data.expect(0x40000100L.U)
 
-      println(f"CSRRC: result=0x${dut.io.result.bits.peek().litValue}%x, write=0x${dut.io.csr.write.data.peek().litValue}%x")
+      println(
+        f"CSRRC: result=0x${dut.io.result.bits.peek().litValue}%x, write=0x${dut.io.csr.write.data.peek().litValue}%x"
+      )
     }
   }
 
@@ -173,7 +183,9 @@ class CSRExSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.csr.write.en.expect(true.B)
       dut.io.csr.write.data.expect(0x40001100L.U)
 
-      println(f"CSRRCI: result=0x${dut.io.result.bits.peek().litValue}%x, write=0x${dut.io.csr.write.data.peek().litValue}%x")
+      println(f"CSRRCI: result=0x${dut.io.result.bits
+          .peek()
+          .litValue}%x, write=0x${dut.io.csr.write.data.peek().litValue}%x")
     }
   }
 

@@ -1,4 +1,4 @@
-package svarog.debug
+package svarog.bits
 
 import chisel3._
 import chisel3.util._
@@ -176,7 +176,7 @@ object UartWishbone {
   val DATA_REG_OFFSET = 0x00
   val STATUS_REG_OFFSET = 0x04
   val CONTROL_REG_OFFSET = 0x08
-  val BAUD_DIV_OFFSET = 0x0C
+  val BAUD_DIV_OFFSET = 0x0c
 
   val STATUS_TX_READY = 0
   val STATUS_RX_VALID = 1

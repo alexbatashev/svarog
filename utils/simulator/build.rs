@@ -3,6 +3,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use xshell::{Shell, cmd};
 
+#[derive(Debug, Clone, serde::Deserialize)]
+struct IoConfig {
+    #[serde(rename = "type")]
+    io_type: String,
+    #[serde(default)]
+    #[allow(dead_code)] // May be used in future for named accessors or debugging
+    name: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct SocConfig {
+    #[serde(default)]
+    io: Vec<IoConfig>,
+}
+
 #[derive(Debug, Clone)]
 struct ModelInfo {
     name: String,         // "svg-micro"
@@ -10,6 +25,7 @@ struct ModelInfo {
     identifier: String,   // "svg_micro"
     namespace: String,    // "svg_micro"
     enum_variant: String, // "SvgMicro"
+    num_uarts: usize,     // Number of UARTs in config
 }
 
 impl ModelInfo {
@@ -23,12 +39,21 @@ impl ModelInfo {
         let identifier = name.replace('-', "_");
         let enum_variant = to_pascal_case(&name);
 
+        // Parse YAML to count UARTs
+        let yaml_content =
+            fs::read_to_string(&path).context(format!("Failed to read config file: {:?}", path))?;
+        let config: SocConfig = serde_yaml::from_str(&yaml_content)
+            .context(format!("Failed to parse YAML config: {:?}", path))?;
+
+        let num_uarts = config.io.iter().filter(|io| io.io_type == "uart").count();
+
         Ok(ModelInfo {
             name,
             yaml_path: path,
             namespace: identifier.clone(),
             identifier,
             enum_variant,
+            num_uarts,
         })
     }
 }
@@ -73,7 +98,7 @@ fn generate_verilog(sh: &Shell, workspace_root: &Path, model: &ModelInfo) -> Res
     sh.change_dir(workspace_root);
     cmd!(
         sh,
-        "./mill -i svarog.runMain svarog.VerilogGenerator --target-dir={output_dir} --config={config_path}"
+        "./mill -i svarog.runMain svarog.VerilogGenerator --simulator-debug-iface=true --target-dir={output_dir} --config={config_path}"
     )
     .run()
     .context(format!("Failed to generate Verilog for model: {}", model.name))?;
@@ -138,16 +163,22 @@ fn generate_cpp_wrapper(workspace_root: &Path, model: &ModelInfo) -> Result<()> 
     ));
     fs::create_dir_all(&output_dir)?;
 
+    // Generate UART accessors based on config
+    let uart_header = generate_uart_accessors_header(model.num_uarts);
+    let uart_impl = generate_uart_accessors_impl(model.num_uarts);
+
     // Generate header
     let header = template_h
         .replace("{{CONFIG_NAMESPACE}}", &model.namespace)
-        .replace("{{CONFIG_ID}}", &model.identifier);
+        .replace("{{CONFIG_ID}}", &model.identifier)
+        .replace("{{UART_ACCESSORS_HEADER}}", &uart_header);
     fs::write(output_dir.join("wrapper.h"), header)?;
 
     // Generate implementation
     let implementation = template_cpp
         .replace("{{CONFIG_NAMESPACE}}", &model.namespace)
-        .replace("{{CONFIG_ID}}", &model.identifier);
+        .replace("{{CONFIG_ID}}", &model.identifier)
+        .replace("{{UART_ACCESSORS_IMPL}}", &uart_impl);
     fs::write(output_dir.join("wrapper.cpp"), implementation)?;
 
     Ok(())
@@ -190,6 +221,85 @@ fn link_verilator_libs(workspace_root: &Path, model: &ModelInfo) -> Result<()> {
     println!("cargo:rustc-link-lib=static=verilated");
 
     Ok(())
+}
+
+fn generate_uart_accessors(num_uarts: usize) -> String {
+    if num_uarts == 0 {
+        return String::new();
+    }
+
+    let mut accessors = String::from("\n        // UART signals (dynamically generated)\n");
+
+    for i in 0..num_uarts {
+        accessors.push_str(&format!("        fn get_uart_{}_txd(&self) -> u8;\n", i));
+        accessors.push_str(&format!(
+            "        fn set_uart_{}_rxd(self: Pin<&mut VerilatorModel>, value: u8);\n",
+            i
+        ));
+    }
+
+    accessors
+}
+
+fn generate_uart_accessors_header(num_uarts: usize) -> String {
+    if num_uarts == 0 {
+        return String::from("    // No UART interfaces in this config\n");
+    }
+
+    let mut header = String::from("    // UART signals (dynamically generated from config)\n");
+
+    for i in 0..num_uarts {
+        // GPIO pins are assigned sequentially: UART 0 uses pins 0,1; UART 1 uses pins 2,3; etc.
+        let txd_pin = i * 2;
+        let rxd_pin = i * 2 + 1;
+
+        header.push_str(&format!(
+            "    // UART {} - GPIO pins {},{}\n",
+            i, txd_pin, rxd_pin
+        ));
+        header.push_str(&format!("    uint8_t get_uart_{}_txd() const;\n", i));
+        header.push_str(&format!("    void set_uart_{}_rxd(uint8_t value);\n\n", i));
+    }
+
+    header
+}
+
+fn generate_uart_accessors_impl(num_uarts: usize) -> String {
+    if num_uarts == 0 {
+        return String::from("// No UART interfaces in this config\n\n");
+    }
+
+    let mut impl_code = String::from("// UART signals (dynamically generated from config)\n");
+
+    for i in 0..num_uarts {
+        // GPIO pins are assigned sequentially: each UART uses 2 pins (rxd, txd)
+        // UART 0 -> pins 0,1; UART 1 -> pins 2,3; etc.
+        let rxd_pin = i * 2; // First pin is rxd (input to SoC)
+        let txd_pin = i * 2 + 1; // Second pin is txd (output from SoC)
+
+        impl_code.push_str(&format!(
+            "// UART {} accessors (GPIO pins {}, {})\n",
+            i, rxd_pin, txd_pin
+        ));
+
+        // TXD: Read the output value from the SoC
+        impl_code.push_str(&format!(
+            "uint8_t VerilatorModel::get_uart_{}_txd() const {{\n",
+            i
+        ));
+        impl_code.push_str(&format!("    return model_->io_gpio_{}_output;\n", txd_pin));
+        impl_code.push_str("}\n\n");
+
+        // RXD: Write input value to the SoC
+        impl_code.push_str(&format!(
+            "void VerilatorModel::set_uart_{}_rxd(uint8_t value) {{\n",
+            i
+        ));
+        impl_code.push_str(&format!("    model_->io_gpio_{}_input = value;\n", rxd_pin));
+        impl_code.push_str("}\n\n");
+    }
+
+    impl_code
 }
 
 fn generate_bridge_module(workspace_root: &Path, model: &ModelInfo) -> Result<()> {
@@ -294,14 +404,14 @@ pub mod ffi {{
 
         // Debug status
         fn get_debug_halted(&self) -> u8;
-
-        // UART signals
-        fn get_uart_0_txd(&self) -> u8;
-        fn get_uart_1_txd(&self) -> u8;
+{}
     }}
 }}
 "#,
-        model.name, model.namespace, model.identifier
+        model.name,
+        model.namespace,
+        model.identifier,
+        generate_uart_accessors(model.num_uarts)
     );
 
     fs::write(

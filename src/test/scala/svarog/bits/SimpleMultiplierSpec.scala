@@ -108,7 +108,7 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       MulVector(
         multiplicant = BigInt("FFFFFFFF", 16), // -1 in signed
-        multiplier = BigInt("FFFFFFFF", 16),   // -1 in signed
+        multiplier = BigInt("FFFFFFFF", 16), // -1 in signed
         op = MulOp.MULH,
         expected = 0 // (-1) × (-1) = 1, upper 32 bits = 0
       ),
@@ -116,7 +116,8 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
         multiplicant = BigInt("80000000", 16), // -2147483648 (most negative)
         multiplier = 2,
         op = MulOp.MULH,
-        expected = BigInt("FFFFFFFF", 16) // -1 (sign extension of negative result)
+        expected =
+          BigInt("FFFFFFFF", 16) // -1 (sign extension of negative result)
       ),
       MulVector(
         multiplicant = BigInt("7FFFFFFF", 16), // 2147483647 (most positive)
@@ -126,15 +127,16 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       MulVector(
         multiplicant = BigInt("80000000", 16), // -2147483648
-        multiplier = BigInt("80000000", 16),   // -2147483648
+        multiplier = BigInt("80000000", 16), // -2147483648
         op = MulOp.MULH,
         expected = BigInt("40000000", 16) // Positive overflow result
       ),
       MulVector(
         multiplicant = BigInt("FFFFFFFF", 16), // -1
-        multiplier = BigInt("7FFFFFFF", 16),   // 2147483647
+        multiplier = BigInt("7FFFFFFF", 16), // 2147483647
         op = MulOp.MULH,
-        expected = BigInt("FFFFFFFF", 16) // Negative result, all 1s in upper bits
+        expected =
+          BigInt("FFFFFFFF", 16) // Negative result, all 1s in upper bits
       )
     )
 
@@ -159,7 +161,7 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       MulVector(
         multiplicant = BigInt("FFFFFFFF", 16), // -1 in signed
-        multiplier = BigInt("FFFFFFFF", 16),   // 4294967295 in unsigned
+        multiplier = BigInt("FFFFFFFF", 16), // 4294967295 in unsigned
         op = MulOp.MULHSU,
         expected = BigInt("FFFFFFFF", 16) // Negative result
       ),
@@ -167,17 +169,18 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
         multiplicant = BigInt("80000000", 16), // -2147483648
         multiplier = 2,
         op = MulOp.MULHSU,
-        expected = BigInt("FFFFFFFF", 16) // Negative result (sign bit propagates)
+        expected =
+          BigInt("FFFFFFFF", 16) // Negative result (sign bit propagates)
       ),
       MulVector(
         multiplicant = BigInt("7FFFFFFF", 16), // 2147483647 (positive)
-        multiplier = BigInt("FFFFFFFF", 16),   // 4294967295 (unsigned)
+        multiplier = BigInt("FFFFFFFF", 16), // 4294967295 (unsigned)
         op = MulOp.MULHSU,
         expected = BigInt("7FFFFFFE", 16) // Positive result
       ),
       MulVector(
         multiplicant = BigInt("FFFFFFFF", 16), // -1
-        multiplier = BigInt("80000000", 16),   // 2147483648 (unsigned)
+        multiplier = BigInt("80000000", 16), // 2147483648 (unsigned)
         op = MulOp.MULHSU,
         expected = BigInt("FFFFFFFF", 16) // Negative result
       )
@@ -314,13 +317,28 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       MulVector(1, BigInt("12345678", 16), MulOp.MUL, BigInt("12345678", 16)),
 
       // Negative × negative = positive (MULH)
-      MulVector(BigInt("FFFFFFFE", 16), BigInt("FFFFFFFE", 16), MulOp.MULH, 0), // (-2) × (-2) = 4
+      MulVector(
+        BigInt("FFFFFFFE", 16),
+        BigInt("FFFFFFFE", 16),
+        MulOp.MULH,
+        0
+      ), // (-2) × (-2) = 4
 
       // Large unsigned multiplication
-      MulVector(BigInt("FFFFFFFF", 16), 2, MulOp.MULHU, 1), // (2^32-1) × 2 upper bits
+      MulVector(
+        BigInt("FFFFFFFF", 16),
+        2,
+        MulOp.MULHU,
+        1
+      ), // (2^32-1) × 2 upper bits
 
       // Sign bit handling in MULHSU
-      MulVector(BigInt("80000000", 16), 1, MulOp.MULHSU, BigInt("FFFFFFFF", 16)) // -2^31 × 1 (unsigned)
+      MulVector(
+        BigInt("80000000", 16),
+        1,
+        MulOp.MULHSU,
+        BigInt("FFFFFFFF", 16)
+      ) // -2^31 × 1 (unsigned)
     )
 
     simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
