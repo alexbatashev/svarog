@@ -52,7 +52,7 @@ class Cpu(
   // Stages
   val fetch = Module(new Fetch(config.isa.xlen, startAddress))
   val decode = Module(new SimpleDecoder(config.isa.xlen))
-  val execute = Module(new Execute(config.isa.xlen))
+  val execute = Module(new Execute(config.isa))
   val memory = Module(new Memory(config.isa.xlen))
   val writeback = Module(new Writeback(config.isa.xlen))
 
