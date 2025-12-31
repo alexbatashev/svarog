@@ -63,8 +63,8 @@ jobs:
         with:
           components: rustfmt
       - name: scalafmt Check
-        uses: openlawteam/scalafmt-ci@v2
+        uses: jrouly/scalafmt-native-action@v4
         with:
-          args: "--exclude=.metals --list"
+          arguments: "--exclude=.metals --list"
       - name: Rustfmt Check
         uses: actions-rust-lang/rustfmt@v1
