@@ -22,7 +22,7 @@ class ChipMemoryDebugIO(xlen: Int) extends Bundle {
 }
 
 class ChipDebugSimulatorIO(numHarts: Int, xlen: Int) extends Bundle {
-  val hart_in = Flipped(new ChipHartDebugIO(numHarts))
+  val hart_in = Flipped(new ChipHartDebugIO(xlen))
   val mem_in =
     Flipped(Decoupled(new ChipMemoryDebugIO(xlen)))
   val mem_res = Decoupled(UInt(xlen.W))
