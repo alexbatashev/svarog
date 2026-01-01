@@ -84,11 +84,12 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
         dut.io.inp.bits.op.poke(vector.op)
         dut.io.inp.valid.poke(true.B)
 
-        dut.clock.step(1)
+        dut.clock.step(dut.latency)
 
         dut.io.result.valid.expect(true.B)
         dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
+
+        dut.clock.step(1)
       }
     }
   }
@@ -151,11 +152,12 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
         dut.io.inp.bits.op.poke(vector.op)
         dut.io.inp.valid.poke(true.B)
 
-        dut.clock.step(1)
+        dut.clock.step(dut.latency)
 
         dut.io.result.valid.expect(true.B)
         dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
+
+        dut.clock.step(1)
       }
     }
   }
@@ -227,11 +229,12 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
         dut.io.inp.bits.op.poke(vector.op)
         dut.io.inp.valid.poke(true.B)
 
-        dut.clock.step(1)
+        dut.clock.step(dut.latency)
 
         dut.io.result.valid.expect(true.B)
         dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
+
+        dut.clock.step(1)
       }
     }
   }
@@ -300,11 +303,12 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
         dut.io.inp.bits.op.poke(vector.op)
         dut.io.inp.valid.poke(true.B)
 
-        dut.clock.step(1)
+        dut.clock.step(dut.latency)
 
         dut.io.result.valid.expect(true.B)
         dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
+
+        dut.clock.step(1)
       }
     }
   }
@@ -324,7 +328,7 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.inp.bits.divisor.poke(20.U)
       dut.io.inp.bits.op.poke(DivOp.DIV)
       dut.io.inp.valid.poke(true.B)
-      dut.clock.step(1)
+      dut.clock.step(dut.latency)
       dut.io.result.valid.expect(true.B)
       dut.io.result.bits.expect(5.U)
 
@@ -332,30 +336,6 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.inp.valid.poke(false.B)
       dut.clock.step(1)
       dut.io.result.valid.expect(false.B)
-    }
-  }
-
-  it should "process operations combinationally (single cycle)" in {
-    simulate(new SimpleDivider(xlen)) { dut =>
-      // Test that result is available in the same cycle
-      dut.io.inp.bits.dividend.poke(42.U)
-      dut.io.inp.bits.divisor.poke(7.U)
-      dut.io.inp.bits.op.poke(DivOp.DIV)
-      dut.io.inp.valid.poke(true.B)
-
-      // Don't step clock - check combinational result
-      dut.io.result.valid.expect(true.B)
-      dut.io.result.bits.expect(6.U)
-
-      dut.clock.step(1)
-
-      // Change input immediately and check new result
-      dut.io.inp.bits.dividend.poke(100.U)
-      dut.io.inp.bits.divisor.poke(3.U)
-      dut.io.inp.bits.op.poke(DivOp.REM)
-
-      dut.io.result.valid.expect(true.B)
-      dut.io.result.bits.expect(1.U)
     }
   }
 
@@ -416,10 +396,12 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
         dut.io.inp.bits.op.poke(vector.op)
         dut.io.inp.valid.poke(true.B)
 
-        dut.clock.step(1)
+        dut.clock.step(dut.latency)
 
         dut.io.result.valid.expect(true.B)
         dut.io.result.bits.expect(vector.expected.U)
+
+        dut.clock.step(1)
       }
     }
   }

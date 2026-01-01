@@ -22,7 +22,7 @@ abstract class AbstractMultiplier(xlen: Int) extends Module {
   })
 }
 
-class SimpleMultiplier(xlen: Int, latency: Int = 3)
+class SimpleMultiplier(xlen: Int, val latency: Int = 3)
     extends AbstractMultiplier(xlen) {
   require(latency >= 1, "Latency must be at least 1")
 
