@@ -28,23 +28,26 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
     value & 0xffffffffL
   }
 
-  private def runSimulation(dut: AbstractMultiplier, vectors: Seq[MulVector]): Unit = {
-      dut.io.inp.valid.poke(false.B)
+  private def runSimulation(
+      dut: AbstractMultiplier,
+      vectors: Seq[MulVector]
+  ): Unit = {
+    dut.io.inp.valid.poke(false.B)
+    dut.clock.step(1)
+
+    for (vector <- vectors) {
+      dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
+      dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
+      dut.io.inp.bits.op.poke(vector.op)
+      dut.io.inp.valid.poke(true.B)
+
+      dut.clock.step(4)
+
+      dut.io.result.valid.expect(true.B)
+      dut.io.result.bits.expect(vector.expected.U)
+
       dut.clock.step(1)
-
-      for (vector <- vectors) {
-        dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
-        dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
-        dut.io.inp.bits.op.poke(vector.op)
-        dut.io.inp.valid.poke(true.B)
-
-        dut.clock.step(4)
-
-        dut.io.result.valid.expect(true.B)
-        dut.io.result.bits.expect(vector.expected.U)
-
-        dut.clock.step(1)
-      }
+    }
   }
 
   it should "compute MUL (lower 32 bits) correctly" in {
