@@ -3,7 +3,7 @@
 ## Verilog generation
 
 ```sh
-./mill svarog.runMain svarog.VerilogGenerator --target-dir=target/generated/ --config=configs/svg-micro.yaml --bootloader=$PWD/examples/direct/hello_world_uart.rv32.hex
+./mill svarog.runMain svarog.VerilogGenerator --target-dir=target/generated/ --config=configs/svg-micro.yaml --bootloader=$PWD/target/examples/direct/rv32_bootrom/hello_world_uart.hex
 ```
 
 ## Vivado setup

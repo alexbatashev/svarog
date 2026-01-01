@@ -133,8 +133,8 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
         io.strobe := true.B
         io.writeEnable := mem.req.bits.write
         io.addr := mem.req.bits.address
-        io.dataToSlave := Cat(mem.req.bits.dataWrite)
-        io.sel := mem.req.bits.mask.reverse
+        io.dataToSlave := mem.req.bits.dataWrite.asUInt
+        io.sel := mem.req.bits.mask
       }
     }
     is(sRespWait) {
@@ -142,8 +142,8 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
       io.strobe := true.B
       io.writeEnable := savedReq.write
       io.addr := savedReq.address
-      io.dataToSlave := Cat(savedReq.dataWrite)
-      io.sel := savedReq.mask.reverse
+      io.dataToSlave := savedReq.dataWrite.asUInt
+      io.sel := savedReq.mask
       when(io.ack) {
         when(mem.resp.ready) {
           if (registered) {
@@ -167,8 +167,8 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
       io.strobe := true.B
       io.writeEnable := savedReq.write
       io.addr := savedReq.address
-      io.dataToSlave := Cat(savedReq.dataWrite)
-      io.sel := savedReq.mask.reverse
+      io.dataToSlave := savedReq.dataWrite.asUInt
+      io.sel := savedReq.mask
 
       when(mem.resp.ready) {
         if (registered) {

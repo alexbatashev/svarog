@@ -138,7 +138,7 @@ class TCMWishboneAdapter(
 
         io.ack := true.B
         io.error := !tcm.io.ports(0).resp.bits.valid
-        io.dataToMaster := Cat(tcm.io.ports(0).resp.bits.dataRead)
+        io.dataToMaster := tcm.io.ports(0).resp.bits.dataRead.asUInt
       }
     }
   }

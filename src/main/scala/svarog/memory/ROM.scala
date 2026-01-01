@@ -125,7 +125,7 @@ class ROMWishboneAdapter(
 
         io.ack := true.B
         io.error := !rom.io.resp.bits.valid
-        io.dataToMaster := Cat(rom.io.resp.bits.dataRead)
+        io.dataToMaster := rom.io.resp.bits.dataRead.asUInt
       }
     }
   }
