@@ -28,6 +28,28 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
     value & 0xffffffffL
   }
 
+  private def runSimulation(
+      dut: AbstractMultiplier,
+      vectors: Seq[MulVector]
+  ): Unit = {
+    dut.io.inp.valid.poke(false.B)
+    dut.clock.step(1)
+
+    for (vector <- vectors) {
+      dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
+      dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
+      dut.io.inp.bits.op.poke(vector.op)
+      dut.io.inp.valid.poke(true.B)
+
+      dut.clock.step(4)
+
+      dut.io.result.valid.expect(true.B)
+      dut.io.result.bits.expect(vector.expected.U)
+
+      dut.clock.step(1)
+    }
+  }
+
   it should "compute MUL (lower 32 bits) correctly" in {
     val vectors = Seq(
       MulVector(
@@ -68,22 +90,8 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       )
     )
 
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      dut.io.inp.valid.poke(false.B)
-      dut.clock.step(1)
-
-      for (vector <- vectors) {
-        dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
-        dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
-        dut.io.inp.bits.op.poke(vector.op)
-        dut.io.inp.valid.poke(true.B)
-
-        dut.clock.step(1)
-
-        dut.io.result.valid.expect(true.B)
-        dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
-      }
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      runSimulation(dut, vectors)
     }
   }
 
@@ -135,22 +143,8 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       )
     )
 
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      dut.io.inp.valid.poke(false.B)
-      dut.clock.step(1)
-
-      for (vector <- vectors) {
-        dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
-        dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
-        dut.io.inp.bits.op.poke(vector.op)
-        dut.io.inp.valid.poke(true.B)
-
-        dut.clock.step(1)
-
-        dut.io.result.valid.expect(true.B)
-        dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
-      }
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      runSimulation(dut, vectors)
     }
   }
 
@@ -195,22 +189,8 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       )
     )
 
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      dut.io.inp.valid.poke(false.B)
-      dut.clock.step(1)
-
-      for (vector <- vectors) {
-        dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
-        dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
-        dut.io.inp.bits.op.poke(vector.op)
-        dut.io.inp.valid.poke(true.B)
-
-        dut.clock.step(1)
-
-        dut.io.result.valid.expect(true.B)
-        dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
-      }
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      runSimulation(dut, vectors)
     }
   }
 
@@ -254,28 +234,14 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       )
     )
 
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      dut.io.inp.valid.poke(false.B)
-      dut.clock.step(1)
-
-      for (vector <- vectors) {
-        dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
-        dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
-        dut.io.inp.bits.op.poke(vector.op)
-        dut.io.inp.valid.poke(true.B)
-
-        dut.clock.step(1)
-
-        dut.io.result.valid.expect(true.B)
-        dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
-      }
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      runSimulation(dut, vectors)
     }
   }
 
   it should "handle valid/ready handshake correctly" in {
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      // Module should always be ready
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      // Module should be ready initially (not busy)
       dut.io.inp.ready.expect(true.B)
 
       // When input is not valid, output should not be valid
@@ -283,41 +249,60 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.clock.step(1)
       dut.io.result.valid.expect(false.B)
 
-      // When input is valid, output should be valid
+      // When input is valid, initiate transaction
       dut.io.inp.bits.multiplicant.poke(10.U)
       dut.io.inp.bits.multiplier.poke(20.U)
       dut.io.inp.bits.op.poke(MulOp.MUL)
       dut.io.inp.valid.poke(true.B)
       dut.clock.step(1)
+
+      // After accepting, multiplier is busy (blocking design)
+      dut.io.inp.ready.expect(false.B)
+      dut.io.inp.valid.poke(false.B)
+
+      // Wait for result (at cycle latency-1, result becomes valid)
+      dut.clock.step(2)
+      dut.io.result.valid.expect(false.B) // Not yet
+      dut.clock.step(1) // One more cycle to reach latency-1
       dut.io.result.valid.expect(true.B)
       dut.io.result.bits.expect(200.U)
 
-      // Back to invalid
-      dut.io.inp.valid.poke(false.B)
+      // After counter wraps, ready again on next cycle
       dut.clock.step(1)
+      dut.io.inp.ready.expect(true.B)
       dut.io.result.valid.expect(false.B)
     }
   }
 
-  it should "process operations combinationally (single cycle)" in {
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      // Test that result is available in the same cycle
+  it should "process pipelined operations with correct latency" in {
+    simulate(new SimpleMultiplier(xlen, latency = 3)) { dut =>
+      // Test that result is available after the correct latency
       dut.io.inp.bits.multiplicant.poke(42.U)
       dut.io.inp.bits.multiplier.poke(13.U)
       dut.io.inp.bits.op.poke(MulOp.MUL)
       dut.io.inp.valid.poke(true.B)
 
-      // Don't step clock - check combinational result
+      // Result should not be valid immediately
+      dut.io.result.valid.expect(false.B)
+
+      dut.clock.step(1)
+      dut.io.inp.valid.poke(false.B)
+
+      // After 2 more cycles (total latency = 3), result should be valid
+      dut.clock.step(2)
       dut.io.result.valid.expect(true.B)
       dut.io.result.bits.expect(546.U)
 
+      // Test that we can accept another operation after busy clears
       dut.clock.step(1)
+      dut.io.inp.ready.expect(true.B)
 
-      // Change input immediately and check new result
       dut.io.inp.bits.multiplicant.poke(100.U)
       dut.io.inp.bits.multiplier.poke(100.U)
       dut.io.inp.bits.op.poke(MulOp.MUL)
+      dut.io.inp.valid.poke(true.B)
 
+      dut.clock.step(3)
       dut.io.result.valid.expect(true.B)
       dut.io.result.bits.expect(10000.U)
     }
@@ -359,18 +344,8 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ) // -2^31 × 1 (unsigned)
     )
 
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      for (vector <- vectors) {
-        dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
-        dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
-        dut.io.inp.bits.op.poke(vector.op)
-        dut.io.inp.valid.poke(true.B)
-
-        dut.clock.step(1)
-
-        dut.io.result.valid.expect(true.B)
-        dut.io.result.bits.expect(vector.expected.U)
-      }
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      runSimulation(dut, vectors)
     }
   }
 }
