@@ -245,17 +245,6 @@ class Execute(isa: ISA) extends Module {
         io.res.bits.gprResult := activeUop.pc + 4.U // Save return address
       }
 
-<<<<<<< HEAD
-      // is(OpType.MUL) {
-      //   // Multiplication operations
-      //   io.res.bits.gprResult := mul.io.result.bits
-      // }
-
-      // is(OpType.DIV) {
-      //   // Division/remainder operations
-      //   io.res.bits.gprResult := div.io.result.bits
-      // }
-=======
       is(OpType.MUL) {
         mul.foreach { mul =>
           io.res.bits.gprResult := mul.io.result.bits
@@ -267,7 +256,6 @@ class Execute(isa: ISA) extends Module {
           io.res.bits.gprResult := div.io.result.bits
         }
       }
->>>>>>> main
 
       is(OpType.CSRRW, OpType.CSRRS, OpType.CSRRC) {
         // CSR operations - result goes to GPR, write signal propagates to writeback
