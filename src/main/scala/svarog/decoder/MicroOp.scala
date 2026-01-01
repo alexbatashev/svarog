@@ -25,7 +25,7 @@ object OpType extends ChiselEnum {
   val SYSTEM = Value
 }
 
-class MicroOp(xlen: Int) extends Bundle {
+class MicroOp(val xlen: Int) extends Bundle {
   val opType = Output(OpType())
   val aluOp = Output(ALUOp())
   val mulOp = Output(MulOp())

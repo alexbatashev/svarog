@@ -7,14 +7,15 @@ import org.scalatest.matchers.should.Matchers
 import svarog.decoder.{OpType, MicroOp}
 import svarog.bits.ALUOp
 import svarog.memory.MemWidth
+import svarog.config.ISA
 
 class ExecuteSpec extends AnyFlatSpec with Matchers with ChiselSim {
   behavior of "Execute"
 
-  private val xlen = 32
+  private val isa = ISA(xlen = 32, mult = true, zmmul = true, zicsr = true)
 
   it should "compute ADDI correctly" in {
-    simulate(new Execute(xlen)) { dut =>
+    simulate(new Execute(isa)) { dut =>
       // Setup: addi x10, x1, 5
       // Assume x1 = 3, so result should be 8
 
@@ -24,7 +25,7 @@ class ExecuteSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.uop.bits.rs1.poke(1.U)
       dut.io.uop.bits.rs2.poke(0.U)
       dut.io.uop.bits.rd.poke(10.U)
-      dut.io.uop.bits.imm.poke(5.S(xlen.W).asUInt)
+      dut.io.uop.bits.imm.poke(5.S(isa.xlen.W).asUInt)
       dut.io.uop.bits.hasImm.poke(true.B)
       dut.io.uop.bits.regWrite.poke(true.B)
       dut.io.uop.bits.pc.poke(0x80000000L.U)
@@ -44,12 +45,14 @@ class ExecuteSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.res.bits.rd.expect(10.U)
       dut.io.res.bits.gprWrite.expect(true.B)
 
-      println(s"ADDI test: result = ${dut.io.res.bits.gprResult.peek().litValue}")
+      println(
+        s"ADDI test: result = ${dut.io.res.bits.gprResult.peek().litValue}"
+      )
     }
   }
 
   it should "compute ADD correctly" in {
-    simulate(new Execute(xlen)) { dut =>
+    simulate(new Execute(isa)) { dut =>
       // Setup: add x10, x1, x2
       // Assume x1 = 1, x2 = 2, so result should be 3
 
@@ -59,7 +62,7 @@ class ExecuteSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.uop.bits.rs1.poke(1.U)
       dut.io.uop.bits.rs2.poke(2.U)
       dut.io.uop.bits.rd.poke(10.U)
-      dut.io.uop.bits.imm.poke(0.S(xlen.W).asUInt)
+      dut.io.uop.bits.imm.poke(0.S(isa.xlen.W).asUInt)
       dut.io.uop.bits.hasImm.poke(false.B)
       dut.io.uop.bits.regWrite.poke(true.B)
       dut.io.uop.bits.pc.poke(0x80000000L.U)
@@ -79,12 +82,14 @@ class ExecuteSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.res.bits.rd.expect(10.U)
       dut.io.res.bits.gprWrite.expect(true.B)
 
-      println(s"ADD test: result = ${dut.io.res.bits.gprResult.peek().litValue}")
+      println(
+        s"ADD test: result = ${dut.io.res.bits.gprResult.peek().litValue}"
+      )
     }
   }
 
   it should "handle stall correctly - instruction should complete" in {
-    simulate(new Execute(xlen)) { dut =>
+    simulate(new Execute(isa)) { dut =>
       // Test that when stalled, the current instruction still completes
 
       dut.io.uop.valid.poke(true.B)
@@ -111,7 +116,9 @@ class ExecuteSpec extends AnyFlatSpec with Matchers with ChiselSim {
       // Ready signal to upstream should be false
       dut.io.uop.ready.expect(false.B)
 
-      println(s"Stall test: result = ${dut.io.res.bits.gprResult.peek().litValue}, ready = ${dut.io.uop.ready.peek().litValue}")
+      println(s"Stall test: result = ${dut.io.res.bits.gprResult
+          .peek()
+          .litValue}, ready = ${dut.io.uop.ready.peek().litValue}")
     }
   }
 }

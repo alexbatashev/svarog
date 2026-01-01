@@ -8,7 +8,7 @@ import svarog.SvarogConfig
 // Tightly Coupled Memory (TCM)
 class TCM(
     xlen: Int,
-    memSizeBytes: Int,
+    memSizeBytes: Long,
     baseAddr: Long = 0,
     numPorts: Int = 2
 ) extends Module {
@@ -64,7 +64,7 @@ object TCMWishboneAdapter {
 /// Wishbone adapter for TCM
 class TCMWishboneAdapter(
     xlen: Int,
-    memSizeBytes: Int,
+    memSizeBytes: Long,
     baseAddr: Long = 0
 ) extends Module
     with WishboneSlave {

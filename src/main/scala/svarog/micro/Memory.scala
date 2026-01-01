@@ -86,7 +86,8 @@ class Memory(xlen: Int) extends Module {
   }
 
   def sendRequest(store: Boolean) = {
-    val (address, offset) = MemoryUtils.alignAddress(io.ex.bits.memAddress, wordSize)
+    val (address, offset) =
+      MemoryUtils.alignAddress(io.ex.bits.memAddress, wordSize)
     mem.req.valid := true.B
     mem.req.bits.address := address
     mem.req.bits.write := store.B
@@ -97,7 +98,11 @@ class Memory(xlen: Int) extends Module {
     }
 
     mem.req.bits.dataWrite := MemoryUtils.shiftWriteData(data, offset, wordSize)
-    mem.req.bits.mask := MemoryUtils.generateShiftedMask(io.ex.bits.memWidth, offset, xlen)
+    mem.req.bits.mask := MemoryUtils.generateShiftedMask(
+      io.ex.bits.memWidth,
+      offset,
+      xlen
+    )
   }
 
   def extractData(
@@ -181,6 +186,11 @@ class Memory(xlen: Int) extends Module {
     io.res.bits.gprWrite := !pendingInst.isStore
 
     val (_, offset) = MemoryUtils.alignAddress(pendingInst.storeAddr, wordSize)
-    io.res.bits.gprData := extractData(mem.resp.bits.dataRead, pendingInst.opWidth, pendingInst.unsigned, offset)
+    io.res.bits.gprData := extractData(
+      mem.resp.bits.dataRead,
+      pendingInst.opWidth,
+      pendingInst.unsigned,
+      offset
+    )
   }
 }

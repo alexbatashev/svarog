@@ -32,8 +32,11 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   val respPC = Reg(UInt(xlen.W))
 
   val pc_plus_4 = pc_reg + 4.U
-  val next_pc = Mux(io.debugSetPC.valid, io.debugSetPC.bits,
-                Mux(io.branch.valid, io.branch.bits.targetPC, pc_plus_4))
+  val next_pc = Mux(
+    io.debugSetPC.valid,
+    io.debugSetPC.bits,
+    Mux(io.branch.valid, io.branch.bits.targetPC, pc_plus_4)
+  )
 
   val canRequest = !reqPending && !respPending && !io.halt
   io.mem.req.valid := canRequest

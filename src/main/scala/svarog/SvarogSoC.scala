@@ -3,157 +3,100 @@ package svarog
 import chisel3._
 import chisel3.util._
 
-import svarog.micro.Cpu
+import svarog.micro.{Cpu => MicroCpu}
 import svarog.memory._
 import svarog.debug.ChipDebugModule
 import svarog.debug.ChipHartDebugIO
 import svarog.debug.ChipMemoryDebugIO
-import svarog.debug.UartWishbone
+import svarog.bits.UartWishbone
+import svarog.bits.IOGenerator
+import svarog.debug.DebugIOGenerator
+import svarog.debug.DebugGenerator
+import svarog.config.Config
+import svarog.config.SoC
+import svarog.config.Micro
 
 class SvarogSoC(
-    config: SvarogConfig,
+    config: SoC,
     bootloader: Option[String] = None
 ) extends Module {
 
   val io = IO(new Bundle {
-    // val debug = new Bundle {
-    //   val hart_in = Flipped(new ChipHartDebugIO(config.cores.head.xlen))
-    //   val mem_in =
-    //     Flipped(Decoupled(new ChipMemoryDebugIO(config.cores.head.xlen)))
-    //   val mem_res = Decoupled(UInt(config.cores.head.xlen.W))
-    //   val reg_res = Decoupled(UInt(config.cores.head.xlen.W))
-    //   val halted = Output(Bool()) // CPU halt status
-    // }
-
-    val uarts = Vec(
-      config.soc.uarts.filter(_.enabled).length,
-      new Bundle {
-        val txd = Output(Bool())
-        val rxd = Input(Bool())
-      }
-    )
+    val debug = DebugIOGenerator(config)
+    val gpio = IOGenerator.generatePins(config)
   })
 
-  private val debug =
-    if (config.soc.enableDebug)
-      Some(
-        Module(
-          new ChipDebugModule(
-            config.cores.head.xlen,
-            numHarts = config.cores.length
-          )
-        )
-      )
-    else None
+  private val startAddress = bootloader
+    .map(_ => 0x00480000L)
+    .getOrElse(config.memories.head.getBaseAddress)
 
-  private val debugMasters = if (config.soc.enableDebug) {
-    val debugDataMaster = Module(
-      new MemWishboneHost(config.cores.head.xlen, config.cores.head.xlen)
+  private val debug = Module(
+    new ChipDebugModule(
+      config.getMaxWordLen,
+      numHarts = config.getNumHarts
     )
-    val debugInstMaster = Module(
-      new MemWishboneHost(config.cores.head.xlen, config.cores.head.xlen)
-    )
+  )
 
-    // Connect debug module memory interfaces to Wishbone masters
-    debug.get.io.dmem_iface <> debugDataMaster.mem
-    debug.get.io.imem_iface <> debugInstMaster.mem
+  private val debugMasters = DebugGenerator(io.debug, debug, config)
 
-    // debug.get.io.hart_in <> io.debug.hart_in
-    // debug.get.io.mem_in <> io.debug.mem_in
-    // io.debug.mem_res <> debug.get.io.mem_res
-    // io.debug.reg_res <> debug.get.io.reg_res
-    // io.debug.halted := debug.get.io.halted(0)
-
-    Seq(debugDataMaster, debugInstMaster)
-  } else Seq.empty
-
-  private val coreMem = config.cores.zipWithIndex.map { case (core, i) =>
-    val cpu =
-      Module(
-        new Cpu(
-          core.micro.get,
-          bootloader
-            .map(_ => 0x00480000L)
-            .getOrElse(config.memory.head.tcm.startAddress)
-        )
-      )
-
-    if (config.soc.enableDebug) {
-      // Connect debug control interfaces
-      debug.get.io.harts(0) <> cpu.io.debug
-      debug.get.io.cpuRegData <> cpu.io.debugRegData
-      debug.get.io.cpuHalted(0) := cpu.io.halt
-    } else {
-      // Default debug inputs (no external debugger connected)
-      cpu.io.debug.halt.valid := false.B
-      cpu.io.debug.halt.bits := false.B
-      cpu.io.debug.breakpoint.valid := false.B
-      cpu.io.debug.breakpoint.bits := DontCare
-      cpu.io.debug.register.valid := false.B
-      cpu.io.debug.register.bits := DontCare
-      cpu.io.debug.watchpoint.valid := false.B
-      cpu.io.debug.watchpoint.bits := DontCare
-      cpu.io.debug.setPC.valid := false.B
-      cpu.io.debug.setPC.bits := DontCare
-      // io.debug.halted := cpu.io.halt
-    }
-
-    val cpuInstHost = Module(
-      new MemWishboneHost(core.xlen, core.xlen)
-    )
-    val cpuDataHost = Module(
-      new MemWishboneHost(core.xlen, core.xlen)
-    )
-    cpu.io.instmem <> cpuInstHost.mem
-    cpu.io.datamem <> cpuDataHost.mem
-
-    List(cpuInstHost, cpuDataHost)
-  }.flatten
+  private val coreMems = CoreGenerator(config, debug, startAddress)
 
   private val rom: Seq[WishboneSlave] = bootloader.map { bootloader =>
     Module(
       new ROMWishboneAdapter(
-        config.cores.head.xlen,
+        config.getMaxWordLen,
         baseAddr = 0x00480000,
         bootloader
       )
     )
   }.toSeq
 
-  private val memories = config.memory.map { mem =>
-    val tcm = Module(
-      new TCMWishboneAdapter(
-        xlen = config.cores.head.xlen,
-        memSizeBytes = mem.tcm.size,
-        baseAddr = mem.tcm.startAddress
-      )
-    )
+  private val memories = MemGenerator(config)
 
-    tcm
-  }
+  private val gpioSlaves = IOGenerator.generateSocIo(config, io.gpio)
 
-  // Instantiate UART modules
-  private val uartModules =
-    config.soc.uarts.filter(_.enabled).map { uartConfig =>
-      Module(
-        new UartWishbone(
-          baseAddr = uartConfig.baseAddr,
-          dataWidth = 8,
-          addrWidth = config.cores.head.xlen,
-          busWidth = config.cores.head.xlen
-        )
-      )
-    }
+  private val allMasters: Seq[WishboneMaster] = coreMems ++ debugMasters
 
-  // Connect UART IO
-  uartModules.zipWithIndex.foreach { case (uart, idx) =>
-    io.uarts(idx).txd := uart.uart.txd
-    uart.uart.rxd := io.uarts(idx).rxd
-  }
-
-  private val allMasters: Seq[WishboneMaster] = coreMem ++ debugMasters
-
-  private val allSlaves: Seq[WishboneSlave] = rom ++ memories ++ uartModules
+  private val allSlaves: Seq[WishboneSlave] = rom ++ memories ++ gpioSlaves
 
   WishboneRouter(allMasters, allSlaves)
+}
+
+object CoreGenerator {
+  def apply(
+      config: SoC,
+      debug: ChipDebugModule,
+      startAddress: Long
+  ): Seq[WishboneMaster] = {
+    config.clusters.zipWithIndex.flatMap { case (cluster, clusterIdx) =>
+      val clusterStartHartId =
+        config.clusters.take(clusterIdx).map(_.numCores).sum
+
+      (0 until cluster.numCores).map { coreIdx =>
+        val hartId = clusterStartHartId + coreIdx
+
+        cluster.coreType match {
+          case Micro => {
+            val cpu =
+              Module(new MicroCpu(hartId, cluster, startAddress = startAddress))
+
+            debug.io.harts(hartId) <> cpu.io.debug
+            debug.io.cpuRegData <> cpu.io.debugRegData
+            debug.io.cpuHalted(hartId) := cpu.io.halt
+
+            val cpuInstHost = Module(
+              new MemWishboneHost(cluster.isa.xlen, cluster.isa.xlen)
+            )
+            val cpuDataHost = Module(
+              new MemWishboneHost(cluster.isa.xlen, cluster.isa.xlen)
+            )
+            cpu.io.instmem <> cpuInstHost.mem
+            cpu.io.datamem <> cpuDataHost.mem
+
+            List(cpuInstHost, cpuDataHost)
+          }
+        }
+      }
+    }.flatten
+  }
 }

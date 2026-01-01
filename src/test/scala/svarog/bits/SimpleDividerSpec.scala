@@ -84,11 +84,12 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
         dut.io.inp.bits.op.poke(vector.op)
         dut.io.inp.valid.poke(true.B)
 
-        dut.clock.step(1)
+        dut.clock.step(dut.latency)
 
         dut.io.result.valid.expect(true.B)
         dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
+
+        dut.clock.step(1)
       }
     }
   }
@@ -151,11 +152,12 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
         dut.io.inp.bits.op.poke(vector.op)
         dut.io.inp.valid.poke(true.B)
 
-        dut.clock.step(1)
+        dut.clock.step(dut.latency)
 
         dut.io.result.valid.expect(true.B)
         dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
+
+        dut.clock.step(1)
       }
     }
   }
@@ -227,11 +229,12 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
         dut.io.inp.bits.op.poke(vector.op)
         dut.io.inp.valid.poke(true.B)
 
-        dut.clock.step(1)
+        dut.clock.step(dut.latency)
 
         dut.io.result.valid.expect(true.B)
         dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
+
+        dut.clock.step(1)
       }
     }
   }
@@ -300,11 +303,12 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
         dut.io.inp.bits.op.poke(vector.op)
         dut.io.inp.valid.poke(true.B)
 
-        dut.clock.step(1)
+        dut.clock.step(dut.latency)
 
         dut.io.result.valid.expect(true.B)
         dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
+
+        dut.clock.step(1)
       }
     }
   }
@@ -324,7 +328,7 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.inp.bits.divisor.poke(20.U)
       dut.io.inp.bits.op.poke(DivOp.DIV)
       dut.io.inp.valid.poke(true.B)
-      dut.clock.step(1)
+      dut.clock.step(dut.latency)
       dut.io.result.valid.expect(true.B)
       dut.io.result.bits.expect(5.U)
 
@@ -332,30 +336,6 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.inp.valid.poke(false.B)
       dut.clock.step(1)
       dut.io.result.valid.expect(false.B)
-    }
-  }
-
-  it should "process operations combinationally (single cycle)" in {
-    simulate(new SimpleDivider(xlen)) { dut =>
-      // Test that result is available in the same cycle
-      dut.io.inp.bits.dividend.poke(42.U)
-      dut.io.inp.bits.divisor.poke(7.U)
-      dut.io.inp.bits.op.poke(DivOp.DIV)
-      dut.io.inp.valid.poke(true.B)
-
-      // Don't step clock - check combinational result
-      dut.io.result.valid.expect(true.B)
-      dut.io.result.bits.expect(6.U)
-
-      dut.clock.step(1)
-
-      // Change input immediately and check new result
-      dut.io.inp.bits.dividend.poke(100.U)
-      dut.io.inp.bits.divisor.poke(3.U)
-      dut.io.inp.bits.op.poke(DivOp.REM)
-
-      dut.io.result.valid.expect(true.B)
-      dut.io.result.bits.expect(1.U)
     }
   }
 
@@ -382,15 +362,30 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
       DivVector(100, 0, DivOp.REMU, 100),
 
       // Signed overflow case
-      DivVector(BigInt("80000000", 16), BigInt("FFFFFFFF", 16), DivOp.DIV, BigInt("80000000", 16)),
+      DivVector(
+        BigInt("80000000", 16),
+        BigInt("FFFFFFFF", 16),
+        DivOp.DIV,
+        BigInt("80000000", 16)
+      ),
       DivVector(BigInt("80000000", 16), BigInt("FFFFFFFF", 16), DivOp.REM, 0),
 
       // Sign handling
-      DivVector(BigInt("FFFFFFF6", 16), 5, DivOp.DIV, BigInt("FFFFFFFE", 16)), // -10 / 5 = -2
+      DivVector(
+        BigInt("FFFFFFF6", 16),
+        5,
+        DivOp.DIV,
+        BigInt("FFFFFFFE", 16)
+      ), // -10 / 5 = -2
       DivVector(BigInt("FFFFFFF6", 16), 5, DivOp.REM, 0), // -10 % 5 = 0
 
       // Unsigned treats negative bit patterns as large positive
-      DivVector(BigInt("FFFFFFF6", 16), 5, DivOp.DIVU, BigInt("33333331", 16)), // 4294967286 / 5 = 858993457
+      DivVector(
+        BigInt("FFFFFFF6", 16),
+        5,
+        DivOp.DIVU,
+        BigInt("33333331", 16)
+      ), // 4294967286 / 5 = 858993457
       DivVector(BigInt("FFFFFFF6", 16), 5, DivOp.REMU, 1) // 4294967286 % 5 = 1
     )
 
@@ -401,10 +396,12 @@ class SimpleDividerSpec extends AnyFlatSpec with Matchers with ChiselSim {
         dut.io.inp.bits.op.poke(vector.op)
         dut.io.inp.valid.poke(true.B)
 
-        dut.clock.step(1)
+        dut.clock.step(dut.latency)
 
         dut.io.result.valid.expect(true.B)
         dut.io.result.bits.expect(vector.expected.U)
+
+        dut.clock.step(1)
       }
     }
   }

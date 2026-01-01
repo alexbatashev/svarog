@@ -28,6 +28,28 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
     value & 0xffffffffL
   }
 
+  private def runSimulation(
+      dut: AbstractMultiplier,
+      vectors: Seq[MulVector]
+  ): Unit = {
+    dut.io.inp.valid.poke(false.B)
+    dut.clock.step(1)
+
+    for (vector <- vectors) {
+      dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
+      dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
+      dut.io.inp.bits.op.poke(vector.op)
+      dut.io.inp.valid.poke(true.B)
+
+      dut.clock.step(4)
+
+      dut.io.result.valid.expect(true.B)
+      dut.io.result.bits.expect(vector.expected.U)
+
+      dut.clock.step(1)
+    }
+  }
+
   it should "compute MUL (lower 32 bits) correctly" in {
     val vectors = Seq(
       MulVector(
@@ -68,22 +90,8 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       )
     )
 
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      dut.io.inp.valid.poke(false.B)
-      dut.clock.step(1)
-
-      for (vector <- vectors) {
-        dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
-        dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
-        dut.io.inp.bits.op.poke(vector.op)
-        dut.io.inp.valid.poke(true.B)
-
-        dut.clock.step(1)
-
-        dut.io.result.valid.expect(true.B)
-        dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
-      }
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      runSimulation(dut, vectors)
     }
   }
 
@@ -103,7 +111,7 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       MulVector(
         multiplicant = BigInt("FFFFFFFF", 16), // -1 in signed
-        multiplier = BigInt("FFFFFFFF", 16),   // -1 in signed
+        multiplier = BigInt("FFFFFFFF", 16), // -1 in signed
         op = MulOp.MULH,
         expected = 0 // (-1) × (-1) = 1, upper 32 bits = 0
       ),
@@ -111,7 +119,8 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
         multiplicant = BigInt("80000000", 16), // -2147483648 (most negative)
         multiplier = 2,
         op = MulOp.MULH,
-        expected = BigInt("FFFFFFFF", 16) // -1 (sign extension of negative result)
+        expected =
+          BigInt("FFFFFFFF", 16) // -1 (sign extension of negative result)
       ),
       MulVector(
         multiplicant = BigInt("7FFFFFFF", 16), // 2147483647 (most positive)
@@ -121,34 +130,21 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       MulVector(
         multiplicant = BigInt("80000000", 16), // -2147483648
-        multiplier = BigInt("80000000", 16),   // -2147483648
+        multiplier = BigInt("80000000", 16), // -2147483648
         op = MulOp.MULH,
         expected = BigInt("40000000", 16) // Positive overflow result
       ),
       MulVector(
         multiplicant = BigInt("FFFFFFFF", 16), // -1
-        multiplier = BigInt("7FFFFFFF", 16),   // 2147483647
+        multiplier = BigInt("7FFFFFFF", 16), // 2147483647
         op = MulOp.MULH,
-        expected = BigInt("FFFFFFFF", 16) // Negative result, all 1s in upper bits
+        expected =
+          BigInt("FFFFFFFF", 16) // Negative result, all 1s in upper bits
       )
     )
 
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      dut.io.inp.valid.poke(false.B)
-      dut.clock.step(1)
-
-      for (vector <- vectors) {
-        dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
-        dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
-        dut.io.inp.bits.op.poke(vector.op)
-        dut.io.inp.valid.poke(true.B)
-
-        dut.clock.step(1)
-
-        dut.io.result.valid.expect(true.B)
-        dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
-      }
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      runSimulation(dut, vectors)
     }
   }
 
@@ -168,7 +164,7 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       MulVector(
         multiplicant = BigInt("FFFFFFFF", 16), // -1 in signed
-        multiplier = BigInt("FFFFFFFF", 16),   // 4294967295 in unsigned
+        multiplier = BigInt("FFFFFFFF", 16), // 4294967295 in unsigned
         op = MulOp.MULHSU,
         expected = BigInt("FFFFFFFF", 16) // Negative result
       ),
@@ -176,38 +172,25 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
         multiplicant = BigInt("80000000", 16), // -2147483648
         multiplier = 2,
         op = MulOp.MULHSU,
-        expected = BigInt("FFFFFFFF", 16) // Negative result (sign bit propagates)
+        expected =
+          BigInt("FFFFFFFF", 16) // Negative result (sign bit propagates)
       ),
       MulVector(
         multiplicant = BigInt("7FFFFFFF", 16), // 2147483647 (positive)
-        multiplier = BigInt("FFFFFFFF", 16),   // 4294967295 (unsigned)
+        multiplier = BigInt("FFFFFFFF", 16), // 4294967295 (unsigned)
         op = MulOp.MULHSU,
         expected = BigInt("7FFFFFFE", 16) // Positive result
       ),
       MulVector(
         multiplicant = BigInt("FFFFFFFF", 16), // -1
-        multiplier = BigInt("80000000", 16),   // 2147483648 (unsigned)
+        multiplier = BigInt("80000000", 16), // 2147483648 (unsigned)
         op = MulOp.MULHSU,
         expected = BigInt("FFFFFFFF", 16) // Negative result
       )
     )
 
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      dut.io.inp.valid.poke(false.B)
-      dut.clock.step(1)
-
-      for (vector <- vectors) {
-        dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
-        dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
-        dut.io.inp.bits.op.poke(vector.op)
-        dut.io.inp.valid.poke(true.B)
-
-        dut.clock.step(1)
-
-        dut.io.result.valid.expect(true.B)
-        dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
-      }
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      runSimulation(dut, vectors)
     }
   }
 
@@ -251,28 +234,14 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       )
     )
 
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      dut.io.inp.valid.poke(false.B)
-      dut.clock.step(1)
-
-      for (vector <- vectors) {
-        dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
-        dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
-        dut.io.inp.bits.op.poke(vector.op)
-        dut.io.inp.valid.poke(true.B)
-
-        dut.clock.step(1)
-
-        dut.io.result.valid.expect(true.B)
-        dut.io.result.bits.expect(vector.expected.U)
-        dut.io.inp.ready.expect(true.B)
-      }
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      runSimulation(dut, vectors)
     }
   }
 
   it should "handle valid/ready handshake correctly" in {
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      // Module should always be ready
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      // Module should be ready initially (not busy)
       dut.io.inp.ready.expect(true.B)
 
       // When input is not valid, output should not be valid
@@ -280,41 +249,60 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.clock.step(1)
       dut.io.result.valid.expect(false.B)
 
-      // When input is valid, output should be valid
+      // When input is valid, initiate transaction
       dut.io.inp.bits.multiplicant.poke(10.U)
       dut.io.inp.bits.multiplier.poke(20.U)
       dut.io.inp.bits.op.poke(MulOp.MUL)
       dut.io.inp.valid.poke(true.B)
       dut.clock.step(1)
+
+      // After accepting, multiplier is busy (blocking design)
+      dut.io.inp.ready.expect(false.B)
+      dut.io.inp.valid.poke(false.B)
+
+      // Wait for result (at cycle latency-1, result becomes valid)
+      dut.clock.step(2)
+      dut.io.result.valid.expect(false.B) // Not yet
+      dut.clock.step(1) // One more cycle to reach latency-1
       dut.io.result.valid.expect(true.B)
       dut.io.result.bits.expect(200.U)
 
-      // Back to invalid
-      dut.io.inp.valid.poke(false.B)
+      // After counter wraps, ready again on next cycle
       dut.clock.step(1)
+      dut.io.inp.ready.expect(true.B)
       dut.io.result.valid.expect(false.B)
     }
   }
 
-  it should "process operations combinationally (single cycle)" in {
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      // Test that result is available in the same cycle
+  it should "process pipelined operations with correct latency" in {
+    simulate(new SimpleMultiplier(xlen, latency = 3)) { dut =>
+      // Test that result is available after the correct latency
       dut.io.inp.bits.multiplicant.poke(42.U)
       dut.io.inp.bits.multiplier.poke(13.U)
       dut.io.inp.bits.op.poke(MulOp.MUL)
       dut.io.inp.valid.poke(true.B)
 
-      // Don't step clock - check combinational result
+      // Result should not be valid immediately
+      dut.io.result.valid.expect(false.B)
+
+      dut.clock.step(1)
+      dut.io.inp.valid.poke(false.B)
+
+      // After 2 more cycles (total latency = 3), result should be valid
+      dut.clock.step(2)
       dut.io.result.valid.expect(true.B)
       dut.io.result.bits.expect(546.U)
 
+      // Test that we can accept another operation after busy clears
       dut.clock.step(1)
+      dut.io.inp.ready.expect(true.B)
 
-      // Change input immediately and check new result
       dut.io.inp.bits.multiplicant.poke(100.U)
       dut.io.inp.bits.multiplier.poke(100.U)
       dut.io.inp.bits.op.poke(MulOp.MUL)
+      dut.io.inp.valid.poke(true.B)
 
+      dut.clock.step(3)
       dut.io.result.valid.expect(true.B)
       dut.io.result.bits.expect(10000.U)
     }
@@ -332,27 +320,32 @@ class SimpleMultiplierSpec extends AnyFlatSpec with Matchers with ChiselSim {
       MulVector(1, BigInt("12345678", 16), MulOp.MUL, BigInt("12345678", 16)),
 
       // Negative × negative = positive (MULH)
-      MulVector(BigInt("FFFFFFFE", 16), BigInt("FFFFFFFE", 16), MulOp.MULH, 0), // (-2) × (-2) = 4
+      MulVector(
+        BigInt("FFFFFFFE", 16),
+        BigInt("FFFFFFFE", 16),
+        MulOp.MULH,
+        0
+      ), // (-2) × (-2) = 4
 
       // Large unsigned multiplication
-      MulVector(BigInt("FFFFFFFF", 16), 2, MulOp.MULHU, 1), // (2^32-1) × 2 upper bits
+      MulVector(
+        BigInt("FFFFFFFF", 16),
+        2,
+        MulOp.MULHU,
+        1
+      ), // (2^32-1) × 2 upper bits
 
       // Sign bit handling in MULHSU
-      MulVector(BigInt("80000000", 16), 1, MulOp.MULHSU, BigInt("FFFFFFFF", 16)) // -2^31 × 1 (unsigned)
+      MulVector(
+        BigInt("80000000", 16),
+        1,
+        MulOp.MULHSU,
+        BigInt("FFFFFFFF", 16)
+      ) // -2^31 × 1 (unsigned)
     )
 
-    simulate(new SimpleMultiplier(xlen)) { dut =>
-      for (vector <- vectors) {
-        dut.io.inp.bits.multiplicant.poke(vector.multiplicant.U)
-        dut.io.inp.bits.multiplier.poke(vector.multiplier.U)
-        dut.io.inp.bits.op.poke(vector.op)
-        dut.io.inp.valid.poke(true.B)
-
-        dut.clock.step(1)
-
-        dut.io.result.valid.expect(true.B)
-        dut.io.result.bits.expect(vector.expected.U)
-      }
+    simulate(new SimpleMultiplier(xlen, latency = 4)) { dut =>
+      runSimulation(dut, vectors)
     }
   }
 }

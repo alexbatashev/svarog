@@ -18,6 +18,7 @@ import svarog.memory.MemWishboneHost
 import svarog.memory.MemoryIO
 import svarog.memory.MemoryRequest
 import svarog.MicroCoreConfig
+import svarog.config.Cluster
 
 class CpuIO(xlen: Int) extends Bundle {
   val instmem = new MemoryIO(xlen, xlen)
@@ -28,13 +29,14 @@ class CpuIO(xlen: Int) extends Bundle {
 }
 
 class Cpu(
-    config: MicroCoreConfig,
-    startAddress: Long,
+    hartId: Int,
+    config: Cluster,
+    startAddress: Long
 ) extends Module {
   // Public interface
-  val io = IO(new CpuIO(config.xlen))
+  val io = IO(new CpuIO(config.isa.xlen))
 
-  val debug = Module(new HartDebugModule(config.xlen))
+  val debug = Module(new HartDebugModule(config.isa.xlen))
   val halt = RegInit(false.B)
   halt := debug.io.halt
 
@@ -44,15 +46,15 @@ class Cpu(
   io.halt := halt
 
   // Memories
-  val regFile = Module(new RegFile(config.xlen))
+  val regFile = Module(new RegFile(config.isa.xlen))
   val csrFile = Module(new CSRFile(ControlRegister.getDefaultRegisters()))
 
   // Stages
-  val fetch = Module(new Fetch(config.xlen, startAddress))
-  val decode = Module(new SimpleDecoder(config.xlen))
-  val execute = Module(new Execute(config.xlen))
-  val memory = Module(new Memory(config.xlen))
-  val writeback = Module(new Writeback(config.xlen))
+  val fetch = Module(new Fetch(config.isa.xlen, startAddress))
+  val decode = Module(new SimpleDecoder(config.isa.xlen))
+  val execute = Module(new Execute(config.isa))
+  val memory = Module(new Memory(config.isa.xlen))
+  val writeback = Module(new Writeback(config.isa.xlen))
 
   val hazardUnit = Module(new HazardUnit)
 
@@ -124,7 +126,7 @@ class Cpu(
   // IF -> ID
   // Increased depth from 1 to 4 to handle pipelining and stalls without losing instructions
   val fetchDecodeQueue = Module(
-    new Queue(new InstWord(config.xlen), 1, pipe = true, hasFlush = true)
+    new Queue(new InstWord(config.isa.xlen), 1, pipe = true, hasFlush = true)
   )
 
   fetchDecodeQueue.io.enq <> fetch.io.inst_out
@@ -132,21 +134,26 @@ class Cpu(
 
   // ID -> EX
   val decodeExecQueue = Module(
-    new Queue(new MicroOp(config.xlen), 1, pipe = true, hasFlush = true)
+    new Queue(new MicroOp(config.isa.xlen), 1, pipe = true, hasFlush = true)
   )
   decodeExecQueue.io.enq <> decode.io.decoded
   execute.io.uop <> decodeExecQueue.io.deq
 
   // EX -> MEM
   val execMemQueue = Module(
-    new Queue(new ExecuteResult(config.xlen), 1, pipe = true, hasFlush = true)
+    new Queue(
+      new ExecuteResult(config.isa.xlen),
+      1,
+      pipe = true,
+      hasFlush = true
+    )
   )
   execMemQueue.io.enq <> execute.io.res
   memory.io.ex <> execMemQueue.io.deq
 
   // MEM -> WB
   val memWbQueue = Module(
-    new Queue(new MemResult(config.xlen), 1, pipe = true, hasFlush = true)
+    new Queue(new MemResult(config.isa.xlen), 1, pipe = true, hasFlush = true)
   )
   memWbQueue.io.enq <> memory.io.res
   writeback.io.in <> memWbQueue.io.deq
@@ -165,7 +172,7 @@ class Cpu(
   fetch.io.halt := halt
 
   // Backprop pipes
-  val execFetchPipe = Module(new Pipe(new BranchFeedback(config.xlen)))
+  val execFetchPipe = Module(new Pipe(new BranchFeedback(config.isa.xlen)))
   fetch.io.branch <> execFetchPipe.io.deq
   execFetchPipe.io.enq <> execute.io.branch
 
