@@ -11,8 +11,6 @@ import svarog.decoder.{MicroOp, OpType}
 import svarog.memory.MemWidth
 import svarog.bits.{CSREx, CSRReadIO}
 import svarog.config.ISA
-import chisel3.experimental.dataview.DataView
-import chisel3.experimental.dataview.PartialDataView
 
 class ExecuteResult(xlen: Int) extends Bundle {
   val opType = Output(OpType())
@@ -32,18 +30,6 @@ class ExecuteResult(xlen: Int) extends Bundle {
   val storeData = Output(UInt(xlen.W))
 
   val pc = Output(UInt(xlen.W))
-}
-
-object ExecuteResult {
-  implicit val fromUop: DataView[MicroOp, ExecuteResult] =
-    PartialDataView[MicroOp, ExecuteResult](
-      uop => new ExecuteResult(uop.xlen),
-      _.opType -> _.opType,
-      _.rd -> _.rd,
-      _.regWrite -> _.gprWrite,
-      _.csrAddr -> _.csrAddr,
-      _.pc -> _.pc
-    )
 }
 
 class BranchFeedback(xlen: Int) extends Bundle {
