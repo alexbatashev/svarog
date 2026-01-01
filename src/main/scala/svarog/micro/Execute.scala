@@ -11,6 +11,8 @@ import svarog.decoder.{MicroOp, OpType}
 import svarog.memory.MemWidth
 import svarog.bits.{CSREx, CSRReadIO}
 import svarog.config.ISA
+import chisel3.experimental.dataview.DataView
+import chisel3.experimental.dataview.PartialDataView
 
 class ExecuteResult(xlen: Int) extends Bundle {
   val opType = Output(OpType())
@@ -30,6 +32,18 @@ class ExecuteResult(xlen: Int) extends Bundle {
   val storeData = Output(UInt(xlen.W))
 
   val pc = Output(UInt(xlen.W))
+}
+
+object ExecuteResult {
+  implicit val fromUop: DataView[MicroOp, ExecuteResult] =
+    PartialDataView[MicroOp, ExecuteResult](
+      uop => new ExecuteResult(uop.xlen),
+      _.opType -> _.opType,
+      _.rd -> _.rd,
+      _.regWrite -> _.gprWrite,
+      _.csrAddr -> _.csrAddr,
+      _.pc -> _.pc
+    )
 }
 
 class BranchFeedback(xlen: Int) extends Bundle {
@@ -65,26 +79,60 @@ class Execute(isa: ISA) extends Module {
   val div = if (isa.mult) Some(Module(new SimpleDivider(xlen))) else None
   val csr = Module(new CSREx(xlen))
 
-  // Single-cycle execute: current instruction always completes
-  // Output is valid only when we have an instruction AND (downstream is ready AND not stalled)
-  // This ensures we don't output the same instruction multiple times
-  val canDequeue = io.res.ready && !io.stall
-  io.uop.ready := canDequeue
-  io.res.valid := io.uop.valid && canDequeue
+  // Track multi-cycle operations
+  val executingMultiCycle = RegInit(false.B)
+  val bufferedUop = Reg(new MicroOp(xlen))
 
-  io.hazard.valid := io.uop.valid && io.uop.bits.regWrite && !(io.uop.bits.rd === 0.U)
-  io.hazard.bits := io.uop.bits.rd
-
-  io.csrHazard.valid := io.uop.valid && (
-    io.uop.bits.opType === OpType.CSRRW ||
-      io.uop.bits.opType === OpType.CSRRS ||
-      io.uop.bits.opType === OpType.CSRRC
+  // Determine if current instruction is multi-cycle
+  val isMultiCycle = io.uop.valid && (
+    io.uop.bits.opType === OpType.MUL ||
+      io.uop.bits.opType === OpType.DIV
   )
-  io.csrHazard.bits.addr := io.uop.bits.csrAddr
+
+  // Check if multi-cycle operation completes
+  val multiCycleComplete = WireDefault(false.B)
+  mul.foreach { m => when(m.io.result.valid) { multiCycleComplete := true.B } }
+  div.foreach { d => when(d.io.result.valid) { multiCycleComplete := true.B } }
+
+  // Buffer the MicroOp when starting a multi-cycle operation
+  when(io.uop.fire && isMultiCycle) {
+    executingMultiCycle := true.B
+    bufferedUop := io.uop.bits
+  }
+
+  // Clear the flag when operation completes
+  when(multiCycleComplete && io.res.fire) {
+    executingMultiCycle := false.B
+  }
+
+  // Use buffered MicroOp during multi-cycle execution
+  val activeUop =
+    Mux(executingMultiCycle || multiCycleComplete, bufferedUop, io.uop.bits)
+
+  // This execution unit is not fully pipelined. New instructions can only be
+  // accepted when all of the FUs are ready and no multi-cycle op is executing.
+  val canDequeue = io.res.ready && !io.stall && !executingMultiCycle
+  io.uop.ready := canDequeue
+
+  // Output is valid for single-cycle ops or when multi-cycle completes
+  io.res.valid := (io.uop.valid && canDequeue && !isMultiCycle) || (multiCycleComplete && !needFlush)
+
+  // Hazard signals should be valid during entire multi-cycle operation
+  val hazardActive =
+    (io.uop.valid && !isMultiCycle) || executingMultiCycle || multiCycleComplete
+  io.hazard.valid := hazardActive && activeUop.regWrite && !(activeUop.rd === 0.U)
+  io.hazard.bits := activeUop.rd
+
+  io.csrHazard.valid := hazardActive && (
+    activeUop.opType === OpType.CSRRW ||
+      activeUop.opType === OpType.CSRRS ||
+      activeUop.opType === OpType.CSRRC
+  )
+  io.csrHazard.bits.addr := activeUop.csrAddr
   io.csrHazard.bits.isWrite := csr.io.csr.write.en
 
-  io.res.bits.opType := io.uop.bits.opType
-  io.res.bits.pc := io.uop.bits.pc
+  io.res.bits.opType := activeUop.opType
+  io.res.bits.pc := activeUop.pc
 
   // ALU result
   io.res.bits.gprResult := 0.U
@@ -95,34 +143,34 @@ class Execute(isa: ISA) extends Module {
 
   // Load/store address
   io.res.bits.memAddress := 0.U
-  io.res.bits.memWidth := io.uop.bits.memWidth
-  io.res.bits.memUnsigned := io.uop.bits.memUnsigned
+  io.res.bits.memWidth := activeUop.memWidth
+  io.res.bits.memUnsigned := activeUop.memUnsigned
 
   // Store data
   io.res.bits.storeData := 0.U
 
-  io.res.bits.rd := io.uop.bits.rd
-  io.res.bits.gprWrite := io.uop.bits.regWrite
+  io.res.bits.rd := activeUop.rd
+  io.res.bits.gprWrite := activeUop.regWrite
 
   // CSR defaults
-  io.res.bits.csrAddr := io.uop.bits.csrAddr
+  io.res.bits.csrAddr := activeUop.csrAddr
   io.res.bits.csrWrite := false.B
   io.res.bits.csrResult := 0.U
 
-  io.regFile.readAddr1 := io.uop.bits.rs1
-  io.regFile.readAddr2 := io.uop.bits.rs2
+  io.regFile.readAddr1 := activeUop.rs1
+  io.regFile.readAddr2 := activeUop.rs2
 
-  alu.io.op := io.uop.bits.aluOp
+  alu.io.op := activeUop.aluOp
   alu.io.input1 := io.regFile.readData1
   alu.io.input2 := Mux(
-    io.uop.bits.hasImm,
-    io.uop.bits.imm,
+    activeUop.hasImm,
+    activeUop.imm,
     io.regFile.readData2
   )
 
   // Multiplier wiring
   mul.foreach { mul =>
-    mul.io.inp.bits.op := io.uop.bits.mulOp
+    mul.io.inp.bits.op := activeUop.mulOp
     mul.io.inp.bits.multiplicant := io.regFile.readData1
     mul.io.inp.bits.multiplier := io.regFile.readData2
     mul.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.MUL)
@@ -130,7 +178,7 @@ class Execute(isa: ISA) extends Module {
 
   // Divider wiring
   div.foreach { div =>
-    div.io.inp.bits.op := io.uop.bits.divOp
+    div.io.inp.bits.op := activeUop.divOp
     div.io.inp.bits.dividend := io.regFile.readData1
     div.io.inp.bits.divisor := io.regFile.readData2
     div.io.inp.valid := io.uop.valid && (io.uop.bits.opType === OpType.DIV)
@@ -138,27 +186,29 @@ class Execute(isa: ISA) extends Module {
 
   // CSR wiring
   csr.io.uop.valid := io.uop.valid
-  csr.io.uop.bits := io.uop.bits
+  csr.io.uop.bits := activeUop
   csr.io.rs1Value := io.regFile.readData1
 
   io.csrFile.read <> csr.io.csr.read
 
-  when(io.uop.valid && !needFlush) {
-    switch(io.uop.bits.opType) {
+  when(
+    (io.uop.valid || executingMultiCycle || multiCycleComplete) && !needFlush
+  ) {
+    switch(activeUop.opType) {
       is(OpType.ALU) {
         io.res.bits.gprResult := alu.io.output
       }
       is(OpType.LUI) {
-        io.res.bits.gprResult := io.uop.bits.imm
+        io.res.bits.gprResult := activeUop.imm
       }
       is(OpType.AUIPC) {
-        io.res.bits.gprResult := io.uop.bits.pc + io.uop.bits.imm
+        io.res.bits.gprResult := activeUop.pc + activeUop.imm
       }
       is(OpType.LOAD) {
-        io.res.bits.memAddress := io.regFile.readData1 + io.uop.bits.imm
+        io.res.bits.memAddress := io.regFile.readData1 + activeUop.imm
       }
       is(OpType.STORE) {
-        io.res.bits.memAddress := io.regFile.readData1 + io.uop.bits.imm
+        io.res.bits.memAddress := io.regFile.readData1 + activeUop.imm
         io.res.bits.storeData := io.regFile.readData2
       }
 
@@ -168,7 +218,7 @@ class Execute(isa: ISA) extends Module {
         // Compute branch condition based on funct3
         val taken = WireDefault(false.B)
 
-        switch(io.uop.bits.branchFunc) {
+        switch(activeUop.branchFunc) {
           is(BranchOp.BEQ) {
             taken := (rs1 === rs2)
           }
@@ -191,22 +241,22 @@ class Execute(isa: ISA) extends Module {
 
         io.branch.valid := taken
         needFlush := taken
-        io.branch.bits.targetPC := io.uop.bits.pc + io.uop.bits.imm
+        io.branch.bits.targetPC := activeUop.pc + activeUop.imm
       }
 
       is(OpType.JAL) {
         // Unconditional jump
         io.branch.valid := true.B
-        io.branch.bits.targetPC := io.uop.bits.pc + io.uop.bits.imm
-        io.res.bits.gprResult := io.uop.bits.pc + 4.U // Save return address
+        io.branch.bits.targetPC := activeUop.pc + activeUop.imm
+        io.res.bits.gprResult := activeUop.pc + 4.U // Save return address
       }
 
       is(OpType.JALR) {
         // Indirect jump
         io.branch.valid := true.B
-        val target = io.regFile.readData1 + io.uop.bits.imm
+        val target = io.regFile.readData1 + activeUop.imm
         io.branch.bits.targetPC := Cat(target(31, 1), 0.U(1.W)) // Clear LSB
-        io.res.bits.gprResult := io.uop.bits.pc + 4.U // Save return address
+        io.res.bits.gprResult := activeUop.pc + 4.U // Save return address
       }
 
       is(OpType.MUL) {

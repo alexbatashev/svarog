@@ -2,6 +2,8 @@ package svarog.bits
 
 import chisel3._
 import chisel3.util._
+import svarog.decoder.MicroOp
+import svarog.decoder.OpType
 
 object MulOp extends ChiselEnum {
   val MUL, MULH, MULHSU, MULHU = Value
@@ -20,7 +22,8 @@ abstract class AbstractMultiplier(xlen: Int) extends Module {
   })
 }
 
-class SimpleMultiplier(xlen: Int, latency: Int = 3) extends AbstractMultiplier(xlen) {
+class SimpleMultiplier(xlen: Int, latency: Int = 3)
+    extends AbstractMultiplier(xlen) {
   require(latency >= 1, "Latency must be at least 1")
 
   private val busy = RegInit(false.B)
@@ -28,7 +31,8 @@ class SimpleMultiplier(xlen: Int, latency: Int = 3) extends AbstractMultiplier(x
 
   io.inp.ready := !busy
 
-  private val multiplicant = RegEnable(io.inp.bits.multiplicant, 0.U, io.inp.fire)
+  private val multiplicant =
+    RegEnable(io.inp.bits.multiplicant, 0.U, io.inp.fire)
   private val multiplier = RegEnable(io.inp.bits.multiplier, 0.U, io.inp.fire)
   private val op = RegEnable(io.inp.bits.op, MulOp.MUL, io.inp.fire)
 
