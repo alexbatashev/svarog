@@ -1,6 +1,6 @@
 clusters:
   - coreType: micro
-    isa: rv32im_zicsr
+    isa: rv32i_zmmul_zicsr
     numCores: 1
 io:
   - type: uart

@@ -5,6 +5,7 @@ import chisel3.util._
 import svarog.memory.{MemoryRequest, MemoryIO => MemIO, MemWidth}
 import svarog.decoder.OpType
 import svarog.bits.MemoryUtils
+import svarog.bits.asLE
 
 class MemResult(xlen: Int) extends Bundle {
   val opType = Output(OpType())
@@ -93,9 +94,7 @@ class Memory(xlen: Int) extends Module {
     mem.req.bits.write := store.B
 
     val data = Wire(Vec(wordSize, UInt(8.W)))
-    for (i <- 0 until wordSize) {
-      data(i) := io.ex.bits.storeData(8 * (i + 1) - 1, 8 * i)
-    }
+    data := asLE(io.ex.bits.storeData)
 
     mem.req.bits.dataWrite := MemoryUtils.shiftWriteData(data, offset, wordSize)
     mem.req.bits.mask := MemoryUtils.generateShiftedMask(

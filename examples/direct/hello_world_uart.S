@@ -97,4 +97,4 @@ delay_done:
 # Data section
 .section .rodata
 hello_string:
-    .asciz "Hello, World!\n"
+    .asciz "Hello, World!\n\r"

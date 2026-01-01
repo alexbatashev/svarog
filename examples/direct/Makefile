@@ -41,6 +41,8 @@ $(1):
 		-o $(OUTPUT_BASE)/$(1)/$(TARGET).elf $(OUTPUT_BASE)/$(1)/$(TARGET).o
 	@echo "Creating binary $(TARGET).bin..."
 	@$(2)objcopy -O binary $(OUTPUT_BASE)/$(1)/$(TARGET).elf $(OUTPUT_BASE)/$(1)/$(TARGET).bin
+	@echo "Creating hex file $(TARGET).hex for Verilog $readmemh..."
+	@od -An -tx4 -v -w4 $(OUTPUT_BASE)/$(1)/$(TARGET).bin | tr -d ' ' > $(OUTPUT_BASE)/$(1)/$(TARGET).hex
 	@echo "Generating disassembly $(TARGET).lst..."
 	@$(2)objdump -D $(OUTPUT_BASE)/$(1)/$(TARGET).elf > $(OUTPUT_BASE)/$(1)/$(TARGET).lst
 	@echo "Binary size:"
@@ -97,6 +99,7 @@ help:
 	@echo ""
 	@echo "Output files (per configuration):"
 	@echo "  $(TARGET).bin - Binary file for Svarog SoC"
+	@echo "  $(TARGET).hex - Verilog hex file (compatible with \$$readmemh)"
 	@echo "  $(TARGET).elf - ELF executable with debug info"
 	@echo "  $(TARGET).lst - Disassembly listing"
 	@echo "  $(TARGET).map - Linker map file"
