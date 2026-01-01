@@ -42,7 +42,7 @@ $(1):
 	@echo "Creating binary $(TARGET).bin..."
 	@$(2)objcopy -O binary $(OUTPUT_BASE)/$(1)/$(TARGET).elf $(OUTPUT_BASE)/$(1)/$(TARGET).bin
 	@echo "Creating hex file $(TARGET).hex for Verilog $readmemh..."
-	@od -An -tx4 -v -w4 $(OUTPUT_BASE)/$(1)/$(TARGET).bin | tr -d ' ' > $(OUTPUT_BASE)/$(1)/$(TARGET).hex
+	@xxd -p -c 4 $(OUTPUT_BASE)/$(1)/$(TARGET).bin > $(OUTPUT_BASE)/$(1)/$(TARGET).hex
 	@echo "Generating disassembly $(TARGET).lst..."
 	@$(2)objdump -D $(OUTPUT_BASE)/$(1)/$(TARGET).elf > $(OUTPUT_BASE)/$(1)/$(TARGET).lst
 	@echo "Binary size:"

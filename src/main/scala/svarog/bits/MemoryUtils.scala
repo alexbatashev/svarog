@@ -137,3 +137,16 @@ object masked {
     })
   }
 }
+
+object asLE {
+  def apply(in: UInt): Vec[UInt] = {
+    val numBytes = in.getWidth / 8;
+    val out = Wire(Vec(numBytes, UInt(8.W)))
+
+    for (i <- 0 until numBytes) {
+      out(i) := in(8 * (i + 1) - 1, 8 * i)
+    }
+
+    out
+  }
+}

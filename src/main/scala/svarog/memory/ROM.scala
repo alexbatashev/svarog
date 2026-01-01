@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import svarog.bits.masked
 import chisel3.util.experimental.loadMemoryFromFileInline
+import svarog.bits.asLE
 
 /// Read-only memory
 class ROM(
@@ -94,9 +95,7 @@ class ROMWishboneAdapter(
     req.address := io.addr
     req.write := io.writeEnable
     req.mask := io.sel
-    for (i <- 0 until wordBytes) {
-      req.dataWrite(i) := io.dataToSlave(8 * (i + 1) - 1, 8 * i)
-    }
+    req.dataWrite := asLE(io.dataToSlave)
   }
 
   switch(state) {
@@ -126,7 +125,7 @@ class ROMWishboneAdapter(
 
         io.ack := true.B
         io.error := !rom.io.resp.bits.valid
-        io.dataToMaster := Cat(rom.io.resp.bits.dataRead.reverse)
+        io.dataToMaster := Cat(rom.io.resp.bits.dataRead)
       }
     }
   }

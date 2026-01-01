@@ -2,6 +2,7 @@ package svarog.memory
 
 import chisel3._
 import chisel3.util._
+import svarog.bits.asLE
 
 object MemWidth extends ChiselEnum {
   val BYTE, HALF, WORD, DWORD = Value
@@ -116,11 +117,7 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
   io.sel := VecInit(Seq.fill(wordBytes)(false.B))
 
   private def saveResp(resp: MemoryResponse) = {
-    val respData = Wire(Vec(wordBytes, UInt(8.W)))
-    for (i <- 0 until wordBytes) {
-      respData(i) := io.dataToMaster((i + 1) * 8 - 1, i * 8)
-    }
-    resp.dataRead := respData
+    resp.dataRead := asLE(io.dataToMaster)
     resp.valid := !io.error
   }
 
@@ -136,8 +133,8 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
         io.strobe := true.B
         io.writeEnable := mem.req.bits.write
         io.addr := mem.req.bits.address
-        io.dataToSlave := Cat(mem.req.bits.dataWrite.reverse)
-        io.sel := mem.req.bits.mask
+        io.dataToSlave := Cat(mem.req.bits.dataWrite)
+        io.sel := mem.req.bits.mask.reverse
       }
     }
     is(sRespWait) {
@@ -145,8 +142,8 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
       io.strobe := true.B
       io.writeEnable := savedReq.write
       io.addr := savedReq.address
-      io.dataToSlave := Cat(savedReq.dataWrite.reverse)
-      io.sel := savedReq.mask
+      io.dataToSlave := Cat(savedReq.dataWrite)
+      io.sel := savedReq.mask.reverse
       when(io.ack) {
         when(mem.resp.ready) {
           if (registered) {
@@ -170,8 +167,8 @@ class MemWishboneHost(xlen: Int, maxReqWidth: Int, registered: Boolean = false)
       io.strobe := true.B
       io.writeEnable := savedReq.write
       io.addr := savedReq.address
-      io.dataToSlave := Cat(savedReq.dataWrite.reverse)
-      io.sel := savedReq.mask
+      io.dataToSlave := Cat(savedReq.dataWrite)
+      io.sel := savedReq.mask.reverse
 
       when(mem.resp.ready) {
         if (registered) {

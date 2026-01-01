@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.BoringUtils
 import svarog.SvarogConfig
+import svarog.bits.asLE
 
 // Tightly Coupled Memory (TCM)
 class TCM(
@@ -107,9 +108,7 @@ class TCMWishboneAdapter(
     req.address := io.addr
     req.write := io.writeEnable
     req.mask := io.sel
-    for (i <- 0 until wordBytes) {
-      req.dataWrite(i) := io.dataToSlave(8 * (i + 1) - 1, 8 * i)
-    }
+    req.dataWrite := asLE(io.dataToSlave)
   }
 
   switch(state) {
@@ -139,7 +138,7 @@ class TCMWishboneAdapter(
 
         io.ack := true.B
         io.error := !tcm.io.ports(0).resp.bits.valid
-        io.dataToMaster := Cat(tcm.io.ports(0).resp.bits.dataRead.reverse)
+        io.dataToMaster := Cat(tcm.io.ports(0).resp.bits.dataRead)
       }
     }
   }
