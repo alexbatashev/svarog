@@ -20,7 +20,7 @@ abstract class AbstractDivider(xlen: Int) extends Module {
   })
 }
 
-class SimpleDivider(xlen: Int, val latency: Int = 40)
+class SimpleDivider(xlen: Int, val latency: Int = 320)
     extends AbstractDivider(xlen) {
   require(latency >= 1, "Latency must be at least 1")
 
