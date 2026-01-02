@@ -5,21 +5,57 @@ import chisel3.util._
 import svarog.decoder.MicroOp
 import svarog.decoder.OpType
 
-case class ControlRegister(
-    address: Int,
-    width: Int = 32,
-    initialValue: Int = 0,
-    readOnly: Boolean = true
-)
+class ControlRegisterIO(width: Int) extends Bundle {
+  val read = Output(UInt(width.W))
+  val write = Input(Valid(UInt(width.W)))
+}
 
-object ControlRegister {
-  def getDefaultRegisters(): Seq[ControlRegister] = {
+trait ControlRegisterLike {
+  def address: Int
+  def width: Int
+  def readOnly: Boolean
+  val io: ControlRegisterIO
+}
+
+class ConstantControlRegister(
+    val address: Int,
+    val width: Int = 32,
+    initialValue: Int = 0,
+    val readOnly: Boolean = true
+) extends Module
+    with ControlRegisterLike {
+
+  val io = IO(new ControlRegisterIO(width))
+
+  private val data = RegInit(initialValue.U(width.W))
+
+  io.read := data
+
+  when(io.write.valid && !readOnly.B) {
+    data := io.write.bits
+  }
+}
+
+object ConstantControlRegister {
+
+  /** Returns constant registers required by Zicsr spec
+    *
+    * @param hartId
+    *   current registers' Hart ID
+    * @return
+    *   a sequence of register-like objects
+    */
+  def getDefaultRegisters(hartId: Int): Seq[() => ControlRegisterLike] = {
     Seq(
-      ControlRegister(0x301), // misa, empty for now
-      ControlRegister(0xf11), // mvendorid, 0 for non-commercial
-      ControlRegister(0xf12), // marchid, 0 for now
-      ControlRegister(0xf13), // mimpid, 0 for now
-      ControlRegister(0xf14) // mhartid, 0 for now
+      () => new ConstantControlRegister(0x301), // misa, empty for now
+      () => new ConstantControlRegister(0xf11), // mvendorid, 0 for non-commercial
+      () => new ConstantControlRegister(0xf12), // marchid, 0 for now
+      () => new ConstantControlRegister(0xf13), // mimpid, 0 for now
+      () =>
+        new ConstantControlRegister(
+          0xf14,
+          initialValue = hartId
+        ) // mhartid
     )
   }
 }
@@ -40,20 +76,26 @@ class CSRIO extends Bundle {
   val write = new CSRWriteIO()
 }
 
-class CSRFile(regs: Seq[ControlRegister]) extends Module {
+class CSRFile(regGens: Seq[() => ControlRegisterLike]) extends Module {
   val io = IO(new CSRIO())
 
   io.read.data := 0.U
 
+  private val regs = regGens.map(gen => Module(gen()))
+
   regs.foreach { reg =>
-    val memory = RegInit(reg.initialValue.U(reg.width.W))
+    reg.io.write.valid := false.B
+    reg.io.write.bits := 0.U(reg.width.W)
 
     when(io.read.addr === reg.address.U) {
-      io.read.data := memory
+      io.read.data := reg.io.read
     }
 
-    when(io.write.en && io.write.addr === reg.address.U) {
-      memory := io.write.data(reg.width - 1, 0)
+    if (!reg.readOnly) {
+      when(io.write.en && io.write.addr === reg.address.U) {
+        reg.io.write.valid := true.B
+        reg.io.write.bits := io.write.data(reg.width - 1, 0)
+      }
     }
   }
 }

@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.BoringUtils
 import svarog.bits.CSRFile
-import svarog.bits.ControlRegister
+import svarog.bits.ConstantControlRegister
 import svarog.bits.RegFile
 import svarog.bits.RegFileReadIO
 import svarog.bits.RegFileWriteIO
@@ -45,9 +45,11 @@ class Cpu(
   io.debugRegData <> debug.io.regData
   io.halt := halt
 
+  private val defaultCSRs = ConstantControlRegister.getDefaultRegisters(hartId)
+
   // Memories
   val regFile = Module(new RegFile(config.isa.xlen))
-  val csrFile = Module(new CSRFile(ControlRegister.getDefaultRegisters()))
+  val csrFile = Module(new CSRFile(defaultCSRs))
 
   // Stages
   val fetch = Module(new Fetch(config.isa.xlen, startAddress))
