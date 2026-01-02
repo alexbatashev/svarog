@@ -9,7 +9,7 @@ import svarog.bits.{DivOp, SimpleDivider}
 import svarog.decoder.BranchOp
 import svarog.decoder.{MicroOp, OpType}
 import svarog.memory.MemWidth
-import svarog.bits.{CSREx, CSRReadIO}
+import svarog.bits.{CSREx, CSRDeviceReadIO}
 import svarog.config.ISA
 
 class ExecuteResult(xlen: Int) extends Bundle {
@@ -45,9 +45,7 @@ class Execute(isa: ISA) extends Module {
     val branch = Valid(new BranchFeedback(xlen))
 
     val regFile = Flipped(new RegFileReadIO(xlen))
-    val csrFile = new Bundle {
-      val read = Flipped(new CSRReadIO())
-    }
+    val csrFile = Flipped(Valid(new CSRDeviceReadIO(xlen)))
 
     // Write register for hazard control
     val hazard = Valid(UInt(5.W))

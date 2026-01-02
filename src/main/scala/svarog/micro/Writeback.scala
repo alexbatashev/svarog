@@ -13,6 +13,7 @@ class Writeback(xlen: Int) extends Module {
     val csrFile = Flipped(new CSRWriteIO())
     val hazard = Valid(UInt(5.W))
     val csrHazard = Valid(new HazardUnitCSRIO)
+    val instret = Output(Bool())
     val debugPC = Valid(UInt(xlen.W))
     val debugStore = Valid(UInt(xlen.W)) // For watchpoint support
     val halt = Input(Bool())
@@ -44,6 +45,8 @@ class Writeback(xlen: Int) extends Module {
   io.csrFile.addr := 0.U
   io.csrFile.data := 0.U
 
+  io.instret := false.B
+
   when(io.in.valid) {
     io.regFile.writeEn := io.in.bits.gprWrite
     io.regFile.writeAddr := io.in.bits.rd
@@ -52,5 +55,7 @@ class Writeback(xlen: Int) extends Module {
     io.csrFile.en := io.in.bits.csrWrite
     io.csrFile.addr := io.in.bits.csrAddr
     io.csrFile.data := io.in.bits.csrData
+
+    io.instret := !io.halt
   }
 }

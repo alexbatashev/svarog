@@ -1,42 +1,91 @@
 package svarog.bits
 
 import chisel3._
+import chisel3.experimental.BaseModule
 import chisel3.util._
 import svarog.decoder.MicroOp
 import svarog.decoder.OpType
 
-class ControlRegisterIO(width: Int) extends Bundle {
-  val read = Output(UInt(width.W))
-  val write = Input(Valid(UInt(width.W)))
+class CSRDeviceReadIO(xlen: Int) extends Bundle {
+  val addr = Input(UInt(12.W))
+  val data = Output(UInt(xlen.W))
 }
 
-trait ControlRegisterLike {
-  def address: Int
-  def width: Int
-  def readOnly: Boolean
-  val io: ControlRegisterIO
+class CSRDeviceWriteIO(xlen: Int) extends Bundle {
+  val addr = Input(UInt(12.W))
+  val data = Input(UInt(xlen.W))
+  val error = Output(Bool())
 }
 
-class ConstantControlRegister(
-    val address: Int,
-    val width: Int = 32,
-    initialValue: Int = 0,
-    val readOnly: Boolean = true
-) extends Module
-    with ControlRegisterLike {
+class CSRDeviceIO(xlen: Int) extends Bundle {
+  val read = Valid(new CSRDeviceReadIO(xlen))
+  val write = Valid(new CSRDeviceWriteIO(xlen))
+}
 
-  val io = IO(new ControlRegisterIO(width))
+trait CSRBusDevice {
+  def bus: CSRDeviceIO
+  def addrInRange(addr: UInt): Bool
+}
 
-  private val data = RegInit(initialValue.U(width.W))
+object CSRBus {
+  def apply(
+      readMaster: Valid[CSRDeviceReadIO],
+      writeMaster: Valid[CSRDeviceWriteIO],
+      devices: Seq[CSRBusDevice]
+  ): Unit = {
+    devices.foreach { dev =>
+      dev.bus.read.valid := false.B
+      dev.bus.read.bits := DontCare
 
-  io.read := data
+      dev.bus.write.valid := false.B
+      dev.bus.write.bits := DontCare
 
-  when(io.write.valid && !readOnly.B) {
-    data := io.write.bits
+      when(readMaster.valid) {
+        when(dev.addrInRange(readMaster.bits.addr)) {
+          dev.bus.read <> readMaster
+        }
+      }
+
+      when(writeMaster.valid) {
+        when(dev.addrInRange(writeMaster.bits.addr)) {
+          dev.bus.write <> writeMaster
+        }
+      }
+    }
   }
 }
 
-object ConstantControlRegister {
+class ConstantCsrDevice(
+    address: Int,
+    xlen: Int = 32,
+    width: Int = 32,
+    initialValue: Int = 0,
+    readOnly: Boolean = true
+) extends Module
+    with CSRBusDevice {
+
+  require(width <= xlen, "Register must not be wider than xlen")
+
+  val bus = IO(new CSRDeviceIO(xlen))
+
+  def addrInRange(addr: UInt): Bool = addr === address.U
+
+  val value = RegInit(initialValue.U(width.W))
+
+  when(bus.read.valid) {
+    bus.read.bits.data(width - 1, 0) := value
+  }
+
+  when(bus.write.valid) {
+    if (readOnly) {
+      bus.write.bits.error := true.B
+    } else {
+      value := bus.write.bits.data(width - 1, 0)
+    }
+  }
+}
+
+object ConstantCsrDevice {
 
   /** Returns constant registers required by Zicsr spec
     *
@@ -45,58 +94,20 @@ object ConstantControlRegister {
     * @return
     *   a sequence of register-like objects
     */
-  def getDefaultRegisters(hartId: Int): Seq[() => ControlRegisterLike] = {
+  def getDefaultRegisters(
+      hartId: Int
+  ): Seq[() => (BaseModule with CSRBusDevice)] = {
     Seq(
-      () => new ConstantControlRegister(0x301), // misa, empty for now
-      () => new ConstantControlRegister(0xf11), // mvendorid, 0 for non-commercial
-      () => new ConstantControlRegister(0xf12), // marchid, 0 for now
-      () => new ConstantControlRegister(0xf13), // mimpid, 0 for now
+      () => new ConstantCsrDevice(0x301), // misa, empty for now
+      () => new ConstantCsrDevice(0xf11), // mvendorid, 0 for non-commercial
+      () => new ConstantCsrDevice(0xf12), // marchid, 0 for now
+      () => new ConstantCsrDevice(0xf13), // mimpid, 0 for now
       () =>
-        new ConstantControlRegister(
+        new ConstantCsrDevice(
           0xf14,
           initialValue = hartId
         ) // mhartid
     )
-  }
-}
-
-class CSRReadIO extends Bundle {
-  val addr = Input(UInt(12.W))
-  val data = Output(UInt(64.W))
-}
-
-class CSRWriteIO extends Bundle {
-  val en = Input(Bool())
-  val addr = Input(UInt(12.W))
-  val data = Input(UInt(64.W))
-}
-
-class CSRIO extends Bundle {
-  val read = new CSRReadIO()
-  val write = new CSRWriteIO()
-}
-
-class CSRFile(regGens: Seq[() => ControlRegisterLike]) extends Module {
-  val io = IO(new CSRIO())
-
-  io.read.data := 0.U
-
-  private val regs = regGens.map(gen => Module(gen()))
-
-  regs.foreach { reg =>
-    reg.io.write.valid := false.B
-    reg.io.write.bits := 0.U(reg.width.W)
-
-    when(io.read.addr === reg.address.U) {
-      io.read.data := reg.io.read
-    }
-
-    if (!reg.readOnly) {
-      when(io.write.en && io.write.addr === reg.address.U) {
-        reg.io.write.valid := true.B
-        reg.io.write.bits := io.write.data(reg.width - 1, 0)
-      }
-    }
   }
 }
 
@@ -105,22 +116,20 @@ class CSREx(xlen: Int) extends Module {
     val uop = Input(Valid(new MicroOp(xlen)))
     val rs1Value = Input(UInt(xlen.W)) // Register value from Execute stage
     val result = Output(Valid(UInt(xlen.W)))
-    val csr = Flipped(new CSRIO())
+    val csr = Flipped(Valid(new CSRDeviceReadIO(xlen)))
   })
 
   // Default outputs
   io.result.valid := false.B
   io.result.bits := 0.U
-  io.csr.read.addr := 0.U
-  io.csr.write.en := false.B
-  io.csr.write.addr := 0.U
-  io.csr.write.data := 0.U
+  io.csr.bits.addr := 0.U
 
   val isCSR =
     io.uop.bits.opType === OpType.CSRRW || io.uop.bits.opType === OpType.CSRRS || io.uop.bits.opType === OpType.CSRRC
   when(io.uop.valid && isCSR) {
     // Read CSR address from uop
     io.csr.read.addr := io.uop.bits.csrAddr
+    io.csr.read.en := true.B
 
     // Get the value to use for modification (either from rs1 or immediate)
     val modifyValue = Wire(UInt(xlen.W))
