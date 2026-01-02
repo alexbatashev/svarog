@@ -3,14 +3,14 @@ package svarog.micro
 import chisel3._
 import chisel3.util._
 import svarog.bits.RegFileWriteIO
-import svarog.bits.CSRWriteIO
+import svarog.bits.CSRWriteMasterIO
 import svarog.decoder.OpType
 
 class Writeback(xlen: Int) extends Module {
   val io = IO(new Bundle {
     val in = Flipped(Decoupled(new MemResult(xlen)))
     val regFile = Flipped(new RegFileWriteIO(xlen))
-    val csrFile = Flipped(new CSRWriteIO())
+    val csrWrite = Flipped(new CSRWriteMasterIO(xlen))
     val hazard = Valid(UInt(5.W))
     val csrHazard = Valid(new HazardUnitCSRIO)
     val instret = Output(Bool())
@@ -41,9 +41,9 @@ class Writeback(xlen: Int) extends Module {
   io.regFile.writeAddr := 0.U
   io.regFile.writeData := 0.U
 
-  io.csrFile.en := false.B
-  io.csrFile.addr := 0.U
-  io.csrFile.data := 0.U
+  io.csrWrite.valid := false.B
+  io.csrWrite.addr := 0.U
+  io.csrWrite.data := 0.U
 
   io.instret := false.B
 
@@ -52,9 +52,9 @@ class Writeback(xlen: Int) extends Module {
     io.regFile.writeAddr := io.in.bits.rd
     io.regFile.writeData := io.in.bits.gprData
 
-    io.csrFile.en := io.in.bits.csrWrite
-    io.csrFile.addr := io.in.bits.csrAddr
-    io.csrFile.data := io.in.bits.csrData
+    io.csrWrite.valid := io.in.bits.csrWrite
+    io.csrWrite.addr := io.in.bits.csrAddr
+    io.csrWrite.data := io.in.bits.csrData
 
     io.instret := !io.halt
   }

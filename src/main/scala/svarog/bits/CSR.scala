@@ -6,6 +6,19 @@ import chisel3.util._
 import svarog.decoder.MicroOp
 import svarog.decoder.OpType
 
+class CSRReadMasterIO(xlen: Int) extends Bundle {
+  val valid = Input(Bool())
+  val addr = Input(UInt(12.W))
+  val data = Output(UInt(xlen.W))
+}
+
+class CSRWriteMasterIO(xlen: Int) extends Bundle {
+  val valid = Input(Bool())
+  val addr = Input(UInt(12.W))
+  val data = Input(UInt(xlen.W))
+  val error = Output(Bool())
+}
+
 class CSRDeviceReadIO(xlen: Int) extends Bundle {
   val addr = Input(UInt(12.W))
   val data = Output(UInt(xlen.W))
@@ -29,27 +42,39 @@ trait CSRBusDevice {
 
 object CSRBus {
   def apply(
-      readMaster: Valid[CSRDeviceReadIO],
-      writeMaster: Valid[CSRDeviceWriteIO],
+      readMaster: CSRReadMasterIO,
+      writeMaster: CSRWriteMasterIO,
       devices: Seq[CSRBusDevice]
   ): Unit = {
+    readMaster.data := 0.U
+    writeMaster.error := false.B
+
     devices.foreach { dev =>
       dev.bus.read.valid := false.B
-      dev.bus.read.bits := DontCare
+      dev.bus.read.bits.addr := 0.U
 
       dev.bus.write.valid := false.B
-      dev.bus.write.bits := DontCare
+      dev.bus.write.bits.addr := 0.U
+      dev.bus.write.bits.data := 0.U
 
-      when(readMaster.valid) {
-        when(dev.addrInRange(readMaster.bits.addr)) {
-          dev.bus.read <> readMaster
-        }
+      when(readMaster.valid && dev.addrInRange(readMaster.addr)) {
+        dev.bus.read.valid := true.B
+        dev.bus.read.bits.addr := readMaster.addr
       }
 
-      when(writeMaster.valid) {
-        when(dev.addrInRange(writeMaster.bits.addr)) {
-          dev.bus.write <> writeMaster
-        }
+      when(writeMaster.valid && dev.addrInRange(writeMaster.addr)) {
+        dev.bus.write.valid := true.B
+        dev.bus.write.bits.addr := writeMaster.addr
+        dev.bus.write.bits.data := writeMaster.data
+      }
+    }
+
+    devices.foreach { dev =>
+      when(dev.bus.read.valid) {
+        readMaster.data := dev.bus.read.bits.data
+      }
+      when(dev.bus.write.valid) {
+        writeMaster.error := dev.bus.write.bits.error
       }
     }
   }
@@ -71,6 +96,9 @@ class ConstantCsrDevice(
   def addrInRange(addr: UInt): Bool = addr === address.U
 
   val value = RegInit(initialValue.U(width.W))
+
+  bus.read.bits.data := 0.U
+  bus.write.bits.error := false.B
 
   when(bus.read.valid) {
     bus.read.bits.data(width - 1, 0) := value
@@ -116,20 +144,24 @@ class CSREx(xlen: Int) extends Module {
     val uop = Input(Valid(new MicroOp(xlen)))
     val rs1Value = Input(UInt(xlen.W)) // Register value from Execute stage
     val result = Output(Valid(UInt(xlen.W)))
-    val csr = Flipped(Valid(new CSRDeviceReadIO(xlen)))
+    val csr = Flipped(new CSRReadMasterIO(xlen))
+    val csrWrite = Output(Valid(UInt(xlen.W)))
   })
 
   // Default outputs
   io.result.valid := false.B
   io.result.bits := 0.U
-  io.csr.bits.addr := 0.U
+  io.csr.valid := false.B
+  io.csr.addr := 0.U
+  io.csrWrite.valid := false.B
+  io.csrWrite.bits := 0.U
 
   val isCSR =
     io.uop.bits.opType === OpType.CSRRW || io.uop.bits.opType === OpType.CSRRS || io.uop.bits.opType === OpType.CSRRC
   when(io.uop.valid && isCSR) {
     // Read CSR address from uop
-    io.csr.read.addr := io.uop.bits.csrAddr
-    io.csr.read.en := true.B
+    io.csr.valid := true.B
+    io.csr.addr := io.uop.bits.csrAddr
 
     // Get the value to use for modification (either from rs1 or immediate)
     val modifyValue = Wire(UInt(xlen.W))
@@ -146,34 +178,31 @@ class CSREx(xlen: Int) extends Module {
       // CSRRW: Atomic Read/Write
       // Returns old CSR value, writes new value unconditionally
       io.result.valid := true.B
-      io.result.bits := io.csr.read.data
+      io.result.bits := io.csr.data
 
-      io.csr.write.en := true.B
-      io.csr.write.addr := io.uop.bits.csrAddr
-      io.csr.write.data := modifyValue
+      io.csrWrite.valid := true.B
+      io.csrWrite.bits := modifyValue
     }.elsewhen(io.uop.bits.opType === OpType.CSRRS) {
       // CSRRS: Atomic Read and Set Bits
       // Returns old CSR value, sets bits where rs1/imm has 1s
       io.result.valid := true.B
-      io.result.bits := io.csr.read.data
+      io.result.bits := io.csr.data
 
       // Only write if rs1/imm is non-zero
       when(modifyValue =/= 0.U) {
-        io.csr.write.en := true.B
-        io.csr.write.addr := io.uop.bits.csrAddr
-        io.csr.write.data := io.csr.read.data | modifyValue
+        io.csrWrite.valid := true.B
+        io.csrWrite.bits := io.csr.data | modifyValue
       }
     }.elsewhen(io.uop.bits.opType === OpType.CSRRC) {
       // CSRRC: Atomic Read and Clear Bits
       // Returns old CSR value, clears bits where rs1/imm has 1s
       io.result.valid := true.B
-      io.result.bits := io.csr.read.data
+      io.result.bits := io.csr.data
 
       // Only write if rs1/imm is non-zero
       when(modifyValue =/= 0.U) {
-        io.csr.write.en := true.B
-        io.csr.write.addr := io.uop.bits.csrAddr
-        io.csr.write.data := io.csr.read.data & ~modifyValue
+        io.csrWrite.valid := true.B
+        io.csrWrite.bits := io.csr.data & ~modifyValue
       }
     }
   }

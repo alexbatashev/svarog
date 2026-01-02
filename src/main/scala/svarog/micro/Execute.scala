@@ -9,7 +9,7 @@ import svarog.bits.{DivOp, SimpleDivider}
 import svarog.decoder.BranchOp
 import svarog.decoder.{MicroOp, OpType}
 import svarog.memory.MemWidth
-import svarog.bits.{CSREx, CSRDeviceReadIO}
+import svarog.bits.{CSREx, CSRReadMasterIO}
 import svarog.config.ISA
 
 class ExecuteResult(xlen: Int) extends Bundle {
@@ -45,7 +45,7 @@ class Execute(isa: ISA) extends Module {
     val branch = Valid(new BranchFeedback(xlen))
 
     val regFile = Flipped(new RegFileReadIO(xlen))
-    val csrFile = Flipped(Valid(new CSRDeviceReadIO(xlen)))
+    val csrFile = Flipped(new CSRReadMasterIO(xlen))
 
     // Write register for hazard control
     val hazard = Valid(UInt(5.W))
@@ -113,7 +113,7 @@ class Execute(isa: ISA) extends Module {
       activeUop.opType === OpType.CSRRC
   )
   io.csrHazard.bits.addr := activeUop.csrAddr
-  io.csrHazard.bits.isWrite := csr.io.csr.write.en
+  io.csrHazard.bits.isWrite := csr.io.csrWrite.valid
 
   io.res.bits.opType := activeUop.opType
   io.res.bits.pc := activeUop.pc
@@ -173,7 +173,9 @@ class Execute(isa: ISA) extends Module {
   csr.io.uop.bits := activeUop
   csr.io.rs1Value := io.regFile.readData1
 
-  io.csrFile.read <> csr.io.csr.read
+  io.csrFile.valid := csr.io.csr.valid
+  io.csrFile.addr := csr.io.csr.addr
+  csr.io.csr.data := io.csrFile.data
 
   when(
     (io.uop.valid || executingMultiCycle || multiCycleComplete) && !needFlush
@@ -258,8 +260,8 @@ class Execute(isa: ISA) extends Module {
       is(OpType.CSRRW, OpType.CSRRS, OpType.CSRRC) {
         // CSR operations - result goes to GPR, write signal propagates to writeback
         io.res.bits.gprResult := csr.io.result.bits
-        io.res.bits.csrWrite := csr.io.csr.write.en
-        io.res.bits.csrResult := csr.io.csr.write.data
+        io.res.bits.csrWrite := csr.io.csrWrite.valid
+        io.res.bits.csrResult := csr.io.csrWrite.bits
       }
     }
   }
