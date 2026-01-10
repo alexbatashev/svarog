@@ -30,6 +30,7 @@ class ExecuteResult(xlen: Int) extends Bundle {
   val storeData = Output(UInt(xlen.W))
 
   val pc = Output(UInt(xlen.W))
+  val instruction = Output(UInt(32.W))  // Raw instruction bits for trap handling
 }
 
 class BranchFeedback(xlen: Int) extends Bundle {
@@ -110,13 +111,16 @@ class Execute(isa: ISA) extends Module {
   io.csrHazard.valid := hazardActive && (
     activeUop.opType === OpType.CSRRW ||
       activeUop.opType === OpType.CSRRS ||
-      activeUop.opType === OpType.CSRRC
+      activeUop.opType === OpType.CSRRC ||
+      activeUop.opType === OpType.INVALID  // Trap instruction
   )
   io.csrHazard.bits.addr := activeUop.csrAddr
-  io.csrHazard.bits.isWrite := csr.io.csrWrite.valid
+  io.csrHazard.bits.isWrite := csr.io.csrWrite.valid || (activeUop.opType === OpType.INVALID)
+  io.csrHazard.bits.isTrap := (activeUop.opType === OpType.INVALID)
 
   io.res.bits.opType := activeUop.opType
   io.res.bits.pc := activeUop.pc
+  io.res.bits.instruction := activeUop.instruction
 
   // ALU result
   io.res.bits.gprResult := 0.U
@@ -262,6 +266,35 @@ class Execute(isa: ISA) extends Module {
         io.res.bits.gprResult := csr.io.result.bits
         io.res.bits.csrWrite := csr.io.csrWrite.valid
         io.res.bits.csrResult := csr.io.csrWrite.bits
+      }
+
+      is(OpType.INVALID) {
+        // Illegal instruction trap
+        // Read mtvec to get trap handler address
+        io.csrFile.valid := true.B
+        io.csrFile.addr := 0x305.U  // mtvec
+        val mtvecValue = io.csrFile.data
+
+        // Generate redirect to trap handler (like a branch)
+        io.branch.valid := true.B
+        io.branch.bits.targetPC := mtvecValue
+        needFlush := true.B
+
+        // OpType.INVALID + PC + instruction will flow to Writeback
+        // where trap CSRs (mepc, mcause, mtval) will be written
+      }
+
+      is(OpType.MRET) {
+        // Return from machine trap
+        // Read mepc to get return address
+        io.csrFile.valid := true.B
+        io.csrFile.addr := 0x341.U  // mepc
+        val mepcValue = io.csrFile.data
+
+        // Generate redirect to return address
+        io.branch.valid := true.B
+        io.branch.bits.targetPC := mepcValue
+        needFlush := true.B
       }
     }
   }

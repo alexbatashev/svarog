@@ -18,6 +18,7 @@ class MemResult(xlen: Int) extends Bundle {
   val pc = Output(UInt(xlen.W))
   val storeAddr = Output(UInt(xlen.W)) // Store address for watchpoint
   val isStore = Output(Bool()) // Flag indicating if this was a store
+  val instruction = Output(UInt(32.W))  // Raw instruction bits for trap handling
 }
 
 private class MemLatch(xlen: Int) extends Bundle {
@@ -27,6 +28,7 @@ private class MemLatch(xlen: Int) extends Bundle {
   val isStore = Bool()
   val opWidth = MemWidth.Type()
   val unsigned = Bool()
+  val instruction = UInt(32.W)
 }
 
 class Memory(xlen: Int) extends Module {
@@ -53,6 +55,7 @@ class Memory(xlen: Int) extends Module {
   io.csrHazard.valid := false.B
   io.csrHazard.bits.addr := 0.U
   io.csrHazard.bits.isWrite := false.B
+  io.csrHazard.bits.isTrap := false.B
 
   // Pass through data
   io.res.valid := io.ex.fire && io.ex.bits.opType =/= OpType.LOAD && io.ex.bits.opType =/= OpType.STORE
@@ -64,6 +67,7 @@ class Memory(xlen: Int) extends Module {
   io.res.bits.csrWrite := io.ex.bits.csrWrite
   io.res.bits.csrData := io.ex.bits.csrResult
   io.res.bits.pc := io.ex.bits.pc
+  io.res.bits.instruction := io.ex.bits.instruction
   io.res.bits.storeAddr := 0.U
   io.res.bits.isStore := false.B
 
@@ -82,6 +86,7 @@ class Memory(xlen: Int) extends Module {
     inst.isStore := io.ex.bits.opType === OpType.STORE
     inst.opWidth := io.ex.bits.memWidth
     inst.unsigned := io.ex.bits.memUnsigned
+    inst.instruction := io.ex.bits.instruction
 
     pendingInst := inst
   }
@@ -156,6 +161,7 @@ class Memory(xlen: Int) extends Module {
     io.csrHazard.valid := true.B
     io.csrHazard.bits.addr := io.ex.bits.csrAddr
     io.csrHazard.bits.isWrite := true.B
+    io.csrHazard.bits.isTrap := (io.ex.bits.opType === OpType.INVALID)
   }
 
   when(io.ex.fire) {
@@ -181,6 +187,7 @@ class Memory(xlen: Int) extends Module {
     io.res.bits.rd := pendingInst.rd
     io.res.bits.storeAddr := pendingInst.storeAddr
     io.res.bits.isStore := pendingInst.isStore
+    io.res.bits.instruction := pendingInst.instruction
     io.res.bits.opType := Mux(pendingInst.isStore, OpType.STORE, OpType.LOAD)
     io.res.bits.gprWrite := !pendingInst.isStore
 

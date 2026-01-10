@@ -23,6 +23,7 @@ object OpType extends ChiselEnum {
   val CSRRS = Value
   val CSRRC = Value
   val SYSTEM = Value
+  val MRET = Value  // Return from machine trap
 }
 
 class MicroOp(val xlen: Int) extends Bundle {
@@ -42,6 +43,7 @@ class MicroOp(val xlen: Int) extends Bundle {
   val pc = Output(UInt(xlen.W))
   val isEcall = Output(Bool())
   val csrAddr = Output(UInt(12.W))
+  val instruction = Output(UInt(32.W))  // Raw instruction bits for trap handling
 }
 
 object MicroOp {
@@ -63,6 +65,7 @@ object MicroOp {
     invalid.pc := 0.U
     invalid.isEcall := false.B
     invalid.csrAddr := 0.U
+    invalid.instruction := 0.U
     invalid
   }
 }

@@ -186,6 +186,9 @@ case class BaseInstructions(xlen: Int) extends Module {
         io.decoded.opType := OpType.SYSTEM
         io.decoded.regWrite := false.B
         io.decoded.isEcall := true.B
+      }.elsewhen(inst === "h30200073".U) { // MRET (Return from machine trap)
+        io.decoded.opType := OpType.MRET
+        io.decoded.regWrite := false.B
       }
     }
   }

@@ -54,6 +54,9 @@ class SimpleDecoder(xlen: Int) extends Module {
     }
   }
 
+  // Always pass instruction bits through for trap handling
+  io.decoded.bits.instruction := io.inst.bits.word
+
   io.hazard.valid := io.inst.valid
   io.hazard.bits.rs1 := io.decoded.bits.rs1
   io.hazard.bits.rs2 := io.decoded.bits.rs2

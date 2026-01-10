@@ -19,9 +19,14 @@ class Writeback(xlen: Int) extends Module {
     val halt = Input(Bool())
   })
 
-  // Always ready - don't backpressure based on halt
-  // Halt is handled by not writing registers (below)
-  io.in.ready := true.B
+  // Multi-cycle trap commit state machine
+  // When handling OpType.INVALID, we need 3 cycles to write mepc, mcause, mtval
+  val trapCommitState = RegInit(0.U(2.W))
+  val trapLatch = Reg(new MemResult(xlen))
+  val isTrapCommit = RegInit(false.B)
+
+  // Ready when not in middle of trap commit
+  io.in.ready := !isTrapCommit
 
   io.hazard.valid := io.in.valid
   io.hazard.bits := io.in.bits.rd
@@ -29,6 +34,7 @@ class Writeback(xlen: Int) extends Module {
   io.csrHazard.valid := io.in.valid && io.in.bits.csrWrite
   io.csrHazard.bits.addr := io.in.bits.csrAddr
   io.csrHazard.bits.isWrite := io.in.bits.csrWrite
+  io.csrHazard.bits.isTrap := false.B
 
   io.debugPC.valid := io.in.valid
   io.debugPC.bits := io.in.bits.pc
@@ -47,7 +53,50 @@ class Writeback(xlen: Int) extends Module {
 
   io.instret := false.B
 
-  when(io.in.valid) {
+  // Trap commit state machine
+  when(io.in.fire && io.in.bits.opType === OpType.INVALID) {
+    // Start trap commit sequence
+    isTrapCommit := true.B
+    trapCommitState := 0.U
+    trapLatch := io.in.bits
+  }
+
+  when(isTrapCommit) {
+    // Multi-cycle trap CSR writes
+    io.csrWrite.valid := true.B
+
+    switch(trapCommitState) {
+      is(0.U) {
+        // Write mepc (exception PC)
+        io.csrWrite.addr := 0x341.U
+        io.csrWrite.data := trapLatch.pc
+        trapCommitState := 1.U
+      }
+      is(1.U) {
+        // Write mcause (trap cause)
+        io.csrWrite.addr := 0x342.U
+        io.csrWrite.data := 2.U  // Illegal instruction, bit 31=0 for exception
+        trapCommitState := 2.U
+      }
+      is(2.U) {
+        // Write mtval (trap value - faulting instruction)
+        io.csrWrite.addr := 0x343.U
+        io.csrWrite.data := trapLatch.instruction
+        // Trap commit complete
+        isTrapCommit := false.B
+        trapCommitState := 0.U
+        io.instret := !io.halt
+      }
+    }
+
+    // Set CSR hazard to indicate trap CSR writes are in progress
+    io.csrHazard.valid := true.B
+    io.csrHazard.bits.addr := io.csrWrite.addr
+    io.csrHazard.bits.isWrite := true.B
+  }
+
+  // Normal instruction commit
+  when(io.in.valid && io.in.bits.opType =/= OpType.INVALID) {
     io.regFile.writeEn := io.in.bits.gprWrite
     io.regFile.writeAddr := io.in.bits.rd
     io.regFile.writeData := io.in.bits.gprData

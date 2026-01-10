@@ -7,6 +7,7 @@ import svarog.decoder.SimpleDecodeHazardIO
 class HazardUnitCSRIO extends Bundle {
   val addr = UInt(12.W)
   val isWrite = Bool()
+  val isTrap = Bool()  // Trap instruction writes multiple CSRs (mepc, mcause, mtval)
 }
 
 class HazardUnit extends Module {
@@ -27,6 +28,15 @@ class HazardUnit extends Module {
 
   def csrHazardOn(csrAddr: UInt, decodeCsrAddr: UInt, isWrite: Bool): Bool =
     isWrite && csrAddr === decodeCsrAddr
+
+  // Trap hazard: stall if reading trap CSRs while trap is in pipeline
+  def trapHazardOn(decodeCsrAddr: UInt, isTrap: Bool): Bool = {
+    val readingTrapCsr = (decodeCsrAddr === 0x305.U ||  // mtvec
+                          decodeCsrAddr === 0x341.U ||  // mepc
+                          decodeCsrAddr === 0x342.U ||  // mcause
+                          decodeCsrAddr === 0x343.U)    // mtval
+    isTrap && readingTrapCsr
+  }
 
   // GPR hazards
   val hazardExec = io.decode.valid && io.exec.valid && (
@@ -69,6 +79,20 @@ class HazardUnit extends Module {
         io.wbCsr.bits.isWrite
       )
 
+  // Trap hazards - stall if reading trap CSRs while trap instruction is in pipeline
+  val trapHazardExec =
+    io.decode.valid && io.decode.bits.isCsrOp && io.execCsr.valid &&
+      trapHazardOn(io.decode.bits.csrAddr, io.execCsr.bits.isTrap)
+
+  val trapHazardMem =
+    io.decode.valid && io.decode.bits.isCsrOp && io.memCsr.valid &&
+      trapHazardOn(io.decode.bits.csrAddr, io.memCsr.bits.isTrap)
+
+  val trapHazardWb =
+    io.decode.valid && io.decode.bits.isCsrOp && io.wbCsr.valid &&
+      trapHazardOn(io.decode.bits.csrAddr, io.wbCsr.bits.isTrap)
+
   io.stall := io.watchpointHit || hazardExec || hazardMem || hazardWb ||
-    csrHazardExec || csrHazardMem || csrHazardWb
+    csrHazardExec || csrHazardMem || csrHazardWb ||
+    trapHazardExec || trapHazardMem || trapHazardWb
 }

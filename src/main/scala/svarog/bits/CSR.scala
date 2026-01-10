@@ -31,8 +31,14 @@ class CSRDeviceWriteIO(xlen: Int) extends Bundle {
 }
 
 class CSRDeviceIO(xlen: Int) extends Bundle {
-  val read = Valid(new CSRDeviceReadIO(xlen))
-  val write = Valid(new CSRDeviceWriteIO(xlen))
+  val read = new Bundle {
+    val valid = Input(Bool())
+    val bits = new CSRDeviceReadIO(xlen)
+  }
+  val write = new Bundle {
+    val valid = Input(Bool())
+    val bits = new CSRDeviceWriteIO(xlen)
+  }
 }
 
 trait CSRBusDevice {
@@ -97,12 +103,14 @@ class ConstantCsrDevice(
 
   val value = RegInit(initialValue.U(width.W))
 
-  bus.read.bits.data := 0.U
   bus.write.bits.error := false.B
 
-  when(bus.read.valid) {
-    bus.read.bits.data(width - 1, 0) := value
-  }
+  // Assign read data - zero-extend the value to xlen width
+  bus.read.bits.data := Mux(
+    bus.read.valid,
+    Cat(0.U((xlen - width).W), value),
+    0.U
+  )
 
   when(bus.write.valid) {
     if (readOnly) {

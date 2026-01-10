@@ -6,7 +6,8 @@ import svarog.bits.{
   ConstantCsrDevice,
   CSRBus,
   CSRReadMasterIO,
-  CSRWriteMasterIO
+  CSRWriteMasterIO,
+  TrapCsrDevice
 }
 import svarog.bits.RegFile
 import svarog.bits.RegFileReadIO
@@ -69,7 +70,8 @@ class Cpu(
   execute.io.csrFile <> csrReadMaster
   writeback.io.csrWrite <> csrWriteMaster
 
-  private val csrDevices = defaultCSRs.map(gen => Module(gen()))
+  private val trapCsrDevice = Module(new TrapCsrDevice(config.isa.xlen))
+  private val csrDevices = defaultCSRs.map(gen => Module(gen())) :+ trapCsrDevice
   CSRBus(csrReadMaster, csrWriteMaster, csrDevices)
 
   // Fetch memory
