@@ -2,7 +2,12 @@ package svarog.micro
 
 import chisel3._
 import chisel3.util._
-import svarog.bits.{ConstantCsrDevice, CSRBus, CSRReadMasterIO, CSRWriteMasterIO}
+import svarog.bits.{
+  ConstantCsrDevice,
+  CSRBus,
+  CSRReadMasterIO,
+  CSRWriteMasterIO
+}
 import svarog.bits.RegFile
 import svarog.bits.RegFileReadIO
 import svarog.bits.RegFileWriteIO
@@ -17,7 +22,6 @@ import svarog.memory.MemoryIO
 import svarog.memory.MemoryRequest
 import svarog.MicroCoreConfig
 import svarog.config.Cluster
-import svarog.perf.HPM
 
 class CpuIO(xlen: Int) extends Bundle {
   val instmem = new MemoryIO(xlen, xlen)
@@ -66,10 +70,7 @@ class Cpu(
   writeback.io.csrWrite <> csrWriteMaster
 
   private val csrDevices = defaultCSRs.map(gen => Module(gen()))
-  private val hpm = Module(new HPM(config.isa))
-  hpm.io.instretCount := writeback.io.instret.asUInt
-
-  CSRBus(csrReadMaster, csrWriteMaster, csrDevices :+ hpm)
+  CSRBus(csrReadMaster, csrWriteMaster, csrDevices)
 
   // Fetch memory
   fetch.io.mem <> io.instmem
