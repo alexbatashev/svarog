@@ -105,11 +105,18 @@ case class TCM(baseAddress: Long, length: Long) extends Memory {
   def getBaseAddress: Long = baseAddress
 }
 
+/** Timer configuration for RISC-V mtime/mtimecmp registers */
+case class Timer(
+    baseAddr: Long,
+    enabled: Boolean = true
+)
+
 /** SoC configuration loaded from YAML (without runtime flags) */
 case class SoCYaml(
     clusters: Seq[Cluster],
     io: Seq[IO],
-    memories: Seq[Memory]
+    memories: Seq[Memory],
+    timer: Option[Timer] = None
 )
 
 /** Complete SoC configuration (YAML + runtime flags) */
@@ -117,6 +124,7 @@ case class SoC(
     clusters: Seq[Cluster],
     io: Seq[IO],
     memories: Seq[Memory],
+    timer: Option[Timer],
     simulatorDebug: Boolean
 ) {
   def getMaxWordLen: Int = clusters.map(_.isa.xlen).maxOption.getOrElse(0)
@@ -131,6 +139,7 @@ object SoC {
       clusters = yaml.clusters,
       io = yaml.io,
       memories = yaml.memories,
+      timer = yaml.timer,
       simulatorDebug = simulatorDebug
     )
   }
@@ -140,6 +149,7 @@ object Config {
   // Derive decoders for concrete types
   implicit val uartDecoder: Decoder[UART] = deriveDecoder
   implicit val tcmDecoder: Decoder[TCM] = deriveDecoder
+  implicit val timerDecoder: Decoder[Timer] = deriveDecoder
 
   // Polymorphic decoder for IO based on "type" field
   implicit val ioDecoder: Decoder[IO] = Decoder.instance { cursor =>

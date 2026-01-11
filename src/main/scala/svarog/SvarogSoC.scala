@@ -9,6 +9,7 @@ import svarog.debug.ChipDebugModule
 import svarog.debug.ChipHartDebugIO
 import svarog.debug.ChipMemoryDebugIO
 import svarog.bits.UartWishbone
+import svarog.bits.TimerWishbone
 import svarog.bits.IOGenerator
 import svarog.debug.DebugIOGenerator
 import svarog.debug.DebugGenerator
@@ -24,6 +25,7 @@ class SvarogSoC(
   val io = IO(new Bundle {
     val debug = DebugIOGenerator(config)
     val gpio = IOGenerator.generatePins(config)
+    val timerClock = Input(Clock())  // Timer clock input (can be tied to system clock)
   })
 
   private val startAddress = bootloader
@@ -55,9 +57,21 @@ class SvarogSoC(
 
   private val gpioSlaves = IOGenerator.generateSocIo(config, io.gpio)
 
+  private val timer: Option[TimerWishbone] = config.timer.map { timerCfg =>
+    val t = Module(new TimerWishbone(
+      baseAddr = timerCfg.baseAddr,
+      addrWidth = config.getMaxWordLen,
+      busWidth = config.getMaxWordLen
+    ))
+    t.timerClock := io.timerClock
+    t
+  }
+
+  private val timerSlaves: Seq[WishboneSlave] = timer.toSeq
+
   private val allMasters: Seq[WishboneMaster] = coreMems ++ debugMasters
 
-  private val allSlaves: Seq[WishboneSlave] = rom ++ memories ++ gpioSlaves
+  private val allSlaves: Seq[WishboneSlave] = rom ++ memories ++ gpioSlaves ++ timerSlaves
 
   WishboneRouter(allMasters, allSlaves)
 }

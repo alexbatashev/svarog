@@ -29,11 +29,15 @@ class CpuDebugSpec extends AnyFlatSpec with Matchers with ChiselSim {
       memories = Seq(
         TCM(baseAddress = 0x80000000L, length = 4096L)
       ),
+      timer = None,
       simulatorDebug = true
     )
     var results: Map[Int, Int] = Map()
 
     simulate(new SvarogSoC(config, None)) { dut =>
+      // Connect timer clock to system clock for testing
+      dut.io.timerClock.poke(dut.clock)
+
       // Helper to tick clock
       def tick(): Unit = {
         dut.clock.step(1)

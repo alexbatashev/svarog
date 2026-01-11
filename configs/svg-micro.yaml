@@ -13,3 +13,6 @@ memories:
   - type: tcm
     baseAddress: 0x80000000
     length: 65536
+timer:
+  baseAddr: 0x02000000
+  enabled: true
