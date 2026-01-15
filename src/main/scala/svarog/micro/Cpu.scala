@@ -6,9 +6,9 @@ import svarog.bits.{
   ConstantCsrDevice,
   CSRBus,
   CSRReadMasterIO,
-  CSRWriteMasterIO,
-  TrapCsrDevice
+  CSRWriteMasterIO
 }
+import svarog.interrupt.{InterruptController, TrapController}
 import svarog.bits.RegFile
 import svarog.bits.RegFileReadIO
 import svarog.bits.RegFileWriteIO
@@ -70,8 +70,29 @@ class Cpu(
   execute.io.csrFile <> csrReadMaster
   writeback.io.csrWrite <> csrWriteMaster
 
-  private val trapCsrDevice = Module(new TrapCsrDevice(config.isa.xlen))
-  private val csrDevices = defaultCSRs.map(gen => Module(gen())) :+ trapCsrDevice
+  // Interrupt and trap controllers
+  private val intController = Module(new InterruptController(config.isa.xlen))
+  private val trapController = Module(new TrapController(config.isa.xlen, numTrapSources = 1))
+
+  // Wire interrupt controller to trap controller
+  trapController.io.interruptPending := intController.io.pending
+  trapController.io.interruptCause := intController.io.cause
+
+  // Default interrupt sources (no interrupts connected yet)
+  intController.io.sources.mtip := false.B
+  intController.io.sources.meip := false.B
+  intController.io.msip := false.B
+
+  // Default trap controller inputs (exceptions wired from pipeline later)
+  trapController.io.exceptions(0).valid := false.B
+  trapController.io.exceptions(0).bits.cause := 0.U
+  trapController.io.exceptions(0).bits.tval := 0.U
+  trapController.io.exceptions(0).bits.pc := 0.U
+  trapController.io.exceptions(0).bits.isInterrupt := false.B
+  trapController.io.currentPC := fetch.io.inst_out.bits.pc
+  trapController.io.mret := false.B
+
+  private val csrDevices = defaultCSRs.map(gen => Module(gen())) :+ trapController :+ intController
   CSRBus(csrReadMaster, csrWriteMaster, csrDevices)
 
   // Fetch memory
