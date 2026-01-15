@@ -30,6 +30,11 @@ class CpuIO(xlen: Int) extends Bundle {
   val debug = Flipped(new HartDebugIO(xlen))
   val debugRegData = Valid(UInt(xlen.W))
   val halt = Output(Bool()) // Expose halt status
+
+  // Interrupt inputs
+  val mtip = Input(Bool())  // Machine timer interrupt pending
+  val msip = Input(Bool())  // Machine software interrupt pending
+  val meip = Input(Bool())  // Machine external interrupt pending
 }
 
 class Cpu(
@@ -78,10 +83,10 @@ class Cpu(
   trapController.io.interruptPending := intController.io.pending
   trapController.io.interruptCause := intController.io.cause
 
-  // Default interrupt sources (no interrupts connected yet)
-  intController.io.sources.mtip := false.B
-  intController.io.sources.meip := false.B
-  intController.io.msip := false.B
+  // Wire interrupt sources from SoC
+  intController.io.sources.mtip := io.mtip
+  intController.io.sources.meip := io.meip
+  intController.io.msip := io.msip
 
   // Default trap controller inputs (exceptions wired from pipeline later)
   trapController.io.exceptions(0).valid := false.B

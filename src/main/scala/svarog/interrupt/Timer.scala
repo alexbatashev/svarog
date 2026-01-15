@@ -13,9 +13,9 @@ class MaxTimeIO(numHarts: Int) extends Bundle {
 }
 
 class TimerIO(numHarts: Int) extends Bundle {
-  val maxTime = Valid(new MaxTimeIO(numHarts))
-  val fire = Output(Vec(numHarts, Bool()))
-  val time = Output(UInt(64.W))
+  val maxTime = Flipped(Valid(new MaxTimeIO(numHarts)))  // Input from TimerWishbone
+  val fire = Output(Vec(numHarts, Bool()))               // Output to CPUs
+  val time = Output(UInt(64.W))                          // Output mtime value
 }
 
 class Timer(val numHarts: Int) extends Module {
@@ -31,21 +31,23 @@ class Timer(val numHarts: Int) extends Module {
 
     io.control.fire(i) := io.time >= timeCmp
 
-    when (io.control.maxTime.valid) {
-      when(io.control.maxTime.bits.hartId === i.U) {
-        when(io.control.maxTime.bits.low) {
-          timeCmp(31, 0) := io.control.maxTime.bits.value(31, 0)
-        }
-        when(io.control.maxTime.bits.high) {
-          timeCmp(63, 32) := io.control.maxTime.bits.value(63, 32)
-        }
+    when (io.control.maxTime.valid && io.control.maxTime.bits.hartId === i.U) {
+      when(io.control.maxTime.bits.low && io.control.maxTime.bits.high) {
+        // Full 64-bit write
+        timeCmp := io.control.maxTime.bits.value
+      }.elsewhen(io.control.maxTime.bits.low) {
+        // Write low 32 bits, preserve high 32 bits
+        timeCmp := Cat(timeCmp(63, 32), io.control.maxTime.bits.value(31, 0))
+      }.elsewhen(io.control.maxTime.bits.high) {
+        // Write high 32 bits, preserve low 32 bits
+        timeCmp := Cat(io.control.maxTime.bits.value(31, 0), timeCmp(31, 0))
       }
     }
   }
 }
 
 class TimerWishbone(numHarts: Int, xlen: Int, maxReqWidth: Int, baseAddr: Long) extends Module with WishboneSlave {
-  override val io: WishboneIO = IO(new WishboneIO(xlen, maxReqWidth))
+  override val io: WishboneIO = IO(Flipped(new WishboneIO(xlen, maxReqWidth)))
 
   override def addrStart: Long = baseAddr
 

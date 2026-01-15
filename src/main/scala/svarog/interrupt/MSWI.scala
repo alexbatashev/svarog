@@ -25,7 +25,7 @@ import svarog.memory.WishboneIO
   * @param baseAddr Base address for MSWI registers
   */
 class MSWI(numHarts: Int, xlen: Int, maxReqWidth: Int, baseAddr: Long) extends Module with WishboneSlave {
-  override val io: WishboneIO = IO(new WishboneIO(xlen, maxReqWidth))
+  override val io: WishboneIO = IO(Flipped(new WishboneIO(xlen, maxReqWidth)))
 
   override def addrStart: Long = baseAddr
 
