@@ -473,6 +473,7 @@ impl Simulator {
 
     fn tick(&self, dump_vcd: bool) {
         self.model.set_clock(0);
+        self.model.set_timer_clock(0);  // Keep timer clock synchronized
         self.model.eval();
         if dump_vcd && *self.vcd_open.borrow() {
             self.model.dump_vcd(*self.timestamp.borrow());
@@ -480,6 +481,7 @@ impl Simulator {
         *(self.timestamp.borrow_mut()) += 1;
 
         self.model.set_clock(1);
+        self.model.set_timer_clock(1);  // Keep timer clock synchronized
         self.model.eval();
 
         if dump_vcd && *self.vcd_open.borrow() {

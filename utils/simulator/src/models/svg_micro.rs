@@ -26,6 +26,9 @@ pub mod ffi {
         fn get_reset(&self) -> u8;
         fn set_reset(self: Pin<&mut VerilatorModel>, value: u8);
 
+        // Timer clock (tied to main clock for simulation)
+        fn set_timer_clock(self: Pin<&mut VerilatorModel>, value: u8);
+
         // Debug hart interface - ID routing
         fn get_debug_hart_in_id_valid(&self) -> u8;
         fn set_debug_hart_in_id_valid(self: Pin<&mut VerilatorModel>, value: u8);

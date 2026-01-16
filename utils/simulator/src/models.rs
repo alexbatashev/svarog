@@ -72,6 +72,13 @@ impl VerilatorModelVariant {
         }
     }
 
+    // Timer clock (tied to main clock for simulation)
+    pub fn set_timer_clock(&self, value: u8) {
+        match self {
+            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_timer_clock(value),
+        }
+    }
+
     // Debug hart interface - ID routing
     pub fn get_debug_hart_in_id_valid(&self) -> u8 {
         match self {

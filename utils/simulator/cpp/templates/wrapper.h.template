@@ -34,6 +34,9 @@ public:
     uint8_t get_reset() const;
     void set_reset(uint8_t value);
 
+    // Timer clock (tied to main clock for simulation)
+    void set_timer_clock(uint8_t value);
+
     // Debug hart interface - ID routing
     // NOTE: These signals only exist if built with --simulator-debug-iface=true
     uint8_t get_debug_hart_in_id_valid() const;
