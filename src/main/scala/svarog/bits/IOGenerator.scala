@@ -5,7 +5,7 @@ import chisel3.experimental.{Analog, attach}
 
 import svarog.config.SoC
 import svarog.config.{UART => UartCfg}
-import svarog.bits.UartWishbone
+import svarog.bits.UartMemory
 import svarog.memory.WishboneSlave
 
 object IOGenerator {
@@ -24,7 +24,7 @@ object IOGenerator {
       io match {
         case UartCfg(name, baseAddr) => {
           val uart = Module(
-            new UartWishbone(
+            new UartMemory(
               baseAddr,
               addrWidth = config.getMaxWordLen,
               dataWidth = config.getMaxWordLen

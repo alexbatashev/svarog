@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.simulator.scalatest.ChiselSim
 import org.scalatest.funspec.AnyFunSpec
-import svarog.bits.{Uart, UartRx, UartTx, UartWishbone}
+import svarog.bits.{Uart, UartRx, UartTx, UartMemory}
 
 class UARTSpec extends AnyFunSpec with ChiselSim {
   describe("UartTx") {
@@ -208,8 +208,8 @@ class UARTSpec extends AnyFunSpec with ChiselSim {
 
   describe("UartWishbone") {
     it("should write and read via Wishbone registers") {
-      simulate(new UartWishbone(baseAddr = 0x80000000L)) { dut =>
-        import UartWishbone._
+      simulate(new UartMemory(baseAddr = 0x80000000L)) { dut =>
+        import UartMemory._
 
         // Initialize
         dut.io.cycleActive.poke(false)
@@ -250,8 +250,8 @@ class UARTSpec extends AnyFunSpec with ChiselSim {
     }
 
     it("should transmit data via data register write") {
-      simulate(new UartWishbone(baseAddr = 0x80000000L)) { dut =>
-        import UartWishbone._
+      simulate(new UartMemory(baseAddr = 0x80000000L)) { dut =>
+        import UartMemory._
 
         // Initialize
         dut.io.cycleActive.poke(false)
@@ -297,8 +297,8 @@ class UARTSpec extends AnyFunSpec with ChiselSim {
     }
 
     it("should receive data and set RX valid status") {
-      simulate(new UartWishbone(baseAddr = 0x80000000L)) { dut =>
-        import UartWishbone._
+      simulate(new UartMemory(baseAddr = 0x80000000L)) { dut =>
+        import UartMemory._
 
         // Initialize
         dut.io.cycleActive.poke(false)

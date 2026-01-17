@@ -47,6 +47,9 @@ object `svarog` extends SbtModule { m =>
       os.rel / "dependencies" / "hardfloat" / "src",
     ),
   )
+  val rocketChipResourceDirs = Seq(
+    os.rel / "src" / "main" / "resources"
+  )
   override def millSourcePath = super.millSourcePath / os.up
   override def scalaVersion = "2.13.16"
   override def scalacOptions = Seq(
@@ -103,6 +106,18 @@ object `svarog` extends SbtModule { m =>
 
   override def sources = T.sources {
     super.sources() ++ rocketChipSources() ++ rocketChipSubmoduleSources()
+  }
+
+  def rocketChipResources = T.sources {
+    val base = rocketChipCheckout()
+    rocketChipResourceDirs.flatMap { relPath =>
+      val path = base / relPath
+      if (os.exists(path)) Some(PathRef(path)) else None
+    }
+  }
+
+  override def resources = T.sources {
+    super.resources() ++ rocketChipResources()
   }
   object test extends SbtTests with TestModule.ScalaTest {
     override def ivyDeps = m.ivyDeps() ++ Agg(
