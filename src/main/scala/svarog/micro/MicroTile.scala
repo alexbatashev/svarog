@@ -6,20 +6,13 @@ import org.chipsalliance.cde.config.Parameters
 import org.chipsalliance.diplomacy.lazymodule.{LazyModule, LazyModuleImp}
 import freechips.rocketchip.diplomacy.{IdRange, TransferSizes}
 import freechips.rocketchip.tilelink.{
-  TLBundle,
   TLClientNode,
   TLMasterParameters,
   TLMasterPortParameters
 }
 import svarog.config.Cluster
 import svarog.debug.HartDebugIO
-import svarog.csr.{
-  CSRBusAdapter,
-  CSRXbar,
-  MachineInfoCSR,
-  MachineCSR,
-  InterruptCSR
-}
+import svarog.memory.MemoryIOTileLinkBundleAdapter
 
 class MicroTile(
     val hartBase: Int,
@@ -44,6 +37,7 @@ class MicroTile(
       supportsPutPartial = TransferSizes(1, beatBytes)
     )
 
+  // TileLink nodes stay in MicroTile for proper diplomatic resolution
   val instNodes = instSourceIds.zipWithIndex.map { case (id, idx) =>
     TLClientNode(
       Seq(TLMasterPortParameters.v1(Seq(clientParams(s"inst_$idx", id))))
@@ -56,34 +50,15 @@ class MicroTile(
     )
   }
 
-  // CSR diplomatic subsystem - one per core
-  val csrAdapters = Seq.tabulate(numCores) { i =>
-    LazyModule(new CSRBusAdapter)
-  }
-
-  val csrXbars = Seq.tabulate(numCores) { i =>
-    LazyModule(new CSRXbar)
-  }
-
-  val machineInfoCSRs = Seq.tabulate(numCores) { i =>
-    LazyModule(new MachineInfoCSR(hartBase + i))
-  }
-
-  val machineCSRs = Seq.tabulate(numCores) { i =>
-    LazyModule(new MachineCSR(xlen))
-  }
-
-  val interruptCSRs = Seq.tabulate(numCores) { i =>
-    LazyModule(new InterruptCSR)
-  }
-
-  // Connect CSR diplomatic nodes
-  // adapter -> xbar -> slaves
-  for (i <- 0 until numCores) {
-    csrXbars(i).node := csrAdapters(i).node
-    machineInfoCSRs(i).node := csrXbars(i).node
-    machineCSRs(i).node := csrXbars(i).node
-    interruptCSRs(i).node := csrXbars(i).node
+  // Instantiate Cpu LazyModules - CSR subsystem is inside each Cpu
+  val cpus = Seq.tabulate(numCores) { i =>
+    LazyModule(
+      new Cpu(
+        hartId = hartBase + i,
+        config = cluster,
+        startAddress = startAddress
+      )
+    )
   }
 
   lazy val module = new MicroTileImp(this)
@@ -103,37 +78,27 @@ class MicroTileImp(outer: MicroTile) extends LazyModuleImp(outer) {
   require(outer.instNodes.length == numCores, "instNodes must match numCores")
   require(outer.dataNodes.length == numCores, "dataNodes must match numCores")
 
-  private val cores = Seq.tabulate(numCores) { i =>
-    val hartId = outer.hartBase + i
+  // Connect each Cpu with TileLink adapters
+  outer.cpus.zipWithIndex.foreach { case (cpu, i) =>
     val (instOut, instEdge) = outer.instNodes(i).out(0)
     val (dataOut, dataEdge) = outer.dataNodes(i).out(0)
-    val cpu = Module(
-      new Cpu(hartId, outer.cluster, outer.startAddress, instEdge, dataEdge)
-    )
-    cpu.io.inst <> instOut
-    cpu.io.data <> dataOut
 
-    // Connect CPU CSR interface to diplomatic CSR subsystem
-    outer.csrAdapters(i).module.io.read <> cpu.io.csrRead
-    outer.csrAdapters(i).module.io.write <> cpu.io.csrWrite
+    // Create TileLink adapters
+    val instAdapter = Module(new MemoryIOTileLinkBundleAdapter(instEdge, xlen))
+    val dataAdapter = Module(new MemoryIOTileLinkBundleAdapter(dataEdge, xlen))
 
-    // Connect interrupt signals to InterruptCSR
-    outer.interruptCSRs(i).module.io.timerInterrupt := io.timerInterrupt(i)
-    outer.interruptCSRs(i).module.io.softwareInterrupt := false.B
-    outer.interruptCSRs(i).module.io.externalInterrupt := false.B
+    // Connect TileLink bundles to adapter
+    instOut <> instAdapter.tl
+    dataOut <> dataAdapter.tl
 
-    // MachineCSR trap entry - not connected yet (future trap handling)
-    outer.machineCSRs(i).module.io.trapEnter.valid := false.B
-    outer.machineCSRs(i).module.io.trapEnter.bits.epc := 0.U
-    outer.machineCSRs(i).module.io.trapEnter.bits.cause := 0.U
+    // Connect adapter's MemoryIO to Cpu
+    cpu.module.io.instMem <> instAdapter.mem
+    cpu.module.io.dataMem <> dataAdapter.mem
 
-    cpu
-  }
-
-  cores.zipWithIndex.foreach { case (cpu, i) =>
-    cpu.io.debug <> io.debug(i)
-    io.debugRegData(i) <> cpu.io.debugRegData
-    io.halt(i) := cpu.io.halt
-    cpu.io.timerInterrupt := io.timerInterrupt(i)
+    // Connect external IO
+    cpu.module.io.debug <> io.debug(i)
+    io.debugRegData(i) <> cpu.module.io.debugRegData
+    io.halt(i) := cpu.module.io.halt
+    cpu.module.io.timerInterrupt := io.timerInterrupt(i)
   }
 }

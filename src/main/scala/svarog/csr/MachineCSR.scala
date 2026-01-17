@@ -27,6 +27,9 @@ class MachineCSRIO(xlen: Int) extends Bundle {
   // Trap entry signal from CPU
   val trapEnter = Input(Valid(new TrapEntryRequest(xlen)))
 
+  // MRET signal from CPU
+  val mretFired = Input(Bool())
+
   // Outputs for trap handler dispatch
   val mtvec = Output(UInt(xlen.W))
   val mepc = Output(UInt(xlen.W))
@@ -150,6 +153,21 @@ class MachineCSRImp(outer: MachineCSR, xlen: Int)
       mie, // MPIE = old MIE
       mstatus(6, 4),
       0.U(1.W), // MIE = 0
+      mstatus(2, 0)
+    )
+    mstatus := newMstatus
+  }
+
+  // MRET handling: restore MIE from MPIE, set MPIE to 1
+  when(io.mretFired) {
+    val mpie = mstatus(7)
+    val newMstatus = Cat(
+      mstatus(xlen - 1, 13),
+      3.U(2.W), // MPP stays M-mode (M-mode only implementation)
+      mstatus(10, 8),
+      1.U(1.W), // MPIE = 1
+      mstatus(6, 4),
+      mpie, // MIE = old MPIE
       mstatus(2, 0)
     )
     mstatus := newMstatus

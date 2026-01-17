@@ -15,6 +15,7 @@ object Opcodes {
   val STORE = "b0100011".U
   val SYSTEM = "b1110011".U
   val MULDIV = "b0110011".U
+  val MISC_MEM = "b0001111".U // FENCE, FENCE.I
 }
 
 object ALUFunc3 {
