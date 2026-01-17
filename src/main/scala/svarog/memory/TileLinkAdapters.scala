@@ -288,12 +288,6 @@ final class MemoryIOTileLinkBundleAdapter(
       a
     }
 
-  // Debug: log store requests to help track unmapped addresses
-  when(tl.a.valid && tl.a.bits.opcode === TLMessages.PutPartialData) {
-    printf(
-      p"[MemoryTL] PutPartial addr=0x${Hexadecimal(tl.a.bits.address)} size=${tl.a.bits.size} mask=0x${Hexadecimal(tl.a.bits.mask)} data=0x${Hexadecimal(tl.a.bits.data)}\n"
-    )
-  }
 
   tl.b.valid := false.B
   tl.c.ready := true.B
