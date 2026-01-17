@@ -3,8 +3,7 @@ package svarog.micro
 import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.BoringUtils
-import svarog.bits.CSRFile
-import svarog.bits.ControlRegister
+import svarog.bits.{CSRReadIO, CSRWriteIO}
 import svarog.bits.RegFile
 import svarog.bits.RegFileReadIO
 import svarog.bits.RegFileWriteIO
@@ -31,6 +30,9 @@ class CpuIO(
   val debugRegData = Valid(UInt(xlen.W))
   val halt = Output(Bool())
   val timerInterrupt = Input(Bool())
+  // CSR interface - exposed for diplomatic CSR subsystem in MicroTile
+  val csrRead = Flipped(new CSRReadIO())
+  val csrWrite = Flipped(new CSRWriteIO())
 }
 
 class Cpu(
@@ -54,7 +56,6 @@ class Cpu(
 
   // Memories
   val regFile = Module(new RegFile(config.isa.xlen))
-  val csrFile = Module(new CSRFile(ControlRegister.getDefaultRegisters()))
 
   // Stages
   val fetch = Module(new Fetch(config.isa.xlen, startAddress))
@@ -132,9 +133,9 @@ class Cpu(
     writeback.io.regFile.writeData
   )
 
-  // CSR file connection - read from Execute, write from Writeback
-  execute.io.csrFile.read <> csrFile.io.read
-  csrFile.io.write <> writeback.io.csrFile
+  // CSR file connection - exposed to MicroTile for diplomatic CSR subsystem
+  execute.io.csrFile.read <> io.csrRead
+  io.csrWrite <> writeback.io.csrFile
 
   // IF -> ID
   // Increased depth from 1 to 4 to handle pipelining and stalls without losing instructions

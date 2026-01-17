@@ -5,6 +5,8 @@ import chisel3.util._
 import svarog.decoder.MicroOp
 import svarog.decoder.OpType
 
+/** @deprecated Use diplomatic CSR subsystem in svarog.csr package instead */
+@deprecated("Use diplomatic CSR subsystem in svarog.csr package", "0.2.0")
 case class ControlRegister(
     address: Int,
     width: Int = 32,
@@ -12,6 +14,8 @@ case class ControlRegister(
     readOnly: Boolean = true
 )
 
+/** @deprecated Use diplomatic CSR subsystem in svarog.csr package instead */
+@deprecated("Use diplomatic CSR subsystem in svarog.csr package", "0.2.0")
 object ControlRegister {
   def getDefaultRegisters(): Seq[ControlRegister] = {
     Seq(
@@ -40,6 +44,8 @@ class CSRIO extends Bundle {
   val write = new CSRWriteIO()
 }
 
+/** @deprecated Use diplomatic CSR subsystem in svarog.csr package instead */
+@deprecated("Use diplomatic CSR subsystem in svarog.csr package", "0.2.0")
 class CSRFile(regs: Seq[ControlRegister]) extends Module {
   val io = IO(new CSRIO())
 
