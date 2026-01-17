@@ -13,16 +13,20 @@ import svarog.debug.HartDebugModule
 import svarog.decoder.InstWord
 import svarog.decoder.MicroOp
 import svarog.decoder.SimpleDecoder
-import svarog.memory.CpuMemoryInterface
-import svarog.memory.MemWishboneHost
 import svarog.memory.MemoryIO
 import svarog.memory.MemoryRequest
+import svarog.memory.MemoryIOTileLinkBundleAdapter
 import svarog.MicroCoreConfig
 import svarog.config.Cluster
+import freechips.rocketchip.tilelink.{TLBundle, TLBundleParameters, TLEdgeOut}
 
-class CpuIO(xlen: Int) extends Bundle {
-  val instmem = new MemoryIO(xlen, xlen)
-  val datamem = new MemoryIO(xlen, xlen)
+class CpuIO(
+    xlen: Int,
+    instParams: TLBundleParameters,
+    dataParams: TLBundleParameters
+) extends Bundle {
+  val inst = new TLBundle(instParams)
+  val data = new TLBundle(dataParams)
   val debug = Flipped(new HartDebugIO(xlen))
   val debugRegData = Valid(UInt(xlen.W))
   val halt = Output(Bool()) // Expose halt status
@@ -31,10 +35,12 @@ class CpuIO(xlen: Int) extends Bundle {
 class Cpu(
     hartId: Int,
     config: Cluster,
-    startAddress: Long
+    startAddress: Long,
+    instEdge: TLEdgeOut,
+    dataEdge: TLEdgeOut
 ) extends Module {
   // Public interface
-  val io = IO(new CpuIO(config.isa.xlen))
+  val io = IO(new CpuIO(config.isa.xlen, instEdge.bundle, dataEdge.bundle))
 
   val debug = Module(new HartDebugModule(config.isa.xlen))
   val halt = RegInit(false.B)
@@ -58,11 +64,17 @@ class Cpu(
 
   val hazardUnit = Module(new HazardUnit)
 
-  // Fetch memory
-  fetch.io.mem <> io.instmem
+  // Fetch memory (TileLink)
+  private val instAdapter =
+    Module(new MemoryIOTileLinkBundleAdapter(instEdge, config.isa.xlen))
+  fetch.io.mem <> instAdapter.mem
+  io.inst <> instAdapter.tl
 
-  // Data memory
-  memory.mem <> io.datamem
+  // Data memory (TileLink)
+  private val dataAdapter =
+    Module(new MemoryIOTileLinkBundleAdapter(dataEdge, config.isa.xlen))
+  memory.mem <> dataAdapter.mem
+  io.data <> dataAdapter.tl
 
   // Register file connection - multiplex between normal execution and debug
   // Read side
@@ -196,19 +208,4 @@ class Cpu(
   hazardUnit.io.watchpointHit := debug.io.watchpointTriggered
   execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold
   writeback.io.halt := halt
-}
-
-class CpuWishbone(xlen: Int, maxReqWidth: Int)
-    extends CpuMemoryInterface(xlen, maxReqWidth) {
-  val inst = Module(new MemWishboneHost(xlen, maxReqWidth))
-  val data = Module(new MemWishboneHost(xlen, maxReqWidth))
-
-  val instPort = Wire(new MemoryIO(xlen, maxReqWidth))
-  val dataPort = Wire(new MemoryIO(xlen, maxReqWidth))
-
-  inst.mem <> instPort
-  data.mem <> dataPort
-
-  io.inst <> instPort
-  io.data <> dataPort
 }

@@ -1,5 +1,6 @@
 // import Mill dependency
 import mill._
+import mill.api.PathRef
 import mill.define.Sources
 import mill.modules.Util
 import mill.scalalib.TestModule.ScalaTest
@@ -14,6 +15,41 @@ import mill.bsp._
 // See: https://github.com/com-lihaoyi/mill/issues/3840
 
 object `svarog` extends SbtModule { m =>
+  val rocketChipRepo = "https://github.com/chipsalliance/rocket-chip.git"
+  val rocketChipCommit = "960396f4984f9101e18fe0843363b70652e63194"
+  val rocketChipSourceDirs = Seq(
+    "amba",
+    "aop",
+    "config",
+    "devices",
+    "diplomacy",
+    "formal",
+    "groundtest",
+    "interrupts",
+    "jtag",
+    "prci",
+    "tile",
+    "trace",
+    "regmapper",
+    "resources",
+    "rocket",
+    "subsystem",
+    "system",
+    "tilelink",
+    "unittest",
+    "util",
+  )
+  val rocketChipSubmoduleSourceRoots = Map(
+    "cde" -> Seq(os.rel / "dependencies" / "cde" / "cde" / "src"),
+    "diplomacy" -> Seq(os.rel / "dependencies" / "diplomacy" / "diplomacy" / "src"),
+    "hardfloat" -> Seq(
+      os.rel / "dependencies" / "hardfloat" / "hardfloat" / "src",
+      os.rel / "dependencies" / "hardfloat" / "src",
+    ),
+  )
+  val rocketChipResourceDirs = Seq(
+    os.rel / "src" / "main" / "resources"
+  )
   override def millSourcePath = super.millSourcePath / os.up
   override def scalaVersion = "2.13.16"
   override def scalacOptions = Seq(
@@ -22,9 +58,13 @@ object `svarog` extends SbtModule { m =>
     "-feature",
     "-Xcheckinit",
     "-Ymacro-annotations",
+    "-Wconf:src=.*rocketChipCheckout\\.dest.*:silent",
   )
   override def ivyDeps = Agg(
     ivy"org.chipsalliance::chisel:7.5.0",
+    ivy"com.lihaoyi::mainargs:0.5.0",
+    ivy"com.lihaoyi::sourcecode:0.3.1",
+    ivy"org.json4s::json4s-jackson:4.0.5",
     ivy"io.circe::circe-yaml:0.16.1",
     ivy"io.circe::circe-generic:0.14.14",
     ivy"io.circe::circe-parser:0.14.14",
@@ -32,6 +72,53 @@ object `svarog` extends SbtModule { m =>
   override def scalacPluginIvyDeps = Agg(
     ivy"org.chipsalliance:::chisel-plugin:7.5.0",
   )
+
+  def rocketChipCheckout = T {
+    val dir = T.dest / "rocket-chip"
+    if (!os.exists(dir / ".git")) {
+      os.proc("git", "clone", "--no-checkout", rocketChipRepo, dir.toString).call()
+    }
+    os.proc("git", "-C", dir.toString, "fetch", "--depth", "1", "origin", rocketChipCommit).call()
+    os.proc("git", "-C", dir.toString, "checkout", rocketChipCommit).call()
+    dir
+  }
+
+  def rocketChipSubmoduleSources = T.sources {
+    val base = rocketChipCheckout() / "dependencies"
+    val args = Seq("git", "-C", rocketChipCheckout().toString, "submodule", "update", "--init", "--depth", "1") ++
+      rocketChipSubmoduleSourceRoots.keys.map(name => s"dependencies/$name")
+    os.proc(args).call()
+    rocketChipSubmoduleSourceRoots.flatMap { case (_, relPaths) =>
+      relPaths.flatMap { relPath =>
+        val path = rocketChipCheckout() / relPath
+        if (os.exists(path)) Some(PathRef(path)) else None
+      }
+    }.toSeq
+  }
+
+  def rocketChipSources = T.sources {
+    val base = rocketChipCheckout() / "src" / "main" / "scala"
+    rocketChipSourceDirs.flatMap { dirName =>
+      val path = base / dirName
+      if (os.exists(path)) Some(PathRef(path)) else None
+    }
+  }
+
+  override def sources = T.sources {
+    super.sources() ++ rocketChipSources() ++ rocketChipSubmoduleSources()
+  }
+
+  def rocketChipResources = T.sources {
+    val base = rocketChipCheckout()
+    rocketChipResourceDirs.flatMap { relPath =>
+      val path = base / relPath
+      if (os.exists(path)) Some(PathRef(path)) else None
+    }
+  }
+
+  override def resources = T.sources {
+    super.resources() ++ rocketChipResources()
+  }
   object test extends SbtTests with TestModule.ScalaTest {
     override def ivyDeps = m.ivyDeps() ++ Agg(
       ivy"org.scalatest::scalatest::3.2.19"

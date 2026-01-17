@@ -3,6 +3,8 @@ package svarog
 import chisel3._
 import chisel3.util.{Decoupled, log2Ceil}
 import circt.stage.FirtoolOption
+import org.chipsalliance.cde.config.Parameters
+import org.chipsalliance.diplomacy.lazymodule.LazyModule
 import svarog.SvarogSoC
 import svarog.config.{ConfigLoader, BootloaderValidator, SoC}
 import svarog.VerilogGenerator.{bootloaderPath => bootloaderPath}
@@ -61,8 +63,10 @@ object VerilogGenerator extends App {
   private val config = SoC.fromYaml(yamlConfig, simulatorDebugIface)
 
   // Generate Verilog
+  implicit val p: Parameters = Parameters.empty
+
   emitVerilog(
-    new SvarogSoC(config, validatedBootloader),
+    LazyModule(new SvarogSoC(config, validatedBootloader)).module,
     // new VerilatorTop(config, validatedBootloader),
     Array("--target-dir", targetDir),
     Seq(

@@ -2,101 +2,139 @@ package svarog
 
 import chisel3._
 import chisel3.util._
-
-import svarog.micro.{Cpu => MicroCpu}
-import svarog.memory._
-import svarog.debug.ChipDebugModule
-import svarog.debug.ChipHartDebugIO
-import svarog.debug.ChipMemoryDebugIO
-import svarog.bits.UartWishbone
+import org.chipsalliance.cde.config.Parameters
+import org.chipsalliance.diplomacy.lazymodule.{LazyModule, LazyModuleImp}
+import freechips.rocketchip.diplomacy.IdRange
+import freechips.rocketchip.tilelink.{TLBuffer, TLFragmenter, TLXbar}
+import svarog.config.{Micro, SoC, TCM => TCMCfg}
+import svarog.debug.{DebugIOGenerator, TLChipDebugModule}
+import svarog.memory.{ROMTileLinkAdapter, TCM}
+import svarog.micro.MicroTile
 import svarog.bits.IOGenerator
-import svarog.debug.DebugIOGenerator
-import svarog.debug.DebugGenerator
-import svarog.config.Config
-import svarog.config.SoC
-import svarog.config.Micro
 
 class SvarogSoC(
     config: SoC,
     bootloader: Option[String] = None
-) extends Module {
+)(override implicit val p: Parameters)
+    extends LazyModule {
 
-  val io = IO(new Bundle {
-    val debug = DebugIOGenerator(config)
-    val gpio = IOGenerator.generatePins(config)
-  })
-
+  private val xlen = config.getMaxWordLen
   private val startAddress = bootloader
     .map(_ => 0x00480000L)
     .getOrElse(config.memories.head.getBaseAddress)
 
-  private val debug = Module(
-    new ChipDebugModule(
-      config.getMaxWordLen,
-      numHarts = config.getNumHarts
-    )
-  )
+  private val xbar = LazyModule(new TLXbar)
 
-  private val debugMasters = DebugGenerator(io.debug, debug, config)
+  private var nextSourceId = 0
+  private def allocSourceId(): IdRange = {
+    val id = nextSourceId
+    nextSourceId += 1
+    IdRange(id, id + 1)
+  }
 
-  private val coreMems = CoreGenerator(config, debug, startAddress)
-
-  private val rom: Seq[WishboneSlave] = bootloader.map { bootloader =>
-    Module(
-      new ROMWishboneAdapter(
-        config.getMaxWordLen,
-        baseAddr = 0x00480000,
-        bootloader
+  private val tiles = config.clusters.zipWithIndex.map {
+    case (cluster, clusterIdx) if cluster.coreType == Micro =>
+      val hartBase = config.clusters.take(clusterIdx).map(_.numCores).sum
+      val instIds = Seq.fill(cluster.numCores)(allocSourceId())
+      val dataIds = Seq.fill(cluster.numCores)(allocSourceId())
+      LazyModule(
+        new MicroTile(hartBase, cluster, startAddress, instIds, dataIds)
       )
+    case _ =>
+      sys.error("Only Micro tiles are supported in the TileLink SoC for now.")
+  }
+
+  tiles.foreach { tile =>
+    tile.instNodes.foreach { n => xbar.node := n }
+    tile.dataNodes.foreach { n => xbar.node := n }
+  }
+
+  private val tcm = config.memories.map { case TCMCfg(baseAddr, length) =>
+    // FIXME how do I make it dual port?
+    val tcm = LazyModule(new TCM(xlen, length, baseAddr, numPorts = 1))
+    tcm.node := xbar.node
+    tcm
+  }
+
+  private val romAdapter = bootloader.map { path =>
+    val rom = LazyModule(
+      new ROMTileLinkAdapter(xlen, baseAddr = 0x00480000L, file = path)
     )
-  }.toSeq
+    rom.node := xbar.node
+    rom
+  }
 
-  private val memories = MemGenerator(config)
+  private val uartAdapters = IOGenerator.generateUARTs(config)
+  uartAdapters.foreach { uart =>
+    uart.node := TLBuffer() := xbar.node
+  }
 
-  private val gpioSlaves = IOGenerator.generateSocIo(config, io.gpio)
+  private val debugModule = if (config.simulatorDebug) {
+    val instId = allocSourceId()
+    val dataId = allocSourceId()
+    val dbg = LazyModule(
+      new TLChipDebugModule(xlen, config.getNumHarts, instId, dataId)
+    )
+    xbar.node := dbg.instNode
+    xbar.node := dbg.dataNode
+    Some(dbg)
+  } else None
 
-  private val allMasters: Seq[WishboneMaster] = coreMems ++ debugMasters
+  lazy val module = new SvarogSoCImp(this)
+  class SvarogSoCImp(outer: SvarogSoC) extends LazyModuleImp(outer) {
+    val io = IO(new Bundle {
+      val gpio = IOGenerator.generatePins(config)
+      val debug = DebugIOGenerator(config)
+    })
 
-  private val allSlaves: Seq[WishboneSlave] = rom ++ memories ++ gpioSlaves
+    // Flatten debug signals from all tiles
+    val allDebugPorts = tiles.flatMap(_.module.io.debug)
+    val allRegData = tiles.flatMap(_.module.io.debugRegData)
+    val allHalted = tiles.flatMap(_.module.io.halt)
 
-  WishboneRouter(allMasters, allSlaves)
-}
+    outer.debugModule match {
+      case Some(debugLazy) =>
+        val dbg = debugLazy.module
 
-object CoreGenerator {
-  def apply(
-      config: SoC,
-      debug: ChipDebugModule,
-      startAddress: Long
-  ): Seq[WishboneMaster] = {
-    config.clusters.zipWithIndex.flatMap { case (cluster, clusterIdx) =>
-      val clusterStartHartId =
-        config.clusters.take(clusterIdx).map(_.numCores).sum
+        // Connect external debug IO
+        io.debug.get <> dbg.debug
 
-      (0 until cluster.numCores).map { coreIdx =>
-        val hartId = clusterStartHartId + coreIdx
-
-        cluster.coreType match {
-          case Micro => {
-            val cpu =
-              Module(new MicroCpu(hartId, cluster, startAddress = startAddress))
-
-            debug.io.harts(hartId) <> cpu.io.debug
-            debug.io.cpuRegData <> cpu.io.debugRegData
-            debug.io.cpuHalted(hartId) := cpu.io.halt
-
-            val cpuInstHost = Module(
-              new MemWishboneHost(cluster.isa.xlen, cluster.isa.xlen)
-            )
-            val cpuDataHost = Module(
-              new MemWishboneHost(cluster.isa.xlen, cluster.isa.xlen)
-            )
-            cpu.io.instmem <> cpuInstHost.mem
-            cpu.io.datamem <> cpuDataHost.mem
-
-            List(cpuInstHost, cpuDataHost)
-          }
+        // Connect to all harts
+        allDebugPorts.zipWithIndex.foreach { case (port, i) =>
+          port <> dbg.harts(i)
         }
-      }
-    }.flatten
+
+        // Connect register data (use first hart's data for now)
+        dbg.cpuRegData := allRegData.headOption.getOrElse {
+          val w = Wire(Valid(UInt(xlen.W)))
+          w.valid := false.B
+          w.bits := 0.U
+          w
+        }
+
+        // Connect halt status
+        allHalted.zipWithIndex.foreach { case (halt, i) =>
+          dbg.cpuHalted(i) := halt
+        }
+
+      case None =>
+        // No debug module - tie off debug ports
+        allDebugPorts.foreach { d =>
+          d.halt.valid := false.B
+          d.halt.bits := false.B
+          d.breakpoint.valid := false.B
+          d.breakpoint.bits.pc := 0.U
+          d.watchpoint.valid := false.B
+          d.watchpoint.bits.addr := 0.U
+          d.register.valid := false.B
+          d.register.bits.reg := 0.U
+          d.register.bits.write := false.B
+          d.register.bits.data := 0.U
+          d.setPC.valid := false.B
+          d.setPC.bits.pc := 0.U
+        }
+    }
+
+    IOGenerator.connectPins(outer.uartAdapters, io.gpio)
   }
 }
