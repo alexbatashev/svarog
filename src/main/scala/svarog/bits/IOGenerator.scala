@@ -1,12 +1,11 @@
 package svarog.bits
 
 import chisel3._
-import chisel3.experimental.{Analog, attach}
+import org.chipsalliance.cde.config.Parameters
+import org.chipsalliance.diplomacy.lazymodule.LazyModule
 
 import svarog.config.SoC
 import svarog.config.{UART => UartCfg}
-import svarog.bits.UartMemory
-import svarog.memory.WishboneSlave
 
 object IOGenerator {
   def generatePins(config: SoC): Vec[Pin] = {
@@ -14,34 +13,30 @@ object IOGenerator {
     Vec(totalNumPorts, new Pin())
   }
 
-  def generateSocIo(config: SoC, pins: Vec[Pin]): Seq[WishboneSlave] = {
+  /** Create UART LazyModules. Must be called from outer LazyModule scope. */
+  def generateUARTs(config: SoC)(implicit p: Parameters): Seq[TLUART] = {
+    config.io.collect { case UartCfg(name, baseAddr) =>
+      LazyModule(new TLUART(baseAddr))
+    }
+  }
+
+  /** Connect UART pins. Must be called from LazyModuleImp. */
+  def connectPins(uarts: Seq[TLUART], pins: Vec[Pin]): Unit = {
     var pinOffset = 0
+    uarts.foreach { uartLazy =>
+      val uart = uartLazy.module
 
-    config.io.map { io =>
-      val currentOffset = pinOffset
-      pinOffset += io.numPorts
+      // RX pin
+      uart.uart.rxd := pins(pinOffset).input
+      pins(pinOffset).write := false.B
+      pins(pinOffset).output := false.B
 
-      io match {
-        case UartCfg(name, baseAddr) => {
-          val uart = Module(
-            new UartMemory(
-              baseAddr,
-              addrWidth = config.getMaxWordLen,
-              dataWidth = config.getMaxWordLen
-            )
-          )
+      // TX pin
+      pins(pinOffset + 1).output := uart.uart.txd
+      pins(pinOffset + 1).input := DontCare
+      pins(pinOffset + 1).write := true.B
 
-          uart.uart.rxd := pins(pinOffset - 2).input
-          pins(pinOffset - 2).write := false.B
-          pins(pinOffset - 2).output := false.B
-
-          pins(pinOffset - 1).output := uart.uart.txd
-          pins(pinOffset - 1).input := DontCare
-          pins(pinOffset - 1).write := true.B
-
-          uart
-        }
-      }
-    }.toSeq
+      pinOffset += 2
+    }
   }
 }

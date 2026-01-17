@@ -2,11 +2,12 @@ package svarog.bits
 
 import chisel3._
 import chisel3.util._
-import svarog.memory.{WishboneIO, WishboneSlave}
 import org.chipsalliance.cde.config.Parameters
 import org.chipsalliance.diplomacy.lazymodule.{LazyModule, LazyModuleImp}
-import freechips.rocketchip.diplomacy.{AddressSet, IdRange, RegionType, TransferSizes}
+import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.regmapper._
+import freechips.rocketchip.resources.SimpleDevice
 
 class UartTx(val dataWidth: Int = 8) extends Module {
   val io = IO(new Bundle {
@@ -177,102 +178,55 @@ class Uart(val dataWidth: Int = 8) extends Module {
 }
 
 object TLUART {
-  val DATA_REG_OFFSET = 0x00
-  val STATUS_REG_OFFSET = 0x04
-  val CONTROL_REG_OFFSET = 0x08
-  val BAUD_DIV_OFFSET = 0x0c
+  val DATA_REG = 0x00
+  val STATUS_REG = 0x04
+  val CONTROL_REG = 0x08
+  val BAUD_DIV = 0x0c
 
   val STATUS_TX_READY = 0
   val STATUS_RX_VALID = 1
 }
 
-class TLUART(baseAddr: Long, busWidth: Int = 32, dataWidth: Int = 8)(implicit p: Parameters) extends LazyModule {
-  val node = TLManagerNode(Seq(TLSlavePortParameters.v1(
-    Seq(TLSlaveParameters.v1(
-      address = Seq(AddressSet(baseAddr, memSizeBytes - 1)),
-      regionType = RegionType.UNCACHED,
-      executable = true,
-      supportsGet = TransferSizes(1, beatBytes),
-      supportsPutFull = TransferSizes(1, beatBytes),
-      supportsPutPartial = TransferSizes(1, beatBytes),
-      fifoId = Some(0)
-    )),
-    beatBytes = 1,
-    minLatency = 1
-  )))
+class TLUART(baseAddr: Long, busWidth: Int = 32, dataWidth: Int = 8)(implicit
+    p: Parameters
+) extends LazyModule {
+  private val beatBytes = busWidth / 8
+
+  val device = new SimpleDevice("uart", Seq("svarog,uart"))
+  val node = TLRegisterNode(
+    address = Seq(AddressSet(baseAddr, 0xf)),
+    device = device,
+    beatBytes = beatBytes,
+    concurrency = 1
+  )
 
   lazy val module = new Impl
   class Impl extends LazyModuleImp(this) {
+    import TLUART._
+
     val uart = IO(new Bundle {
       val txd = Output(Bool())
       val rxd = Input(Bool())
     })
     private val uartCore = Module(new Uart(dataWidth))
-    private val (in, edge) = node.in(0)
-
-    val isGet = in.a.bits.opcode === TLMessages.Get
-    val isPut = in.a.bits.opcode === TLMessages.PutFullData ||
-      in.a.bits.opcode === TLMessages.PutPartialData
 
     uart.txd := uartCore.io.txd
     uartCore.io.rxd := uart.rxd
 
     val baudDividerReg = RegInit(434.U(16.W))
-    val txDataReg = RegInit(0.U(dataWidth.W))
-    val txValidReg = RegInit(false.B)
-
     uartCore.io.baudDivider := baudDividerReg
-    uartCore.io.tx.bits := txDataReg
-    uartCore.io.tx.valid := txValidReg
-    uartCore.io.rx.ready := false.B
 
-    when(uartCore.io.tx.fire) {
-      txValidReg := false.B
-    }
+    // Status register: bit 0 = TX ready, bit 1 = RX valid
+    val status = Cat(0.U(6.W), uartCore.io.rx.valid, uartCore.io.tx.ready)
 
-    io.ack := false.B
-    io.stall := false.B
-    io.error := false.B
-    io.dataToMaster := 0.U
-
-    val localAddr = io.addr - baseAddr.U
-
-    when(io.cycleActive && io.strobe) {
-      io.ack := true.B
-
-      when(io.writeEnable) {
-        switch(localAddr) {
-          is(DATA_REG_OFFSET.U) {
-            txDataReg := io.dataToSlave(dataWidth - 1, 0)
-            // Only set valid if not already valid (prevent duplicate transmissions)
-            when(!txValidReg) {
-              txValidReg := true.B
-            }
-          }
-          is(BAUD_DIV_OFFSET.U) {
-            baudDividerReg := io.dataToSlave(15, 0)
-          }
-        }
-      }.otherwise {
-        switch(localAddr) {
-          is(DATA_REG_OFFSET.U) {
-            io.dataToMaster := uartCore.io.rx.bits
-            uartCore.io.rx.ready := true.B
-          }
-          is(STATUS_REG_OFFSET.U) {
-            val status = Wire(UInt(busWidth.W))
-            status := Cat(
-              0.U((busWidth - 2).W),
-              uartCore.io.rx.valid,
-              uartCore.io.tx.ready
-            )
-            io.dataToMaster := status
-          }
-          is(BAUD_DIV_OFFSET.U) {
-            io.dataToMaster := baudDividerReg
-          }
-        }
-      }
-    }
+    node.regmap(
+      DATA_REG -> Seq(
+        RegField(dataWidth, uartCore.io.rx, uartCore.io.tx)
+      ),
+      STATUS_REG -> Seq(
+        RegField.r(8, status)
+      ),
+      BAUD_DIV -> Seq(RegField(16, baudDividerReg))
+    )
   }
 }

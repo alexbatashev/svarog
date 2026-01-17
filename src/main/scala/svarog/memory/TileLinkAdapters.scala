@@ -4,114 +4,13 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import org.chipsalliance.diplomacy.lazymodule.{LazyModule, LazyModuleImp}
-import freechips.rocketchip.diplomacy.{AddressSet, IdRange, RegionType, TransferSizes}
-import freechips.rocketchip.tilelink._
-
-final class TCMTileLinkAdapter(
-    xlen: Int,
-    memSizeBytes: Long,
-    baseAddr: Long = 0
-)(implicit p: Parameters)
-    extends LazyModule {
-
-  private val beatBytes = xlen / 8
-
-  val node = TLManagerNode(Seq(TLSlavePortParameters.v1(
-    Seq(TLSlaveParameters.v1(
-      address = Seq(AddressSet(baseAddr, memSizeBytes - 1)),
-      regionType = RegionType.UNCACHED,
-      executable = true,
-      supportsGet = TransferSizes(1, beatBytes),
-      supportsPutFull = TransferSizes(1, beatBytes),
-      supportsPutPartial = TransferSizes(1, beatBytes),
-      fifoId = Some(0)
-    )),
-    beatBytes = beatBytes,
-    minLatency = 1
-  )))
-
-  lazy val module = new Impl
-  class Impl extends LazyModuleImp(this) {
-    private val mem = Module(
-      new TCM(
-        xlen,
-        memSizeBytes = memSizeBytes,
-        baseAddr = baseAddr,
-        numPorts = 1
-      )
-    )
-
-    private val memPort = mem.io.ports(0)
-    private val (in, edge) = node.in(0)
-
-    private object State extends ChiselEnum {
-      val sIdle, sMemWait, sResp = Value
-    }
-
-    private val state = RegInit(State.sIdle)
-    private val savedSource = Reg(UInt(edge.bundle.sourceBits.W))
-    private val savedSize = Reg(UInt(edge.bundle.sizeBits.W))
-    private val savedIsGet = RegInit(false.B)
-    private val pendingDenied = RegInit(false.B)
-    private val pendingData = RegInit(0.U(xlen.W))
-
-    val isGet = in.a.bits.opcode === TLMessages.Get
-    val isPut = in.a.bits.opcode === TLMessages.PutFullData ||
-      in.a.bits.opcode === TLMessages.PutPartialData
-
-    in.a.ready := state === State.sIdle && memPort.req.ready
-
-    memPort.req.valid := in.a.fire && (isGet || isPut)
-    memPort.req.bits.address := in.a.bits.address
-    memPort.req.bits.write := isPut
-    memPort.req.bits.mask := VecInit(in.a.bits.mask.asBools)
-    memPort.req.bits.dataWrite := svarog.bits.asLE(in.a.bits.data)
-
-    memPort.resp.ready := state === State.sMemWait
-
-    in.d.valid := state === State.sResp
-    in.d.bits := Mux(
-      savedIsGet,
-      edge.AccessAck(
-        savedSource,
-        savedSize,
-        pendingData,
-        denied = pendingDenied,
-        corrupt = pendingDenied
-      ),
-      edge.AccessAck(savedSource, savedSize, denied = pendingDenied)
-    )
-
-    in.b.valid := false.B
-    in.c.ready := true.B
-    in.e.ready := true.B
-
-    switch(state) {
-      is(State.sIdle) {
-        when(in.a.fire) {
-          savedSource := in.a.bits.source
-          savedSize := in.a.bits.size
-          savedIsGet := isGet
-          state := State.sMemWait
-        }
-      }
-
-      is(State.sMemWait) {
-        when(memPort.resp.valid) {
-          pendingDenied := !memPort.resp.bits.valid
-          pendingData := memPort.resp.bits.dataRead.asUInt
-          state := State.sResp
-        }
-      }
-
-      is(State.sResp) {
-        when(in.d.fire) {
-          state := State.sIdle
-        }
-      }
-    }
-  }
+import freechips.rocketchip.diplomacy.{
+  AddressSet,
+  IdRange,
+  RegionType,
+  TransferSizes
 }
+import freechips.rocketchip.tilelink._
 
 final class ROMTileLinkAdapter(
     xlen: Int,
@@ -123,17 +22,26 @@ final class ROMTileLinkAdapter(
   private val beatBytes = xlen / 8
   private val romSizeBytes = 65536L
 
-  val node = TLManagerNode(Seq(TLSlavePortParameters.v1(
-    Seq(TLSlaveParameters.v1(
-      address = Seq(AddressSet(baseAddr, romSizeBytes - 1)),
-      regionType = RegionType.UNCACHED,
-      executable = true,
-      supportsGet = TransferSizes(1, beatBytes),
-      fifoId = Some(0)
-    )),
-    beatBytes = beatBytes,
-    minLatency = 1
-  )))
+  val node = TLManagerNode(
+    Seq(
+      TLSlavePortParameters.v1(
+        Seq(
+          TLSlaveParameters.v1(
+            address = Seq(AddressSet(baseAddr, romSizeBytes - 1)),
+            regionType = RegionType.UNCACHED,
+            executable = true,
+            supportsGet = TransferSizes(1, beatBytes),
+            // Declare Put support for TileLink negotiation, but writes are denied
+            supportsPutFull = TransferSizes(1, beatBytes),
+            supportsPutPartial = TransferSizes(1, beatBytes),
+            fifoId = Some(0)
+          )
+        ),
+        beatBytes = beatBytes,
+        minLatency = 1
+      )
+    )
+  )
 
   lazy val module = new Impl
   class Impl extends LazyModuleImp(this) {
@@ -228,16 +136,22 @@ final class MemoryIOTileLinkAdapter(
 
   private val beatBytes = xlen / 8
 
-  val node = TLClientNode(Seq(TLMasterPortParameters.v1(
-    Seq(TLMasterParameters.v1(
-      name = name,
-      sourceId = sourceId,
-      supportsProbe = TransferSizes(1, beatBytes),
-      supportsGet = TransferSizes(1, beatBytes),
-      supportsPutFull = TransferSizes(1, beatBytes),
-      supportsPutPartial = TransferSizes(1, beatBytes)
-    ))
-  )))
+  val node = TLClientNode(
+    Seq(
+      TLMasterPortParameters.v1(
+        Seq(
+          TLMasterParameters.v1(
+            name = name,
+            sourceId = sourceId,
+            supportsProbe = TransferSizes(1, beatBytes),
+            supportsGet = TransferSizes(1, beatBytes),
+            supportsPutFull = TransferSizes(1, beatBytes),
+            supportsPutPartial = TransferSizes(1, beatBytes)
+          )
+        )
+      )
+    )
+  )
 
   lazy val module = new Impl
   class Impl extends LazyModuleImp(this) {
@@ -255,12 +169,14 @@ final class MemoryIOTileLinkAdapter(
 
     private def maskToSize(mask: Vec[Bool]): UInt = {
       val count = PopCount(mask)
-      MuxLookup(count, 0.U(3.W))(Seq(
-        1.U -> 0.U,
-        2.U -> 1.U,
-        4.U -> 2.U,
-        8.U -> 3.U
-      ))
+      MuxLookup(count, 0.U(3.W))(
+        Seq(
+          1.U -> 0.U,
+          2.U -> 1.U,
+          4.U -> 2.U,
+          8.U -> 3.U
+        )
+      )
     }
 
     mem.req.ready := state === State.sIdle
@@ -275,8 +191,9 @@ final class MemoryIOTileLinkAdapter(
       val size = maskToSize(savedReq.mask)
       val data = savedReq.dataWrite.asUInt
       val mask = savedReq.mask.asUInt
-      val (_, getA) = edge.Get(0.U, savedReq.address, size)
-      val (_, putA) = edge.Put(0.U, savedReq.address, size, data, mask)
+      val sourceId = edge.client.masters.head.sourceId.start.U
+      val (_, getA) = edge.Get(sourceId, savedReq.address, size)
+      val (_, putA) = edge.Put(sourceId, savedReq.address, size, data, mask)
       val a = Wire(new TLBundleA(edge.bundle))
       a := getA
       when(savedIsWrite) {
@@ -324,14 +241,24 @@ final class MemoryIOTileLinkBundleAdapter(
   private val savedReq = Reg(new MemoryRequest(xlen, xlen))
   private val savedIsWrite = RegInit(false.B)
 
+  private val wordSize = xlen / 8
+
+  // Convert mask count to TileLink size (log2 of bytes)
   private def maskToSize(mask: Vec[Bool]): UInt = {
     val count = PopCount(mask)
-    MuxLookup(count, 0.U(3.W))(Seq(
-      1.U -> 0.U,
-      2.U -> 1.U,
-      4.U -> 2.U,
-      8.U -> 3.U
-    ))
+    MuxLookup(count, 0.U(3.W))(
+      Seq(
+        1.U -> 0.U,
+        2.U -> 1.U,
+        4.U -> 2.U,
+        8.U -> 3.U
+      )
+    )
+  }
+
+  // Find the byte offset (first set bit in mask)
+  private def maskToOffset(mask: Vec[Bool]): UInt = {
+    PriorityEncoder(mask.asUInt)
   }
 
   mem.req.ready := state === State.sIdle
@@ -344,16 +271,28 @@ final class MemoryIOTileLinkBundleAdapter(
   tl.a.valid := state === State.sAWait
   tl.a.bits := {
     val size = maskToSize(savedReq.mask)
+    val offset = maskToOffset(savedReq.mask)
+    val sourceId = edge.client.masters.head.sourceId.start.U
+    // Compute actual byte address from word-aligned address + offset
+    val byteAddr = savedReq.address + offset
+    // savedReq.dataWrite/mask are already aligned to word lanes
     val data = savedReq.dataWrite.asUInt
     val mask = savedReq.mask.asUInt
-    val (_, getA) = edge.Get(0.U, savedReq.address, size)
-    val (_, putA) = edge.Put(0.U, savedReq.address, size, data, mask)
+    val (_, getA) = edge.Get(sourceId, byteAddr, size)
+    val (_, putA) = edge.Put(sourceId, byteAddr, size, data, mask)
     val a = Wire(new TLBundleA(edge.bundle))
     a := getA
     when(savedIsWrite) {
       a := putA
     }
-    a
+      a
+    }
+
+  // Debug: log store requests to help track unmapped addresses
+  when(tl.a.valid && tl.a.bits.opcode === TLMessages.PutPartialData) {
+    printf(
+      p"[MemoryTL] PutPartial addr=0x${Hexadecimal(tl.a.bits.address)} size=${tl.a.bits.size} mask=0x${Hexadecimal(tl.a.bits.mask)} data=0x${Hexadecimal(tl.a.bits.data)}\n"
+    )
   }
 
   tl.b.valid := false.B
