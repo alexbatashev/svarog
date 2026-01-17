@@ -2,8 +2,10 @@ package svarog.micro
 
 import chisel3._
 import chisel3.simulator.scalatest.ChiselSim
+import org.chipsalliance.cde.config.Parameters
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import org.chipsalliance.diplomacy.lazymodule.LazyModule
 import svarog.SvarogSoC
 import svarog.config.{SoC, Cluster, ISA, TCM, Micro}
 import svarog.memory.MemWidth
@@ -33,7 +35,8 @@ class CpuDebugSpec extends AnyFlatSpec with Matchers with ChiselSim {
     )
     var results: Map[Int, Int] = Map()
 
-    simulate(new SvarogSoC(config, None)) { dut =>
+    implicit val p: Parameters = Parameters.empty
+    simulate(LazyModule(new SvarogSoC(config, None)).module) { dut =>
       // Helper to tick clock
       def tick(): Unit = {
         dut.clock.step(1)

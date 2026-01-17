@@ -2,9 +2,13 @@ package svarog.micro
 
 import chisel3._
 import chisel3.simulator.scalatest.ChiselSim
+import org.chipsalliance.cde.config.Parameters
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
-import svarog.config.{Cluster, ISA, Micro}
+import org.chipsalliance.diplomacy.lazymodule.LazyModule
+import svarog.SvarogSoC
+import svarog.config.{Cluster, ISA, Micro, SoC, TCM}
+import svarog.memory.MemWidth
 
 class PipelineSpec extends AnyFlatSpec with Matchers with ChiselSim {
   behavior of "CPU Pipeline"
@@ -15,61 +19,87 @@ class PipelineSpec extends AnyFlatSpec with Matchers with ChiselSim {
     (0 until 4).map(i => ((word >> (8 * i)) & 0xff))
 
   def runProgram(program: Seq[Int], cycles: Int = 20): Map[Int, Int] = {
-    val config = Cluster(
-      coreType = Micro,
-      isa = ISA(xlen = xlen, mult = false, zmmul = false, zicsr = false),
-      numCores = 1
+    val config = SoC(
+      clusters = Seq(
+        Cluster(
+          coreType = Micro,
+          isa = ISA(xlen = xlen, mult = false, zmmul = false, zicsr = false),
+          numCores = 1
+        )
+      ),
+      io = Seq(),
+      memories = Seq(TCM(baseAddress = 0x80000000L, length = 4096L)),
+      simulatorDebug = true
     )
 
     var results: Map[Int, Int] = Map()
 
-    simulate(new Cpu(hartId = 0, config = config, startAddress = 0x80000000L)) {
-      dut =>
-        // Initialize
-        dut.io.instmem.req.ready.poke(true.B)
-        dut.io.instmem.resp.valid.poke(false.B)
-        dut.io.instmem.resp.bits.valid.poke(false.B)
-        dut.io.datamem.req.ready.poke(true.B)
-        dut.io.datamem.resp.valid.poke(false.B)
-        dut.io.datamem.resp.bits.valid.poke(false.B)
+    implicit val p: Parameters = Parameters.empty
+    simulate(LazyModule(new SvarogSoC(config, None)).module) { dut =>
+      def tick(): Unit = dut.clock.step(1)
 
-        dut.reset.poke(true.B)
-        dut.clock.step(2)
-        dut.reset.poke(false.B)
-        dut.clock.step(1)
+      val dbg = dut.io.debug.get
 
-        // Run program
-        for (cycle <- 0 until cycles) {
-          // Handle instruction fetch
-          if (dut.io.instmem.req.valid.peek().litToBoolean) {
-            val addr = dut.io.instmem.req.bits.address.peek().litValue.toInt
-            val pc_offset = (addr - 0x80000000) / 4
+      // Initialize debug interface
+      dbg.hart_in.id.valid.poke(false.B)
+      dbg.hart_in.id.bits.poke(0.U)
+      dbg.hart_in.bits.halt.valid.poke(false.B)
+      dbg.hart_in.bits.halt.bits.poke(false.B)
+      dbg.hart_in.bits.setPC.valid.poke(false.B)
+      dbg.hart_in.bits.setPC.bits.pc.poke(0.U)
+      dbg.mem_in.valid.poke(false.B)
+      dbg.mem_res.ready.poke(false.B)
 
-            // Return instruction from program or NOP
-            val instruction =
-              if (pc_offset >= 0 && pc_offset < program.length) {
-                program(pc_offset)
-              } else {
-                0x00000013 // nop
-              }
+      // Reset + halt
+      dut.reset.poke(true.B)
+      tick()
+      dbg.hart_in.id.valid.poke(true.B)
+      dbg.hart_in.id.bits.poke(0.U)
+      dbg.hart_in.bits.halt.valid.poke(true.B)
+      dbg.hart_in.bits.halt.bits.poke(true.B)
+      dut.reset.poke(false.B)
+      tick()
+      tick()
 
-            val bytes = wordToBytes(instruction)
-
-            dut.io.instmem.resp.valid.poke(true.B)
-            dut.io.instmem.resp.bits.valid.poke(true.B)
-            for (i <- 0 until 4) {
-              dut.io.instmem.resp.bits.dataRead(i).poke(bytes(i).U)
-            }
+      // Load program via debug mem interface (byte writes)
+      dbg.mem_res.ready.poke(true.B)
+      val baseAddr = 0x80000000L
+      for ((inst, idx) <- program.zipWithIndex) {
+        val addr = baseAddr + (idx * 4)
+        val bytes = wordToBytes(inst)
+        for ((byte, byteIdx) <- bytes.zipWithIndex) {
+          while (!dbg.mem_in.ready.peek().litToBoolean) {
+            tick()
           }
-
-          dut.clock.step(1)
-          dut.io.instmem.resp.valid.poke(false.B)
+          dbg.mem_in.valid.poke(true.B)
+          dbg.mem_in.bits.addr.poke((addr + byteIdx).U)
+          dbg.mem_in.bits.data.poke(byte.U)
+          dbg.mem_in.bits.write.poke(true.B)
+          dbg.mem_in.bits.instr.poke(true.B)
+          dbg.mem_in.bits.reqWidth.poke(MemWidth.BYTE)
+          tick()
+          dbg.mem_in.valid.poke(false.B)
+          tick()
         }
+      }
+      dbg.mem_res.ready.poke(false.B)
 
-        // Read register file by probing internal signals
-        // We can't easily use the debug interface in the test, so we'll
-        // just verify the test doesn't crash
-        results = Map(0 -> 0) // Placeholder
+      // Set PC and release halt
+      dbg.hart_in.bits.setPC.valid.poke(true.B)
+      dbg.hart_in.bits.setPC.bits.pc.poke(baseAddr.U)
+      tick()
+      dbg.hart_in.bits.setPC.valid.poke(false.B)
+      dbg.hart_in.bits.halt.bits.poke(false.B)
+      tick()
+      dbg.hart_in.bits.halt.valid.poke(false.B)
+      dbg.hart_in.id.valid.poke(false.B)
+
+      // Run a few cycles
+      for (_ <- 0 until cycles) {
+        tick()
+      }
+
+      results = Map(0 -> 0) // Placeholder
     }
 
     results
