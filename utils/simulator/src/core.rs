@@ -7,11 +7,15 @@ use crate::models::{VerilatorModelVariant, create_model};
 use crate::uart::UartDecoder;
 use crate::{ModelId, RegisterFile, TestResult};
 
+/// RTC clock divider - rtcClock runs 50x slower than main clock
+const RTC_CLOCK_DIVIDER: u64 = 50;
+
 pub struct Simulator {
     model: VerilatorModelVariant,
     timestamp: RefCell<u64>,
     vcd_open: RefCell<bool>,
     uart_decoder: RefCell<Option<(usize, UartDecoder)>>, // (uart_index, decoder)
+    rtc_counter: RefCell<u64>, // Counter for RTC clock division
 }
 
 impl Simulator {
@@ -54,6 +58,7 @@ impl Simulator {
             timestamp: RefCell::new(0),
             vcd_open: RefCell::new(false),
             uart_decoder: RefCell::new(None),
+            rtc_counter: RefCell::new(0),
         })
     }
 
@@ -472,6 +477,17 @@ impl Simulator {
     }
 
     fn tick(&self, dump_vcd: bool) {
+        // Update RTC clock - runs at 1/50th of main clock frequency
+        let mut rtc_counter = self.rtc_counter.borrow_mut();
+        *rtc_counter += 1;
+        if *rtc_counter >= RTC_CLOCK_DIVIDER {
+            *rtc_counter = 0;
+            // Toggle RTC clock
+            let rtc_clk = self.model.get_rtc_clock();
+            self.model.set_rtc_clock(if rtc_clk == 0 { 1 } else { 0 });
+        }
+        drop(rtc_counter);
+
         self.model.set_clock(0);
         self.model.eval();
         if dump_vcd && *self.vcd_open.borrow() {

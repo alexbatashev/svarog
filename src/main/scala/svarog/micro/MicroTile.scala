@@ -57,6 +57,7 @@ class MicroTileImp(outer: MicroTile) extends LazyModuleImp(outer) {
     val debug = Vec(numCores, Flipped(new HartDebugIO(xlen)))
     val debugRegData = Vec(numCores, Valid(UInt(xlen.W)))
     val halt = Output(Vec(numCores, Bool()))
+    val timerInterrupt = Input(Vec(numCores, Bool()))
   })
 
   require(outer.instNodes.length == numCores, "instNodes must match numCores")
@@ -78,5 +79,6 @@ class MicroTileImp(outer: MicroTile) extends LazyModuleImp(outer) {
     cpu.io.debug <> io.debug(i)
     io.debugRegData(i) <> cpu.io.debugRegData
     io.halt(i) := cpu.io.halt
+    cpu.io.timerInterrupt := io.timerInterrupt(i)
   }
 }

@@ -33,6 +33,8 @@ public:
     void set_clock(uint8_t value);
     uint8_t get_reset() const;
     void set_reset(uint8_t value);
+    uint8_t get_rtc_clock() const;
+    void set_rtc_clock(uint8_t value);
 
     // Debug hart interface - ID routing
     // NOTE: These signals only exist if built with --simulator-debug-iface=true

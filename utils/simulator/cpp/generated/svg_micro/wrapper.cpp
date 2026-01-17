@@ -71,6 +71,8 @@ uint8_t VerilatorModel::get_clock() const { return model_->clock; }
 void VerilatorModel::set_clock(uint8_t value) { model_->clock = value; }
 uint8_t VerilatorModel::get_reset() const { return model_->reset; }
 void VerilatorModel::set_reset(uint8_t value) { model_->reset = value; }
+uint8_t VerilatorModel::get_rtc_clock() const { return model_->io_rtcClock; }
+void VerilatorModel::set_rtc_clock(uint8_t value) { model_->io_rtcClock = value; }
 
 // Debug hart interface - ID routing
 uint8_t VerilatorModel::get_debug_hart_in_id_valid() const {

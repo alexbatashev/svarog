@@ -72,6 +72,18 @@ impl VerilatorModelVariant {
         }
     }
 
+    pub fn get_rtc_clock(&self) -> u8 {
+        match self {
+            Self::SvgMicro(model) => model.borrow().get_rtc_clock(),
+        }
+    }
+
+    pub fn set_rtc_clock(&self, value: u8) {
+        match self {
+            Self::SvgMicro(model) => model.borrow_mut().pin_mut().set_rtc_clock(value),
+        }
+    }
+
     // Debug hart interface - ID routing
     pub fn get_debug_hart_in_id_valid(&self) -> u8 {
         match self {

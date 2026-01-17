@@ -29,7 +29,8 @@ class CpuIO(
   val data = new TLBundle(dataParams)
   val debug = Flipped(new HartDebugIO(xlen))
   val debugRegData = Valid(UInt(xlen.W))
-  val halt = Output(Bool()) // Expose halt status
+  val halt = Output(Bool())
+  val timerInterrupt = Input(Bool())
 }
 
 class Cpu(
