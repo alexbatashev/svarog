@@ -5,7 +5,12 @@ import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import org.chipsalliance.diplomacy.lazymodule.{LazyModule, LazyModuleImp}
 import freechips.rocketchip.diplomacy.{IdRange, TransferSizes}
-import freechips.rocketchip.tilelink.{TLBundle, TLClientNode, TLMasterParameters, TLMasterPortParameters}
+import freechips.rocketchip.tilelink.{
+  TLBundle,
+  TLClientNode,
+  TLMasterParameters,
+  TLMasterPortParameters
+}
 import svarog.config.Cluster
 import svarog.debug.HartDebugIO
 
@@ -30,11 +35,15 @@ class MicroTile(
     )
 
   val instNodes = instSourceIds.zipWithIndex.map { case (id, idx) =>
-    TLClientNode(Seq(TLMasterPortParameters.v1(Seq(clientParams(s"inst_$idx", id)))))
+    TLClientNode(
+      Seq(TLMasterPortParameters.v1(Seq(clientParams(s"inst_$idx", id))))
+    )
   }
 
   val dataNodes = dataSourceIds.zipWithIndex.map { case (id, idx) =>
-    TLClientNode(Seq(TLMasterPortParameters.v1(Seq(clientParams(s"data_$idx", id)))))
+    TLClientNode(
+      Seq(TLMasterPortParameters.v1(Seq(clientParams(s"data_$idx", id))))
+    )
   }
 
   lazy val module = new MicroTileImp(this)
@@ -57,7 +66,9 @@ class MicroTileImp(outer: MicroTile) extends LazyModuleImp(outer) {
     val hartId = outer.hartBase + i
     val (instOut, instEdge) = outer.instNodes(i).out(0)
     val (dataOut, dataEdge) = outer.dataNodes(i).out(0)
-    val cpu = Module(new Cpu(hartId, outer.cluster, outer.startAddress, instEdge, dataEdge))
+    val cpu = Module(
+      new Cpu(hartId, outer.cluster, outer.startAddress, instEdge, dataEdge)
+    )
     cpu.io.inst <> instOut
     cpu.io.data <> dataOut
     cpu

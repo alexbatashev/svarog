@@ -285,9 +285,8 @@ final class MemoryIOTileLinkBundleAdapter(
     when(savedIsWrite) {
       a := putA
     }
-      a
-    }
-
+    a
+  }
 
   tl.b.valid := false.B
   tl.c.ready := true.B

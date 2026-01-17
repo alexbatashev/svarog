@@ -56,10 +56,14 @@ class TLChipDebugModule(
     )
 
   val instNode = TLClientNode(
-    Seq(TLMasterPortParameters.v1(Seq(clientParams("debug_inst", instSourceId))))
+    Seq(
+      TLMasterPortParameters.v1(Seq(clientParams("debug_inst", instSourceId)))
+    )
   )
   val dataNode = TLClientNode(
-    Seq(TLMasterPortParameters.v1(Seq(clientParams("debug_data", dataSourceId))))
+    Seq(
+      TLMasterPortParameters.v1(Seq(clientParams("debug_data", dataSourceId)))
+    )
   )
 
   lazy val module = new Impl
@@ -76,8 +80,16 @@ class TLChipDebugModule(
     for (i <- 0 until numHarts) {
       val hartSelected = debug.hart_in.id.valid && debug.hart_in.id.bits === i.U
 
-      harts(i).halt.valid := Mux(hartSelected, debug.hart_in.bits.halt.valid, false.B)
-      harts(i).halt.bits := Mux(hartSelected, debug.hart_in.bits.halt.bits, false.B)
+      harts(i).halt.valid := Mux(
+        hartSelected,
+        debug.hart_in.bits.halt.valid,
+        false.B
+      )
+      harts(i).halt.bits := Mux(
+        hartSelected,
+        debug.hart_in.bits.halt.bits,
+        false.B
+      )
 
       harts(i).breakpoint.valid := Mux(
         hartSelected,
@@ -167,7 +179,11 @@ class TLChipDebugModule(
 
     // Generate shifted mask
     val shiftedMask =
-      MemoryUtils.generateShiftedMask(debug.mem_in.bits.reqWidth, wordOffset, xlen)
+      MemoryUtils.generateShiftedMask(
+        debug.mem_in.bits.reqWidth,
+        wordOffset,
+        xlen
+      )
 
     // Convert scalar data to shifted write data
     val writeDataBytes = Wire(Vec(wordSize, UInt(8.W)))
@@ -209,9 +225,11 @@ class TLChipDebugModule(
     val instSrcId = instSourceId.start.U
     val dataSrcId = dataSourceId.start.U
     val (_, instGetA) = instEdge.Get(instSrcId, savedAddr, savedSize)
-    val (_, instPutA) = instEdge.Put(instSrcId, savedAddr, savedSize, savedData, savedMask)
+    val (_, instPutA) =
+      instEdge.Put(instSrcId, savedAddr, savedSize, savedData, savedMask)
     val (_, dataGetA) = dataEdge.Get(dataSrcId, savedAddr, savedSize)
-    val (_, dataPutA) = dataEdge.Put(dataSrcId, savedAddr, savedSize, savedData, savedMask)
+    val (_, dataPutA) =
+      dataEdge.Put(dataSrcId, savedAddr, savedSize, savedData, savedMask)
 
     instOut.a.valid := instAValid
     instOut.a.bits := Mux(memIsWrite, instPutA, instGetA)
@@ -220,7 +238,9 @@ class TLChipDebugModule(
     dataOut.a.bits := Mux(memIsWrite, dataPutA, dataGetA)
 
     when(state === State.sAWait) {
-      when((memIsInstr && instOut.a.ready) || (!memIsInstr && dataOut.a.ready)) {
+      when(
+        (memIsInstr && instOut.a.ready) || (!memIsInstr && dataOut.a.ready)
+      ) {
         state := State.sDWait
       }
     }
