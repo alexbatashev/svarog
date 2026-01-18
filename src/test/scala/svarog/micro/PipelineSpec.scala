@@ -8,9 +8,14 @@ import org.scalatest.matchers.should.Matchers
 import org.chipsalliance.diplomacy.lazymodule.LazyModule
 import svarog.SvarogSoC
 import svarog.config.{Cluster, ISA, Micro, SoC, TCM}
+import svarog.VerilatorWarningSilencer
 import svarog.memory.MemWidth
 
-class PipelineSpec extends AnyFlatSpec with Matchers with ChiselSim {
+class PipelineSpec
+    extends AnyFlatSpec
+    with Matchers
+    with ChiselSim
+    with VerilatorWarningSilencer {
   behavior of "CPU Pipeline"
 
   private val xlen = 32
