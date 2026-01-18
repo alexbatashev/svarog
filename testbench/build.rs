@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
+use std::path::Path;
 use xshell::{Shell, cmd};
 
 fn main() -> Result<()> {
     let sh = Shell::new()?;
 
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=direct-tests");
 
     // TODO is there a better way to get workspace dir?
     sh.change_dir("..");
@@ -72,6 +74,76 @@ fn main() -> Result<()> {
             .run()
             .context("Failed to build rv32ui test suite")?;
         cmd!(sh, "touch {build_indicator}").run()?;
+    }
+
+    // Build direct tests
+    sh.change_dir(&cur_dir);
+    build_direct_tests(&sh, &cur_dir)?;
+
+    Ok(())
+}
+
+/// Build handwritten assembly tests from testbench/direct-tests/
+fn build_direct_tests(sh: &Shell, workspace_dir: &Path) -> Result<()> {
+    let direct_tests_src = workspace_dir.join("testbench/direct-tests/rv32");
+    let direct_tests_out = workspace_dir.join("target/direct-tests/rv32");
+    let common_dir = direct_tests_src.join("common");
+
+    // Create output directory
+    std::fs::create_dir_all(&direct_tests_out)?;
+
+    let crt0 = common_dir.join("crt0.S");
+    let linker_script = common_dir.join("linker.ld");
+
+    // Check that common files exist
+    if !crt0.exists() || !linker_script.exists() {
+        anyhow::bail!(
+            "Missing common files: crt0.S or linker.ld in {:?}",
+            common_dir
+        );
+    }
+
+    // Find all .S files in direct-tests/rv32 (excluding common/)
+    for entry in std::fs::read_dir(&direct_tests_src)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Skip directories and non-.S files
+        if path.is_dir() {
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some("S") {
+            continue;
+        }
+
+        let test_name = path.file_stem().unwrap().to_str().unwrap();
+        let output_elf = direct_tests_out.join(test_name);
+
+        // Check if rebuild is needed
+        let needs_rebuild = if output_elf.exists() {
+            let elf_modified = std::fs::metadata(&output_elf)?.modified()?;
+            let src_modified = std::fs::metadata(&path)?.modified()?;
+            let crt0_modified = std::fs::metadata(&crt0)?.modified()?;
+            let linker_modified = std::fs::metadata(&linker_script)?.modified()?;
+
+            src_modified > elf_modified
+                || crt0_modified > elf_modified
+                || linker_modified > elf_modified
+        } else {
+            true
+        };
+
+        if needs_rebuild {
+            println!("cargo:warning=Building direct test: {}", test_name);
+
+            // Compile and link in one step
+            cmd!(
+                sh,
+                "riscv32-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -nostdlib -nostartfiles -static -T {linker_script} -o {output_elf} {crt0} {path}"
+            )
+            .run()
+            .with_context(|| format!("Failed to build direct test: {}", test_name))?;
+        }
     }
 
     Ok(())
