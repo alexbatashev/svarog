@@ -9,8 +9,13 @@ import org.chipsalliance.diplomacy.lazymodule.LazyModule
 import svarog.SvarogSoC
 import svarog.config.{SoC, Cluster, ISA, TCM, Micro}
 import svarog.memory.MemWidth
+import svarog.VerilatorWarningSilencer
 
-class CpuDebugSpec extends AnyFlatSpec with Matchers with ChiselSim {
+class CpuDebugSpec
+    extends AnyFlatSpec
+    with Matchers
+    with ChiselSim
+    with VerilatorWarningSilencer {
   behavior of "CPU with Debug Interface"
 
   private val xlen = 32

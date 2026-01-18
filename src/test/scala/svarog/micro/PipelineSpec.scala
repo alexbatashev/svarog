@@ -8,9 +8,14 @@ import org.scalatest.matchers.should.Matchers
 import org.chipsalliance.diplomacy.lazymodule.LazyModule
 import svarog.SvarogSoC
 import svarog.config.{Cluster, ISA, Micro, SoC, TCM}
+import svarog.VerilatorWarningSilencer
 import svarog.memory.MemWidth
 
-class PipelineSpec extends AnyFlatSpec with Matchers with ChiselSim {
+class PipelineSpec
+    extends AnyFlatSpec
+    with Matchers
+    with ChiselSim
+    with VerilatorWarningSilencer {
   behavior of "CPU Pipeline"
 
   private val xlen = 32
@@ -18,7 +23,12 @@ class PipelineSpec extends AnyFlatSpec with Matchers with ChiselSim {
   def wordToBytes(word: Int): Seq[Int] =
     (0 until 4).map(i => ((word >> (8 * i)) & 0xff))
 
+  // beq x0, x0, 0 - infinite loop to prevent executing garbage after program ends
+  private val infiniteLoop = 0x00000063
+
   def runProgram(program: Seq[Int], cycles: Int = 20): Map[Int, Int] = {
+    // Append infinite loop to prevent CPU from executing garbage memory
+    val safeProgram = program :+ infiniteLoop
     val config = SoC(
       clusters = Seq(
         Cluster(
@@ -64,7 +74,7 @@ class PipelineSpec extends AnyFlatSpec with Matchers with ChiselSim {
       // Load program via debug mem interface (byte writes)
       dbg.mem_res.ready.poke(true.B)
       val baseAddr = 0x80000000L
-      for ((inst, idx) <- program.zipWithIndex) {
+      for ((inst, idx) <- safeProgram.zipWithIndex) {
         val addr = baseAddr + (idx * 4)
         val bytes = wordToBytes(inst)
         for ((byte, byteIdx) <- bytes.zipWithIndex) {

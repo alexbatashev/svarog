@@ -25,6 +25,8 @@ pub mod ffi {
         fn set_clock(self: Pin<&mut VerilatorModel>, value: u8);
         fn get_reset(&self) -> u8;
         fn set_reset(self: Pin<&mut VerilatorModel>, value: u8);
+        fn get_rtc_clock(&self) -> u8;
+        fn set_rtc_clock(self: Pin<&mut VerilatorModel>, value: u8);
 
         // Debug hart interface - ID routing
         fn get_debug_hart_in_id_valid(&self) -> u8;

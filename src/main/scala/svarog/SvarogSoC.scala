@@ -10,7 +10,8 @@ import svarog.config.{Micro, SoC, TCM => TCMCfg}
 import svarog.debug.{DebugIOGenerator, TLChipDebugModule}
 import svarog.memory.{ROMTileLinkAdapter, TCM}
 import svarog.micro.MicroTile
-import svarog.bits.IOGenerator
+import svarog.bits.{IOGenerator, RTC}
+import svarog.interrupt.{MSIP, Timer}
 
 class SvarogSoC(
     config: SoC,
@@ -80,12 +81,37 @@ class SvarogSoC(
     Some(dbg)
   } else None
 
+  // Timer for machine timer interrupts (mtime/mtimecmp)
+  private val timer = LazyModule(
+    new Timer(
+      numHarts = config.getNumHarts,
+      xlen = xlen,
+      baseAddr = 0x02000000L
+    )
+  )
+  timer.node := TLFragmenter(xlen / 8, xlen / 8) := xbar.node
+
+  private val msip = LazyModule(
+    new MSIP(numHarts = config.getNumHarts, xlen = xlen, baseAddr = 0x02010000L)
+  )
+  msip.node := TLFragmenter(xlen / 8, xlen / 8) := xbar.node
+
   lazy val module = new SvarogSoCImp(this)
   class SvarogSoCImp(outer: SvarogSoC) extends LazyModuleImp(outer) {
     val io = IO(new Bundle {
       val gpio = IOGenerator.generatePins(config)
       val debug = DebugIOGenerator(config)
+      val rtcClock = Input(Clock())
     })
+
+    // RTC provides mtime value with clock domain crossing
+    private val rtc = Module(new RTC)
+    rtc.clk := clock
+    rtc.reset := reset.asBool
+    rtc.io.rtcClock := io.rtcClock
+
+    // Connect RTC time to Timer
+    outer.timer.module.io.time := rtc.io.time
 
     // Flatten debug signals from all tiles
     val allDebugPorts = tiles.flatMap(_.module.io.debug)
@@ -136,5 +162,17 @@ class SvarogSoC(
     }
 
     IOGenerator.connectPins(outer.uartAdapters, io.gpio)
+
+    // Route timer and software interrupts to tiles
+    var hartIdx = 0
+    tiles.foreach { tile =>
+      val numCores = tile.module.io.timerInterrupt.length
+      for (i <- 0 until numCores) {
+        tile.module.io.timerInterrupt(i) := outer.timer.module.io.fire(hartIdx)
+        tile.module.io.softwareInterrupt(i) := outer.msip.module.io
+          .fire(hartIdx)
+        hartIdx += 1
+      }
+    }
   }
 }

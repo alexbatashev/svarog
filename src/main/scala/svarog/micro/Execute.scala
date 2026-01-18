@@ -36,6 +36,11 @@ class BranchFeedback(xlen: Int) extends Bundle {
   val targetPC = Output(UInt(xlen.W))
 }
 
+class ExceptionSignal(xlen: Int) extends Bundle {
+  val epc = UInt(xlen.W)
+  val cause = UInt(xlen.W)
+}
+
 class Execute(isa: ISA) extends Module {
   private val xlen = isa.xlen
 
@@ -53,6 +58,11 @@ class Execute(isa: ISA) extends Module {
     val hazard = Valid(UInt(5.W))
     val csrHazard = Valid(new HazardUnitCSRIO)
     val stall = Input(Bool())
+
+    // Exception handling
+    val exception = Valid(new ExceptionSignal(xlen))
+    val mretFired = Output(Bool())
+    val mepc = Input(UInt(xlen.W)) // For MRET target
   })
 
   // If the branch is mispredicted on current cycle, whatever instruction
@@ -126,6 +136,23 @@ class Execute(isa: ISA) extends Module {
   // Branch/jump target address
   io.branch.bits.targetPC := 0.U
   io.branch.valid := false.B
+
+  // Exception defaults
+  io.exception.valid := false.B
+  io.exception.bits.epc := activeUop.pc
+  io.exception.bits.cause := 0.U
+  io.mretFired := false.B
+
+  // Exception detection: illegal instruction or ecall
+  val isException = activeUop.illegal || activeUop.isEcall
+  when(io.uop.valid && isException && !needFlush && !executingMultiCycle) {
+    io.exception.valid := true.B
+    io.exception.bits.cause := Mux(
+      activeUop.isEcall,
+      11.U,
+      2.U
+    ) // 11 = ecall from M-mode, 2 = illegal instruction
+  }
 
   // Load/store address
   io.res.bits.memAddress := 0.U
@@ -262,6 +289,13 @@ class Execute(isa: ISA) extends Module {
         io.res.bits.gprResult := csr.io.result.bits
         io.res.bits.csrWrite := csr.io.csr.write.en
         io.res.bits.csrResult := csr.io.csr.write.data
+      }
+
+      is(OpType.MRET) {
+        // Return from machine-mode trap handler
+        io.branch.valid := true.B
+        io.branch.bits.targetPC := io.mepc
+        io.mretFired := true.B
       }
     }
   }

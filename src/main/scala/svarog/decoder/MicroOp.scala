@@ -23,6 +23,7 @@ object OpType extends ChiselEnum {
   val CSRRS = Value
   val CSRRC = Value
   val SYSTEM = Value
+  val MRET = Value
 }
 
 class MicroOp(val xlen: Int) extends Bundle {
@@ -42,6 +43,8 @@ class MicroOp(val xlen: Int) extends Bundle {
   val pc = Output(UInt(xlen.W))
   val isEcall = Output(Bool())
   val csrAddr = Output(UInt(12.W))
+
+  def illegal: Bool = opType === OpType.INVALID
 }
 
 object MicroOp {

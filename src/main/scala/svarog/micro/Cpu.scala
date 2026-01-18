@@ -3,8 +3,9 @@ package svarog.micro
 import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.BoringUtils
-import svarog.bits.CSRFile
-import svarog.bits.ControlRegister
+import org.chipsalliance.cde.config.Parameters
+import org.chipsalliance.diplomacy.lazymodule.{LazyModule, LazyModuleImp}
+import svarog.bits.{CSRReadIO, CSRWriteIO}
 import svarog.bits.RegFile
 import svarog.bits.RegFileReadIO
 import svarog.bits.RegFileWriteIO
@@ -15,34 +16,63 @@ import svarog.decoder.MicroOp
 import svarog.decoder.SimpleDecoder
 import svarog.memory.MemoryIO
 import svarog.memory.MemoryRequest
-import svarog.memory.MemoryIOTileLinkBundleAdapter
 import svarog.MicroCoreConfig
 import svarog.config.Cluster
-import freechips.rocketchip.tilelink.{TLBundle, TLBundleParameters, TLEdgeOut}
+import svarog.csr.{
+  CSRBusAdapter,
+  CSRXbar,
+  MachineInfoCSR,
+  MachineCSR,
+  InterruptCSR
+}
+import svarog.interrupt.CoreLocalInterrupter
 
-class CpuIO(
-    xlen: Int,
-    instParams: TLBundleParameters,
-    dataParams: TLBundleParameters
-) extends Bundle {
-  val inst = new TLBundle(instParams)
-  val data = new TLBundle(dataParams)
+class CpuIO(xlen: Int) extends Bundle {
+  // Memory interfaces (TileLink adapters are in MicroTile)
+  val instMem = new MemoryIO(xlen, xlen)
+  val dataMem = new MemoryIO(xlen, xlen)
+  // Debug and control
   val debug = Flipped(new HartDebugIO(xlen))
   val debugRegData = Valid(UInt(xlen.W))
-  val halt = Output(Bool()) // Expose halt status
+  val halt = Output(Bool())
+  // Interrupt inputs
+  val timerInterrupt = Input(Bool())
+  val softwareInterrupt = Input(Bool())
 }
 
 class Cpu(
-    hartId: Int,
-    config: Cluster,
-    startAddress: Long,
-    instEdge: TLEdgeOut,
-    dataEdge: TLEdgeOut
-) extends Module {
-  // Public interface
-  val io = IO(new CpuIO(config.isa.xlen, instEdge.bundle, dataEdge.bundle))
+    val hartId: Int,
+    val config: Cluster,
+    val startAddress: Long
+)(implicit p: Parameters)
+    extends LazyModule {
 
-  val debug = Module(new HartDebugModule(config.isa.xlen))
+  private val xlen = config.isa.xlen
+
+  // CSR diplomatic subsystem - core-local
+  val csrAdapter = LazyModule(new CSRBusAdapter)
+  val csrXbar = LazyModule(new CSRXbar)
+  val machineInfoCSR = LazyModule(new MachineInfoCSR(hartId))
+  val machineCSR = LazyModule(new MachineCSR(xlen))
+  val interruptCSR = LazyModule(new InterruptCSR)
+
+  // Connect CSR nodes
+  csrXbar.node := csrAdapter.node
+  machineInfoCSR.node := csrXbar.node
+  machineCSR.node := csrXbar.node
+  interruptCSR.node := csrXbar.node
+
+  lazy val module = new CpuImp(this)
+}
+
+class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
+  private val config = outer.config
+  private val xlen = config.isa.xlen
+  private val startAddress = outer.startAddress
+
+  val io = IO(new CpuIO(xlen))
+
+  val debug = Module(new HartDebugModule(xlen))
   val halt = RegInit(false.B)
   halt := debug.io.halt
 
@@ -52,29 +82,20 @@ class Cpu(
   io.halt := halt
 
   // Memories
-  val regFile = Module(new RegFile(config.isa.xlen))
-  val csrFile = Module(new CSRFile(ControlRegister.getDefaultRegisters()))
+  val regFile = Module(new RegFile(xlen))
 
   // Stages
-  val fetch = Module(new Fetch(config.isa.xlen, startAddress))
-  val decode = Module(new SimpleDecoder(config.isa.xlen))
+  val fetch = Module(new Fetch(xlen, startAddress))
+  val decode = Module(new SimpleDecoder(xlen))
   val execute = Module(new Execute(config.isa))
-  val memory = Module(new Memory(config.isa.xlen))
-  val writeback = Module(new Writeback(config.isa.xlen))
+  val memory = Module(new Memory(xlen))
+  val writeback = Module(new Writeback(xlen))
 
   val hazardUnit = Module(new HazardUnit)
 
-  // Fetch memory (TileLink)
-  private val instAdapter =
-    Module(new MemoryIOTileLinkBundleAdapter(instEdge, config.isa.xlen))
-  fetch.io.mem <> instAdapter.mem
-  io.inst <> instAdapter.tl
-
-  // Data memory (TileLink)
-  private val dataAdapter =
-    Module(new MemoryIOTileLinkBundleAdapter(dataEdge, config.isa.xlen))
-  memory.mem <> dataAdapter.mem
-  io.data <> dataAdapter.tl
+  // Connect memory interfaces (adapters are in MicroTile)
+  fetch.io.mem <> io.instMem
+  memory.mem <> io.dataMem
 
   // Register file connection - multiplex between normal execution and debug
   // Read side
@@ -131,14 +152,29 @@ class Cpu(
     writeback.io.regFile.writeData
   )
 
-  // CSR file connection - read from Execute, write from Writeback
-  execute.io.csrFile.read <> csrFile.io.read
-  csrFile.io.write <> writeback.io.csrFile
+  // CSR file connection - internal to Cpu via diplomatic CSR subsystem
+  outer.csrAdapter.module.io.read <> execute.io.csrFile.read
+  outer.csrAdapter.module.io.write <> writeback.io.csrFile
+
+  // Connect interrupt signals to InterruptCSR
+  outer.interruptCSR.module.io.timerInterrupt := io.timerInterrupt
+  outer.interruptCSR.module.io.softwareInterrupt := io.softwareInterrupt
+  outer.interruptCSR.module.io.externalInterrupt := false.B
+
+  // Core Local Interrupter - interrupt arbitration logic
+  val clint = Module(new CoreLocalInterrupter(xlen))
+  clint.io.mie := outer.interruptCSR.module.io.mie
+  clint.io.mip := outer.interruptCSR.module.io.mip
+  clint.io.mstatus := outer.machineCSR.module.io.mstatus
+
+  // Interrupt at instruction boundaries (Execute stage commit)
+  // Only trigger on successful instruction completion, not during exceptions
+  clint.io.validInstruction := execute.io.res.fire && !execute.io.exception.valid
+  clint.io.instructionPC := execute.io.res.bits.pc
 
   // IF -> ID
-  // Increased depth from 1 to 4 to handle pipelining and stalls without losing instructions
   val fetchDecodeQueue = Module(
-    new Queue(new InstWord(config.isa.xlen), 1, pipe = true, hasFlush = true)
+    new Queue(new InstWord(xlen), 1, pipe = true, hasFlush = true)
   )
 
   fetchDecodeQueue.io.enq <> fetch.io.inst_out
@@ -146,7 +182,7 @@ class Cpu(
 
   // ID -> EX
   val decodeExecQueue = Module(
-    new Queue(new MicroOp(config.isa.xlen), 1, pipe = true, hasFlush = true)
+    new Queue(new MicroOp(xlen), 1, pipe = true, hasFlush = true)
   )
   decodeExecQueue.io.enq <> decode.io.decoded
   execute.io.uop <> decodeExecQueue.io.deq
@@ -154,7 +190,7 @@ class Cpu(
   // EX -> MEM
   val execMemQueue = Module(
     new Queue(
-      new ExecuteResult(config.isa.xlen),
+      new ExecuteResult(xlen),
       1,
       pipe = true,
       hasFlush = true
@@ -165,15 +201,69 @@ class Cpu(
 
   // MEM -> WB
   val memWbQueue = Module(
-    new Queue(new MemResult(config.isa.xlen), 1, pipe = true, hasFlush = true)
+    new Queue(new MemResult(xlen), 1, pipe = true, hasFlush = true)
   )
   memWbQueue.io.enq <> memory.io.res
   writeback.io.in <> memWbQueue.io.deq
 
-  // Flush all pipeline queues when debug sets PC
+  // Branch flush pipeline queues on branch mispredict (including the cycle after branch resolution
+  // to cover the extra cycle of latency in the fetch redirect path).
+  val branchFlushNow = execute.io.branch.valid
+  val branchFlushHold = RegNext(branchFlushNow, init = false.B)
+  val branchFlush = branchFlushNow || branchFlushHold
+
+  // Exception and interrupt handling - connect to MachineCSR
+  val exceptionValid = execute.io.exception.valid
+  val interruptValid = clint.io.interruptRequest.valid
+  val trapValid = exceptionValid || interruptValid
+
+  // Exception takes priority over interrupt if both occur on same cycle
+  outer.machineCSR.module.io.trapEnter.valid := trapValid
+  outer.machineCSR.module.io.trapEnter.bits.epc := Mux(
+    exceptionValid,
+    execute.io.exception.bits.epc,
+    clint.io.interruptRequest.bits.epc
+  )
+  outer.machineCSR.module.io.trapEnter.bits.cause := Mux(
+    exceptionValid,
+    execute.io.exception.bits.cause,
+    clint.io.interruptRequest.bits.cause
+  )
+
+  // MRET handling
+  outer.machineCSR.module.io.mretFired := execute.io.mretFired
+
+  // Connect mepc to Execute for MRET target
+  execute.io.mepc := outer.machineCSR.module.io.mepc
+
+  // Backprop pipes for branch feedback
+  val execFetchPipe = Module(new Pipe(new BranchFeedback(xlen)))
+  execFetchPipe.io.enq <> execute.io.branch
+
+  // Trap redirect to mtvec - pipe through to Fetch like branch
+  // Handles both exceptions and interrupts
+  val exceptionRedirectPipe = Module(new Pipe(new BranchFeedback(xlen)))
+  exceptionRedirectPipe.io.enq.valid := trapValid
+  exceptionRedirectPipe.io.enq.bits.targetPC := outer.machineCSR.module.io.mtvec
+
+  // Combine branch and exception redirects for Fetch
+  // Exception takes priority if both occur on same cycle (shouldn't happen normally)
+  fetch.io.branch.valid := execFetchPipe.io.deq.valid || exceptionRedirectPipe.io.deq.valid
+  fetch.io.branch.bits.targetPC := Mux(
+    exceptionRedirectPipe.io.deq.valid,
+    exceptionRedirectPipe.io.deq.bits.targetPC,
+    execFetchPipe.io.deq.bits.targetPC
+  )
+
+  // Flush on trap (exception or interrupt) or branch
+  val trapFlush = trapValid
+  val trapFlushHold = RegNext(trapFlush, init = false.B)
+  val totalFlush = branchFlush || trapFlush || trapFlushHold
+
+  // Flush all pipeline queues when debug sets PC or branch/exception
   val debugFlush = debug.io.setPCOut.valid
-  fetchDecodeQueue.io.flush.get := debugFlush
-  decodeExecQueue.io.flush.get := debugFlush
+  fetchDecodeQueue.io.flush.get := debugFlush || totalFlush
+  decodeExecQueue.io.flush.get := debugFlush || totalFlush
   execMemQueue.io.flush.get := debugFlush
   memWbQueue.io.flush.get := debugFlush
 
@@ -182,19 +272,6 @@ class Cpu(
   debug.io.memStore <> writeback.io.debugStore
   fetch.io.debugSetPC <> debug.io.setPCOut
   fetch.io.halt := halt
-
-  // Backprop pipes
-  val execFetchPipe = Module(new Pipe(new BranchFeedback(config.isa.xlen)))
-  fetch.io.branch <> execFetchPipe.io.deq
-  execFetchPipe.io.enq <> execute.io.branch
-
-  // Flush pipeline queues on branch mispredict (including the cycle after branch resolution
-  // to cover the extra cycle of latency in the fetch redirect path).
-  val branchFlushNow = execute.io.branch.valid
-  val branchFlushHold = RegNext(branchFlushNow, init = false.B)
-  val branchFlush = branchFlushNow || branchFlushHold
-  fetchDecodeQueue.flush := branchFlush
-  decodeExecQueue.flush := branchFlush
 
   // Determine which source registers are actually used by the instruction currently in decode.
   // Hazard signals
@@ -206,6 +283,6 @@ class Cpu(
   hazardUnit.io.memCsr := memory.io.csrHazard
   hazardUnit.io.wbCsr := writeback.io.csrHazard
   hazardUnit.io.watchpointHit := debug.io.watchpointTriggered
-  execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold
+  execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold || trapFlushHold
   writeback.io.halt := halt
 }

@@ -21,3 +21,8 @@ cxx-build = "1.0"
 name = "riscv-tests"
 path = "tests/riscv-tests.rs"
 harness = false
+
+[[test]]
+name = "direct-tests"
+path = "tests/direct-tests.rs"
+harness = false
