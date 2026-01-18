@@ -47,12 +47,7 @@ fn discover_tests() -> Result<Vec<Trial>> {
                 continue;
             }
 
-            let test_name = test_path
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .to_owned();
+            let test_name = test_path.file_name().unwrap().to_str().unwrap().to_owned();
 
             trials.push(Trial::test(
                 format!("{}::{}", model_name, test_name),
@@ -73,12 +68,7 @@ fn run_test(test_path: &Path, model_id: ModelId) -> Result<(), Failed> {
 }
 
 fn run_test_impl(test_path: &Path, model_id: ModelId) -> Result<()> {
-    let test_name = test_path
-        .file_name()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
+    let test_name = test_path.file_name().unwrap().to_str().unwrap().to_owned();
     let model_name = model_id.name();
     let vcd_path = PathBuf::from(format!(
         "{}/vcd/direct_{}_{}.vcd",
@@ -86,8 +76,8 @@ fn run_test_impl(test_path: &Path, model_id: ModelId) -> Result<()> {
     ));
 
     // Create simulator with specified model
-    let simulator =
-        Simulator::new(model_id).map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
+    let simulator = Simulator::new(model_id)
+        .map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
 
     // Load the ELF binary with watchpoint on 'tohost' symbol
     let _tohost_addr = simulator

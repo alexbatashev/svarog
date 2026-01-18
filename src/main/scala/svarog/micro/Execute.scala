@@ -147,7 +147,11 @@ class Execute(isa: ISA) extends Module {
   val isException = activeUop.illegal || activeUop.isEcall
   when(io.uop.valid && isException && !needFlush && !executingMultiCycle) {
     io.exception.valid := true.B
-    io.exception.bits.cause := Mux(activeUop.isEcall, 11.U, 2.U) // 11 = ecall from M-mode, 2 = illegal instruction
+    io.exception.bits.cause := Mux(
+      activeUop.isEcall,
+      11.U,
+      2.U
+    ) // 11 = ecall from M-mode, 2 = illegal instruction
   }
 
   // Load/store address

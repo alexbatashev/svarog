@@ -58,8 +58,7 @@ class MachineCSR(xlen: Int)(implicit p: Parameters) extends LazyModule {
   lazy val module = new MachineCSRImp(this, xlen)
 }
 
-class MachineCSRImp(outer: MachineCSR, xlen: Int)
-    extends LazyModuleImp(outer) {
+class MachineCSRImp(outer: MachineCSR, xlen: Int) extends LazyModuleImp(outer) {
   private val (port, edge) = outer.node.in.head
   private val params = edge.params
 

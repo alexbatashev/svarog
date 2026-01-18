@@ -22,7 +22,9 @@ class CSRBundleM2S(params: CSRBundleParameters) extends Bundle {
 }
 
 object CSRBundleM2S {
-  def apply(params: CSRBundleParameters): CSRBundleM2S = new CSRBundleM2S(params)
+  def apply(params: CSRBundleParameters): CSRBundleM2S = new CSRBundleM2S(
+    params
+  )
 }
 
 /** Slave-to-Master bundle for CSR bus responses (no direction wrappers) */
@@ -32,7 +34,9 @@ class CSRBundleS2M(params: CSRBundleParameters) extends Bundle {
 }
 
 object CSRBundleS2M {
-  def apply(params: CSRBundleParameters): CSRBundleS2M = new CSRBundleS2M(params)
+  def apply(params: CSRBundleParameters): CSRBundleS2M = new CSRBundleS2M(
+    params
+  )
 }
 
 /** Combined CSR bus bundle (master's perspective)

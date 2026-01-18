@@ -12,14 +12,15 @@ import freechips.rocketchip.resources.SimpleDevice
 /** Timer module following SiFive CLINT memory layout for timer registers.
   *
   * Memory map (relative to baseAddr):
-  *   - 0x0000: mtime      (64-bit, RO) - current time from RTC
-  *   - 0x4000: mtimecmp0  (64-bit, RW) - timer compare for hart 0
-  *   - 0x4008: mtimecmp1  (64-bit, RW) - timer compare for hart 1
+  *   - 0x0000: mtime (64-bit, RO) - current time from RTC
+  *   - 0x4000: mtimecmp0 (64-bit, RW) - timer compare for hart 0
+  *   - 0x4008: mtimecmp1 (64-bit, RW) - timer compare for hart 1
   *   - ...
   *
   * Timer interrupt fires when mtime >= mtimecmp[hart].
   */
-class Timer(numHarts: Int, xlen: Int, baseAddr: Long)(implicit p: Parameters) extends LazyModule {
+class Timer(numHarts: Int, xlen: Int, baseAddr: Long)(implicit p: Parameters)
+    extends LazyModule {
   private val beatBytes = xlen / 8
   // Size must be a power of 2 for TileLink AddressSet mask requirements.
   // We need to cover mtime at 0x0000 and mtimecmp at 0x4000+.
@@ -55,25 +56,59 @@ class Timer(numHarts: Int, xlen: Int, baseAddr: Long)(implicit p: Parameters) ex
     // For 32-bit systems, split 64-bit registers into low/high halves
     if (beatBytes == 4) {
       val mtimeFields = Seq(
-        0x0000 -> Seq(RegField.r(32, io.time(31, 0), RegFieldDesc("mtime_lo", "Machine time low"))),
-        0x0004 -> Seq(RegField.r(32, io.time(63, 32), RegFieldDesc("mtime_hi", "Machine time high")))
+        0x0000 -> Seq(
+          RegField
+            .r(32, io.time(31, 0), RegFieldDesc("mtime_lo", "Machine time low"))
+        ),
+        0x0004 -> Seq(
+          RegField.r(
+            32,
+            io.time(63, 32),
+            RegFieldDesc("mtime_hi", "Machine time high")
+          )
+        )
       )
 
       val mtimecmpFields = (0 until numHarts).flatMap { i =>
         Seq(
-          (0x4000 + i * 8) -> Seq(RegField(32, mtimecmpLo(i), RegFieldDesc(s"mtimecmp${i}_lo", s"Timer compare low for hart $i"))),
-          (0x4004 + i * 8) -> Seq(RegField(32, mtimecmpHi(i), RegFieldDesc(s"mtimecmp${i}_hi", s"Timer compare high for hart $i")))
+          (0x4000 + i * 8) -> Seq(
+            RegField(
+              32,
+              mtimecmpLo(i),
+              RegFieldDesc(s"mtimecmp${i}_lo", s"Timer compare low for hart $i")
+            )
+          ),
+          (0x4004 + i * 8) -> Seq(
+            RegField(
+              32,
+              mtimecmpHi(i),
+              RegFieldDesc(
+                s"mtimecmp${i}_hi",
+                s"Timer compare high for hart $i"
+              )
+            )
+          )
         )
       }
 
       node.regmap((mtimeFields ++ mtimecmpFields): _*)
     } else {
       // 64-bit system: pack lo/hi into single 64-bit word at each offset
-      val mtimeRegField = 0x0000 -> Seq(RegField.r(64, io.time, RegFieldDesc("mtime", "Machine time")))
+      val mtimeRegField = 0x0000 -> Seq(
+        RegField.r(64, io.time, RegFieldDesc("mtime", "Machine time"))
+      )
       val mtimecmpRegFields = (0 until numHarts).map { i =>
         (0x4000 + i * 8) -> Seq(
-          RegField(32, mtimecmpLo(i), RegFieldDesc(s"mtimecmp${i}_lo", s"Timer compare low for hart $i")),
-          RegField(32, mtimecmpHi(i), RegFieldDesc(s"mtimecmp${i}_hi", s"Timer compare high for hart $i"))
+          RegField(
+            32,
+            mtimecmpLo(i),
+            RegFieldDesc(s"mtimecmp${i}_lo", s"Timer compare low for hart $i")
+          ),
+          RegField(
+            32,
+            mtimecmpHi(i),
+            RegFieldDesc(s"mtimecmp${i}_hi", s"Timer compare high for hart $i")
+          )
         )
       }
       node.regmap((mtimeRegField +: mtimecmpRegFields): _*)

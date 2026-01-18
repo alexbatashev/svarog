@@ -5,7 +5,7 @@ import chisel3.util._
 import freechips.rocketchip.util._
 
 class RTC extends RawModule {
-  val clk   = IO(Input(Clock()))
+  val clk = IO(Input(Clock()))
   val reset = IO(Input(Bool()))
 
   val io = IO(new Bundle {

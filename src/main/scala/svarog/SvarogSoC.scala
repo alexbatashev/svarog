@@ -83,7 +83,11 @@ class SvarogSoC(
 
   // Timer for machine timer interrupts (mtime/mtimecmp)
   private val timer = LazyModule(
-    new Timer(numHarts = config.getNumHarts, xlen = xlen, baseAddr = 0x02000000L)
+    new Timer(
+      numHarts = config.getNumHarts,
+      xlen = xlen,
+      baseAddr = 0x02000000L
+    )
   )
   timer.node := TLFragmenter(xlen / 8, xlen / 8) := xbar.node
 
@@ -168,7 +172,8 @@ class SvarogSoC(
       val numCores = tile.module.io.timerInterrupt.length
       for (i <- 0 until numCores) {
         tile.module.io.timerInterrupt(i) := outer.timer.module.io.fire(hartIdx)
-        tile.module.io.softwareInterrupt(i) := outer.msip.module.io.fire(hartIdx)
+        tile.module.io.softwareInterrupt(i) := outer.msip.module.io
+          .fire(hartIdx)
         hartIdx += 1
       }
     }

@@ -41,8 +41,7 @@ class InterruptCSRIO extends Bundle {
   * mip bits:
   *   - MSIP (3): Machine software interrupt pending - writable
   *   - MTIP (7): Machine timer interrupt pending - read-only (hardware set)
-  *   - MEIP (11): Machine external interrupt pending - read-only (hardware
-  *     set)
+  *   - MEIP (11): Machine external interrupt pending - read-only (hardware set)
   *
   * mie bits:
   *   - MSIE (3): Machine software interrupt enable - writable
@@ -103,9 +102,10 @@ class InterruptCSRImp(outer: InterruptCSR) extends LazyModuleImp(outer) {
 
   // Writable mask for mie: MSIE(3), MTIE(7), MEIE(11)
   private val mieWriteMask =
-    ((1 << InterruptBits.MSIP) | (1 << InterruptBits.MTIP) | (1 << InterruptBits.MEIP)).U(
-      params.dataBits.W
-    )
+    ((1 << InterruptBits.MSIP) | (1 << InterruptBits.MTIP) | (1 << InterruptBits.MEIP))
+      .U(
+        params.dataBits.W
+      )
 
   // Write handling
   when(port.m2s.wen) {

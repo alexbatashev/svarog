@@ -9,15 +9,18 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.regmapper._
 import freechips.rocketchip.resources.SimpleDevice
 
-/** MSIP (Machine Software Interrupt Pending) module for SiFive CLINT compatibility.
+/** MSIP (Machine Software Interrupt Pending) module for SiFive CLINT
+  * compatibility.
   *
   * Memory map (relative to baseAddr):
-  *   - 0x0000: msip[0] (32-bit, only bit 0 used) - software interrupt for hart 0
-  *   - 0x0004: msip[1] (32-bit, only bit 0 used) - software interrupt for hart 1
+  *   - 0x0000: msip[0] (32-bit, only bit 0 used) - software interrupt for hart
+  *     0
+  *   - 0x0004: msip[1] (32-bit, only bit 0 used) - software interrupt for hart
+  *     1
   *   - ...
   *
-  * Writing 1 to bit 0 of msip[i] sets the software interrupt pending bit for hart i.
-  * Writing 0 clears it.
+  * Writing 1 to bit 0 of msip[i] sets the software interrupt pending bit for
+  * hart i. Writing 0 clears it.
   *
   * SiFive CLINT memory layout:
   *   - 0x02000000 + 4*hartid: MSIP registers

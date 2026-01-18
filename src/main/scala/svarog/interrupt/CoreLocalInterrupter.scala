@@ -41,8 +41,8 @@ class CoreLocalInterrupter(xlen: Int) extends Module {
 
   // Pending and enabled interrupts
   val pendingEnabled = io.mip & io.mie
-  val msip = pendingEnabled(3)  // Machine software interrupt
-  val mtip = pendingEnabled(7)  // Machine timer interrupt
+  val msip = pendingEnabled(3) // Machine software interrupt
+  val mtip = pendingEnabled(7) // Machine timer interrupt
   val meip = pendingEnabled(11) // Machine external interrupt
 
   // Priority encoder: MEIP > MSIP > MTIP
