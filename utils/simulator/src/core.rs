@@ -15,7 +15,7 @@ pub struct Simulator {
     timestamp: RefCell<u64>,
     vcd_open: RefCell<bool>,
     uart_decoder: RefCell<Option<(usize, UartDecoder)>>, // (uart_index, decoder)
-    rtc_counter: RefCell<u64>, // Counter for RTC clock division
+    rtc_counter: RefCell<u64>,                           // Counter for RTC clock division
 }
 
 impl Simulator {
