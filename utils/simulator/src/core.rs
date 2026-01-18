@@ -2,6 +2,7 @@ use std::{cell::RefCell, convert::TryInto, path::Path};
 
 use anyhow::{Context, Result};
 use elf::{ElfBytes, endian::AnyEndian};
+use elf::abi::{SHF_ALLOC, SHT_NOBITS};
 
 use crate::models::{VerilatorModelVariant, create_model};
 use crate::uart::UartDecoder;
@@ -200,16 +201,25 @@ impl Simulator {
         self.model.set_reset(0);
         self.tick(false);
 
-        // Load sections: .text, .text.init, .data, and .rodata
-        let sections_to_load = [".text", ".text.init", ".data", ".rodata"];
-        for section_name in &sections_to_load {
-            if let Some(section_hdr) = file.section_header_by_name(section_name)? {
-                let (data, _) = file.section_data(&section_hdr)?;
-                let start_addr = section_hdr.sh_addr as u32;
-                self.upload_section(section_name, data, start_addr);
-            } else {
-                eprintln!("Warning: Section {} not found in ELF file", section_name);
+        // Load all allocatable sections (including .rodata)
+        let (shdrs_opt, strtab_opt) = file.section_headers_with_strtab()?;
+        if let (Some(shdrs), Some(strtab)) = (shdrs_opt, strtab_opt) {
+            for shdr in shdrs.iter() {
+                let is_alloc = (shdr.sh_flags & (SHF_ALLOC as u64)) != 0;
+                let is_nobits = shdr.sh_type == (SHT_NOBITS as u32);
+                if !is_alloc || is_nobits || shdr.sh_size == 0 {
+                    continue;
+                }
+
+                let name = strtab
+                    .get(shdr.sh_name as usize)
+                    .unwrap_or("<unknown>");
+                let (data, _) = file.section_data(&shdr)?;
+                let start_addr = shdr.sh_addr as u32;
+                self.upload_section(name, data, start_addr);
             }
+        } else {
+            eprintln!("Warning: No section headers found in ELF file");
         }
 
         Ok(watchpoint_addr)
