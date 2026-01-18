@@ -21,8 +21,11 @@ import freechips.rocketchip.resources.SimpleDevice
   */
 class Timer(numHarts: Int, xlen: Int, baseAddr: Long)(implicit p: Parameters) extends LazyModule {
   private val beatBytes = xlen / 8
-  // Size: 0x4000 for mtime region + 8 bytes per hart for mtimecmp
-  private val size = 0x4000 + numHarts * 8
+  // Size must be a power of 2 for TileLink AddressSet mask requirements.
+  // We need to cover mtime at 0x0000 and mtimecmp at 0x4000+.
+  // Max offset is 0x4000 + numHarts * 8, round up to next power of 2.
+  private val minSize = 0x4000 + numHarts * 8
+  private val size = 1 << log2Ceil(minSize)
 
   val device = new SimpleDevice("timer", Seq("riscv,timer0"))
   val node = TLRegisterNode(
