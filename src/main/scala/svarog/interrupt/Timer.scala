@@ -9,7 +9,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.regmapper._
 import freechips.rocketchip.resources.SimpleDevice
 
-/** Timer module following SiFive CLINT memory layout for timer registers.
+/** Timer module.
   *
   * Memory map (relative to baseAddr):
   *   - 0x0000: mtime (64-bit, RO) - current time from RTC

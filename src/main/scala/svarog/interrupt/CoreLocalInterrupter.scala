@@ -16,7 +16,7 @@ class InterruptRequest(xlen: Int) extends Bundle {
   *
   * Priority: MEIP(11) > MSIP(3) > MTIP(7)
   *
-  * This follows SiFive CLINT behavior where:
+  * Behavior:
   *   - Timer interrupts (MTIP) are set by mtime >= mtimecmp
   *   - Software interrupts (MSIP) are set by memory-mapped MSIP registers
   *   - External interrupts (MEIP) come from PLIC (future extension)

@@ -91,9 +91,6 @@ class SvarogSoC(
   )
   timer.node := TLFragmenter(xlen / 8, xlen / 8) := xbar.node
 
-  // MSIP for machine software interrupts (SiFive CLINT compatible)
-  // Note: Using separate address range to avoid conflict with Timer
-  // SiFive CLINT uses 0x02000000 for MSIP, but we use 0x02010000 since Timer is at 0x02000000
   private val msip = LazyModule(
     new MSIP(numHarts = config.getNumHarts, xlen = xlen, baseAddr = 0x02010000L)
   )
