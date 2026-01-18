@@ -6,7 +6,8 @@ import svsim.BackendSettingsModifications
 import svsim.verilator.Backend
 
 trait VerilatorWarningSilencer extends ChiselSim { self: TestSuite =>
-  abstract override implicit def backendSettingsModifications: BackendSettingsModifications = { original =>
+  abstract override implicit def backendSettingsModifications
+      : BackendSettingsModifications = { original =>
     val base = super.backendSettingsModifications.apply(original)
     base match {
       case settings: Backend.CompilationSettings =>
