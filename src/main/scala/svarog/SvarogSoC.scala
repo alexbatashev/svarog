@@ -11,7 +11,7 @@ import svarog.debug.{DebugIOGenerator, TLChipDebugModule}
 import svarog.memory.{ROMTileLinkAdapter, TCM}
 import svarog.micro.MicroTile
 import svarog.bits.{IOGenerator, RTC}
-import svarog.interrupt.Timer
+import svarog.interrupt.{MSIP, Timer}
 
 class SvarogSoC(
     config: SoC,
@@ -87,6 +87,14 @@ class SvarogSoC(
   )
   timer.node := TLFragmenter(xlen / 8, xlen / 8) := xbar.node
 
+  // MSIP for machine software interrupts (SiFive CLINT compatible)
+  // Note: Using separate address range to avoid conflict with Timer
+  // SiFive CLINT uses 0x02000000 for MSIP, but we use 0x02010000 since Timer is at 0x02000000
+  private val msip = LazyModule(
+    new MSIP(numHarts = config.getNumHarts, xlen = xlen, baseAddr = 0x02010000L)
+  )
+  msip.node := TLFragmenter(xlen / 8, xlen / 8) := xbar.node
+
   lazy val module = new SvarogSoCImp(this)
   class SvarogSoCImp(outer: SvarogSoC) extends LazyModuleImp(outer) {
     val io = IO(new Bundle {
@@ -154,12 +162,13 @@ class SvarogSoC(
 
     IOGenerator.connectPins(outer.uartAdapters, io.gpio)
 
-    // Route timer interrupts to tiles
+    // Route timer and software interrupts to tiles
     var hartIdx = 0
     tiles.foreach { tile =>
       val numCores = tile.module.io.timerInterrupt.length
       for (i <- 0 until numCores) {
         tile.module.io.timerInterrupt(i) := outer.timer.module.io.fire(hartIdx)
+        tile.module.io.softwareInterrupt(i) := outer.msip.module.io.fire(hartIdx)
         hartIdx += 1
       }
     }

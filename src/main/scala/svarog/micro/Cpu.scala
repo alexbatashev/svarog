@@ -25,6 +25,7 @@ import svarog.csr.{
   MachineCSR,
   InterruptCSR
 }
+import svarog.interrupt.CoreLocalInterrupter
 
 class CpuIO(xlen: Int) extends Bundle {
   // Memory interfaces (TileLink adapters are in MicroTile)
@@ -34,7 +35,9 @@ class CpuIO(xlen: Int) extends Bundle {
   val debug = Flipped(new HartDebugIO(xlen))
   val debugRegData = Valid(UInt(xlen.W))
   val halt = Output(Bool())
+  // Interrupt inputs
   val timerInterrupt = Input(Bool())
+  val softwareInterrupt = Input(Bool())
 }
 
 class Cpu(
@@ -155,8 +158,19 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
 
   // Connect interrupt signals to InterruptCSR
   outer.interruptCSR.module.io.timerInterrupt := io.timerInterrupt
-  outer.interruptCSR.module.io.softwareInterrupt := false.B
+  outer.interruptCSR.module.io.softwareInterrupt := io.softwareInterrupt
   outer.interruptCSR.module.io.externalInterrupt := false.B
+
+  // Core Local Interrupter - interrupt arbitration logic
+  val clint = Module(new CoreLocalInterrupter(xlen))
+  clint.io.mie := outer.interruptCSR.module.io.mie
+  clint.io.mip := outer.interruptCSR.module.io.mip
+  clint.io.mstatus := outer.machineCSR.module.io.mstatus
+
+  // Interrupt at instruction boundaries (Execute stage commit)
+  // Only trigger on successful instruction completion, not during exceptions
+  clint.io.validInstruction := execute.io.res.fire && !execute.io.exception.valid
+  clint.io.instructionPC := execute.io.res.bits.pc
 
   // IF -> ID
   val fetchDecodeQueue = Module(
@@ -198,11 +212,23 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
   val branchFlushHold = RegNext(branchFlushNow, init = false.B)
   val branchFlush = branchFlushNow || branchFlushHold
 
-  // Exception handling - connect exception to MachineCSR
+  // Exception and interrupt handling - connect to MachineCSR
   val exceptionValid = execute.io.exception.valid
-  outer.machineCSR.module.io.trapEnter.valid := exceptionValid
-  outer.machineCSR.module.io.trapEnter.bits.epc := execute.io.exception.bits.epc
-  outer.machineCSR.module.io.trapEnter.bits.cause := execute.io.exception.bits.cause
+  val interruptValid = clint.io.interruptRequest.valid
+  val trapValid = exceptionValid || interruptValid
+
+  // Exception takes priority over interrupt if both occur on same cycle
+  outer.machineCSR.module.io.trapEnter.valid := trapValid
+  outer.machineCSR.module.io.trapEnter.bits.epc := Mux(
+    exceptionValid,
+    execute.io.exception.bits.epc,
+    clint.io.interruptRequest.bits.epc
+  )
+  outer.machineCSR.module.io.trapEnter.bits.cause := Mux(
+    exceptionValid,
+    execute.io.exception.bits.cause,
+    clint.io.interruptRequest.bits.cause
+  )
 
   // MRET handling
   outer.machineCSR.module.io.mretFired := execute.io.mretFired
@@ -214,9 +240,10 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
   val execFetchPipe = Module(new Pipe(new BranchFeedback(xlen)))
   execFetchPipe.io.enq <> execute.io.branch
 
-  // Exception redirect to mtvec - pipe through to Fetch like branch
+  // Trap redirect to mtvec - pipe through to Fetch like branch
+  // Handles both exceptions and interrupts
   val exceptionRedirectPipe = Module(new Pipe(new BranchFeedback(xlen)))
-  exceptionRedirectPipe.io.enq.valid := exceptionValid
+  exceptionRedirectPipe.io.enq.valid := trapValid
   exceptionRedirectPipe.io.enq.bits.targetPC := outer.machineCSR.module.io.mtvec
 
   // Combine branch and exception redirects for Fetch
@@ -228,10 +255,10 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
     execFetchPipe.io.deq.bits.targetPC
   )
 
-  // Flush on exception or branch
-  val exceptionFlush = exceptionValid
-  val exceptionFlushHold = RegNext(exceptionFlush, init = false.B)
-  val totalFlush = branchFlush || exceptionFlush || exceptionFlushHold
+  // Flush on trap (exception or interrupt) or branch
+  val trapFlush = trapValid
+  val trapFlushHold = RegNext(trapFlush, init = false.B)
+  val totalFlush = branchFlush || trapFlush || trapFlushHold
 
   // Flush all pipeline queues when debug sets PC or branch/exception
   val debugFlush = debug.io.setPCOut.valid
@@ -256,6 +283,6 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
   hazardUnit.io.memCsr := memory.io.csrHazard
   hazardUnit.io.wbCsr := writeback.io.csrHazard
   hazardUnit.io.watchpointHit := debug.io.watchpointTriggered
-  execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold || exceptionFlushHold
+  execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold || trapFlushHold
   writeback.io.halt := halt
 }
