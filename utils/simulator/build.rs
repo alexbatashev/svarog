@@ -1,579 +1,358 @@
-use anyhow::{Context, Result};
-use std::fs;
+use std::fs::{self, File};
+use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use xshell::{Shell, cmd};
+use std::env;
 
-#[derive(Debug, Clone, serde::Deserialize)]
-struct IoConfig {
-    #[serde(rename = "type")]
-    io_type: String,
-    #[serde(default)]
-    #[allow(dead_code)] // May be used in future for named accessors or debugging
-    name: String,
+use anyhow::{anyhow, Context};
+use flate2::read::GzDecoder;
+use glob::glob;
+use sha2::{Digest, Sha256};
+use tar::Archive;
+use xshell::{cmd, Shell};
+
+const CIRCT_VERSION: &str = "firtool-1.139.0";
+
+struct PlatformRelease {
+    url: &'static str,
+    sha256: &'static str,
+    is_zip: bool,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-struct SocConfig {
-    #[serde(default)]
-    io: Vec<IoConfig>,
-}
-
-#[derive(Debug, Clone)]
-struct ModelInfo {
-    name: String,         // "svg-micro"
-    yaml_path: PathBuf,   // "configs/svg-micro.yaml"
-    identifier: String,   // "svg_micro"
-    namespace: String,    // "svg_micro"
-    enum_variant: String, // "SvgMicro"
-    num_uarts: usize,     // Number of UARTs in config
-}
-
-impl ModelInfo {
-    fn from_yaml_path(path: PathBuf) -> Result<Self> {
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| anyhow::anyhow!("Invalid config filename: {:?}", path))?
-            .to_string();
-
-        let identifier = name.replace('-', "_");
-        let enum_variant = to_pascal_case(&name);
-
-        // Parse YAML to count UARTs
-        let yaml_content =
-            fs::read_to_string(&path).context(format!("Failed to read config file: {:?}", path))?;
-        let config: SocConfig = serde_yaml::from_str(&yaml_content)
-            .context(format!("Failed to parse YAML config: {:?}", path))?;
-
-        let num_uarts = config.io.iter().filter(|io| io.io_type == "uart").count();
-
-        Ok(ModelInfo {
-            name,
-            yaml_path: path,
-            namespace: identifier.clone(),
-            identifier,
-            enum_variant,
-            num_uarts,
-        })
-    }
-}
-
-fn to_pascal_case(s: &str) -> String {
-    s.split('-')
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().chain(chars).collect(),
-                None => String::new(),
-            }
-        })
-        .collect()
-}
-
-fn discover_models(workspace_root: &Path) -> Result<Vec<ModelInfo>> {
-    let pattern = workspace_root.join("configs/*.yaml");
-    let mut models = Vec::new();
-
-    for entry in glob::glob(pattern.to_str().unwrap())? {
-        let path = entry?;
-        models.push(ModelInfo::from_yaml_path(path)?);
-    }
-
-    if models.is_empty() {
-        anyhow::bail!("No config files found in configs/ directory");
-    }
-
-    // Sort for deterministic builds
-    models.sort_by(|a, b| a.name.cmp(&b.name));
-
-    Ok(models)
-}
-
-fn generate_verilog(sh: &Shell, workspace_root: &Path, model: &ModelInfo) -> Result<()> {
-    let output_dir = workspace_root.join(format!("target/generated/{}", model.name));
-    fs::create_dir_all(&output_dir)?;
-
-    let config_path = &model.yaml_path;
-
-    sh.change_dir(workspace_root);
-    cmd!(
-        sh,
-        "./mill -i svarog.runMain svarog.VerilogGenerator --simulator-debug-iface=true --target-dir={output_dir} --config={config_path}"
-    )
-    .run()
-    .context(format!("Failed to generate Verilog for model: {}", model.name))?;
-
-    Ok(())
-}
-
-fn run_verilator(sh: &Shell, workspace_root: &Path, model: &ModelInfo) -> Result<()> {
-    let verilog_file = workspace_root.join(format!("target/generated/{}/SvarogSoC.sv", model.name));
-    let verilator_out_dir = workspace_root.join(format!("target/verilator/{}", model.name));
-
-    fs::create_dir_all(&verilator_out_dir)?;
-
-    let verilator_stamp = verilator_out_dir.join("verilator_build.stamp");
-
-    // Check if we need to run Verilator
-    let need_verilator = !verilator_stamp.exists()
-        || verilog_file.metadata()?.modified()? > verilator_stamp.metadata()?.modified()?;
-
-    if !need_verilator {
-        println!(
-            "cargo:warning=Verilator build for {} is up-to-date",
-            model.name
-        );
-        return Ok(());
-    }
-
-    println!("cargo:warning=Running Verilator for model: {}", model.name);
-
-    let prefix = format!("VSvarogSoC_{}", model.identifier);
-
-    sh.change_dir(workspace_root);
-    cmd!(
-        sh,
-        "verilator
-         --prefix {prefix}
-         -Wno-fatal
-         -Wno-UNUSEDSIGNAL
-         --cc
-         --trace
-         -O3
-         --build
-         -Mdir {verilator_out_dir}
-         {verilog_file}"
-    )
-    .run()
-    .context(format!("Failed to run Verilator for model: {}", model.name))?;
-
-    // Create stamp file
-    fs::write(&verilator_stamp, "")?;
-
-    Ok(())
-}
-
-fn generate_cpp_wrapper(workspace_root: &Path, model: &ModelInfo) -> Result<()> {
-    let template_h = include_str!("cpp/templates/wrapper.h.template");
-    let template_cpp = include_str!("cpp/templates/wrapper.cpp.template");
-
-    let output_dir = workspace_root.join(format!(
-        "utils/simulator/cpp/generated/{}",
-        model.identifier
-    ));
-    fs::create_dir_all(&output_dir)?;
-
-    // Generate UART accessors based on config
-    let uart_header = generate_uart_accessors_header(model.num_uarts);
-    let uart_impl = generate_uart_accessors_impl(model.num_uarts);
-
-    // Generate header
-    let header = template_h
-        .replace("{{CONFIG_NAMESPACE}}", &model.namespace)
-        .replace("{{CONFIG_ID}}", &model.identifier)
-        .replace("{{UART_ACCESSORS_HEADER}}", &uart_header);
-    fs::write(output_dir.join("wrapper.h"), header)?;
-
-    // Generate implementation
-    let implementation = template_cpp
-        .replace("{{CONFIG_NAMESPACE}}", &model.namespace)
-        .replace("{{CONFIG_ID}}", &model.identifier)
-        .replace("{{UART_ACCESSORS_IMPL}}", &uart_impl);
-    fs::write(output_dir.join("wrapper.cpp"), implementation)?;
-
-    Ok(())
-}
-
-fn compile_wrapper(workspace_root: &Path, model: &ModelInfo, verilator_root: &str) -> Result<()> {
-    let wrapper_cpp = workspace_root.join(format!(
-        "utils/simulator/cpp/generated/{}/wrapper.cpp",
-        model.identifier
-    ));
-    let verilator_out_dir = workspace_root.join(format!("target/verilator/{}", model.name));
-    let verilator_include = PathBuf::from(verilator_root.trim()).join("include");
-
-    let bridge_path = format!("src/ffi/{}.rs", model.identifier);
-
-    cxx_build::bridge(&bridge_path)
-        .file(&wrapper_cpp)
-        .include(&verilator_out_dir)
-        .include(&verilator_include)
-        .include(workspace_root)
-        .flag_if_supported("-std=gnu++17")
-        .flag_if_supported("-DVL_THREADED")
-        .flag_if_supported("-w")
-        .compile(&format!("verilator_wrapper_{}", model.identifier));
-
-    Ok(())
-}
-
-fn link_verilator_libs(workspace_root: &Path, model: &ModelInfo) -> Result<()> {
-    let verilator_dir = workspace_root.join(format!("target/verilator/{}", model.name));
-
-    println!("cargo:rustc-link-search=native={}", verilator_dir.display());
-
-    // Each config's Verilator build produces its own VSvarogSoC library
-    // Because we used --prefix, they have different symbol names
-    println!(
-        "cargo:rustc-link-lib=static=VSvarogSoC_{}",
-        model.identifier
-    );
-    println!("cargo:rustc-link-lib=static=verilated");
-
-    Ok(())
-}
-
-fn generate_uart_accessors(num_uarts: usize) -> String {
-    if num_uarts == 0 {
-        return String::new();
-    }
-
-    let mut accessors = String::from("\n        // UART signals (dynamically generated)\n");
-
-    for i in 0..num_uarts {
-        accessors.push_str(&format!("        fn get_uart_{}_txd(&self) -> u8;\n", i));
-        accessors.push_str(&format!(
-            "        fn set_uart_{}_rxd(self: Pin<&mut VerilatorModel>, value: u8);\n",
-            i
-        ));
-    }
-
-    accessors
-}
-
-fn generate_uart_accessors_header(num_uarts: usize) -> String {
-    if num_uarts == 0 {
-        return String::from("    // No UART interfaces in this config\n");
-    }
-
-    let mut header = String::from("    // UART signals (dynamically generated from config)\n");
-
-    for i in 0..num_uarts {
-        // GPIO pins are assigned sequentially: UART 0 uses pins 0,1; UART 1 uses pins 2,3; etc.
-        let txd_pin = i * 2;
-        let rxd_pin = i * 2 + 1;
-
-        header.push_str(&format!(
-            "    // UART {} - GPIO pins {},{}\n",
-            i, txd_pin, rxd_pin
-        ));
-        header.push_str(&format!("    uint8_t get_uart_{}_txd() const;\n", i));
-        header.push_str(&format!("    void set_uart_{}_rxd(uint8_t value);\n\n", i));
-    }
-
-    header
-}
-
-fn generate_uart_accessors_impl(num_uarts: usize) -> String {
-    if num_uarts == 0 {
-        return String::from("// No UART interfaces in this config\n\n");
-    }
-
-    let mut impl_code = String::from("// UART signals (dynamically generated from config)\n");
-
-    for i in 0..num_uarts {
-        // GPIO pins are assigned sequentially: each UART uses 2 pins (rxd, txd)
-        // UART 0 -> pins 0,1; UART 1 -> pins 2,3; etc.
-        let rxd_pin = i * 2; // First pin is rxd (input to SoC)
-        let txd_pin = i * 2 + 1; // Second pin is txd (output from SoC)
-
-        impl_code.push_str(&format!(
-            "// UART {} accessors (GPIO pins {}, {})\n",
-            i, rxd_pin, txd_pin
-        ));
-
-        // TXD: Read the output value from the SoC
-        impl_code.push_str(&format!(
-            "uint8_t VerilatorModel::get_uart_{}_txd() const {{\n",
-            i
-        ));
-        impl_code.push_str(&format!("    return model_->io_gpio_{}_output;\n", txd_pin));
-        impl_code.push_str("}\n\n");
-
-        // RXD: Write input value to the SoC
-        impl_code.push_str(&format!(
-            "void VerilatorModel::set_uart_{}_rxd(uint8_t value) {{\n",
-            i
-        ));
-        impl_code.push_str(&format!("    model_->io_gpio_{}_input = value;\n", rxd_pin));
-        impl_code.push_str("}\n\n");
-    }
-
-    impl_code
-}
-
-fn generate_bridge_module(workspace_root: &Path, model: &ModelInfo) -> Result<()> {
-    let output_dir = workspace_root.join("utils/simulator/src/ffi");
-    fs::create_dir_all(&output_dir)?;
-
-    let module_content = format!(
-        r#"// Auto-generated by build.rs for model: {}
-
-#[cxx::bridge(namespace = "svarog::{}")]
-pub mod ffi {{
-    #[allow(dead_code)]
-    unsafe extern "C++" {{
-        include!("utils/simulator/cpp/generated/{}/wrapper.h");
-
-        type VerilatorModel;
-
-        // Factory function
-        fn create_verilator_model() -> UniquePtr<VerilatorModel>;
-
-        // VCD tracing
-        fn open_vcd(self: Pin<&mut VerilatorModel>, path: &str);
-        fn dump_vcd(self: Pin<&mut VerilatorModel>, timestamp: u64);
-        fn close_vcd(self: Pin<&mut VerilatorModel>);
-
-        // Simulation control
-        fn eval(self: Pin<&mut VerilatorModel>);
-        fn final_eval(self: Pin<&mut VerilatorModel>);
-
-        // Clock and reset
-        fn get_clock(&self) -> u8;
-        fn set_clock(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_reset(&self) -> u8;
-        fn set_reset(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_rtc_clock(&self) -> u8;
-        fn set_rtc_clock(self: Pin<&mut VerilatorModel>, value: u8);
-
-        // Debug hart interface - ID routing
-        fn get_debug_hart_in_id_valid(&self) -> u8;
-        fn set_debug_hart_in_id_valid(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_hart_in_id_bits(&self) -> u8;
-        fn set_debug_hart_in_id_bits(self: Pin<&mut VerilatorModel>, value: u8);
-
-        // Debug hart interface - Halt control
-        fn get_debug_hart_in_bits_halt_valid(&self) -> u8;
-        fn set_debug_hart_in_bits_halt_valid(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_hart_in_bits_halt_bits(&self) -> u8;
-        fn set_debug_hart_in_bits_halt_bits(self: Pin<&mut VerilatorModel>, value: u8);
-
-        // Debug hart interface - Breakpoint
-        fn get_debug_hart_in_bits_breakpoint_valid(&self) -> u8;
-        fn set_debug_hart_in_bits_breakpoint_valid(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_hart_in_bits_breakpoint_bits_pc(&self) -> u32;
-        fn set_debug_hart_in_bits_breakpoint_bits_pc(self: Pin<&mut VerilatorModel>, value: u32);
-
-        // Debug hart interface - Watchpoint
-        fn get_debug_hart_in_bits_watchpoint_valid(&self) -> u8;
-        fn set_debug_hart_in_bits_watchpoint_valid(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_hart_in_bits_watchpoint_bits_addr(&self) -> u32;
-        fn set_debug_hart_in_bits_watchpoint_bits_addr(self: Pin<&mut VerilatorModel>, value: u32);
-
-        // Debug hart interface - Set PC
-        fn get_debug_hart_in_bits_setPC_valid(&self) -> u8;
-        fn set_debug_hart_in_bits_setPC_valid(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_hart_in_bits_setPC_bits_pc(&self) -> u32;
-        fn set_debug_hart_in_bits_setPC_bits_pc(self: Pin<&mut VerilatorModel>, value: u32);
-
-        // Debug hart interface - Register access
-        fn get_debug_hart_in_bits_register_valid(&self) -> u8;
-        fn set_debug_hart_in_bits_register_valid(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_hart_in_bits_register_bits_reg(&self) -> u8;
-        fn set_debug_hart_in_bits_register_bits_reg(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_hart_in_bits_register_bits_write(&self) -> u8;
-        fn set_debug_hart_in_bits_register_bits_write(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_hart_in_bits_register_bits_data(&self) -> u32;
-        fn set_debug_hart_in_bits_register_bits_data(self: Pin<&mut VerilatorModel>, value: u32);
-
-        // Debug memory interface - Request
-        fn get_debug_mem_in_valid(&self) -> u8;
-        fn set_debug_mem_in_valid(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_mem_in_ready(&self) -> u8;
-        fn get_debug_mem_in_bits_addr(&self) -> u32;
-        fn set_debug_mem_in_bits_addr(self: Pin<&mut VerilatorModel>, value: u32);
-        fn get_debug_mem_in_bits_write(&self) -> u8;
-        fn set_debug_mem_in_bits_write(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_mem_in_bits_data(&self) -> u32;
-        fn set_debug_mem_in_bits_data(self: Pin<&mut VerilatorModel>, value: u32);
-        fn get_debug_mem_in_bits_reqWidth(&self) -> u8;
-        fn set_debug_mem_in_bits_reqWidth(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_mem_in_bits_instr(&self) -> u8;
-        fn set_debug_mem_in_bits_instr(self: Pin<&mut VerilatorModel>, value: u8);
-
-        // Debug memory interface - Response
-        fn get_debug_mem_res_ready(&self) -> u8;
-        fn set_debug_mem_res_ready(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_mem_res_valid(&self) -> u8;
-        fn get_debug_mem_res_bits(&self) -> u32;
-
-        // Debug register interface - Response
-        fn get_debug_reg_res_ready(&self) -> u8;
-        fn set_debug_reg_res_ready(self: Pin<&mut VerilatorModel>, value: u8);
-        fn get_debug_reg_res_valid(&self) -> u8;
-        fn get_debug_reg_res_bits(&self) -> u32;
-
-        // Debug status
-        fn get_debug_halted(&self) -> u8;
-{}
-    }}
-}}
-"#,
-        model.name,
-        model.namespace,
-        model.identifier,
-        generate_uart_accessors(model.num_uarts)
-    );
-
-    fs::write(
-        output_dir.join(format!("{}.rs", model.identifier)),
-        module_content,
-    )?;
-
-    Ok(())
-}
-
-fn generate_model_registry(workspace_root: &Path, models: &[ModelInfo]) -> Result<()> {
-    let output_dir = workspace_root.join("utils/simulator/src");
-
-    let enum_variants = models
-        .iter()
-        .map(|m| format!("    {},", m.enum_variant))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let from_name_arms = models
-        .iter()
-        .map(|m| {
-            format!(
-                r#"            "{}" => Some(ModelId::{}),
-"#,
-                m.name, m.enum_variant
-            )
-        })
-        .collect::<String>();
-
-    let name_arms = models
-        .iter()
-        .map(|m| {
-            format!(
-                r#"            ModelId::{} => "{}",
-"#,
-                m.enum_variant, m.name
-            )
-        })
-        .collect::<String>();
-
-    let module_imports = models
-        .iter()
-        .map(|m| format!("    pub mod {};", m.identifier))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let available_models_list = models
-        .iter()
-        .map(|m| format!("    ModelId::{},", m.enum_variant))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let registry_content = format!(
-        r#"// Auto-generated by build.rs - DO NOT EDIT
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ModelId {{
-{}
-}}
-
-impl ModelId {{
-    pub fn name(&self) -> &'static str {{
-        match self {{
-{}        }}
-    }}
-
-    pub fn from_name(name: &str) -> Option<Self> {{
-        match name {{
-{}            _ => None,
-        }}
-    }}
-}}
-
-impl Default for ModelId {{
-    fn default() -> Self {{
-        // Return the first model (alphabetically)
-        AVAILABLE_MODELS[0]
-    }}
-}}
-
-pub const AVAILABLE_MODELS: &[ModelId] = &[
-{}
-];
-
-// Generated FFI bridge modules
-pub mod ffi {{
-{}
-}}
-"#,
-        enum_variants, name_arms, from_name_arms, available_models_list, module_imports
-    );
-
-    fs::write(output_dir.join("generated.rs"), registry_content)?;
-
-    Ok(())
-}
-
-fn main() -> Result<()> {
+fn main() -> anyhow::Result<()> {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
     let workspace_root = manifest_dir
         .parent()
         .and_then(|p| p.parent())
-        .ok_or_else(|| anyhow::anyhow!("Could not determine workspace root"))?
-        .to_path_buf();
+        .ok_or_else(|| anyhow!("Failed to find workspace root"))?;
 
-    let sh = Shell::new()?;
+    let tools_dir = workspace_root.join("target").join("arcilator");
 
-    println!("cargo:rerun-if-changed=build.rs");
+    download_tools(&tools_dir)?;
+
     println!("cargo:rerun-if-changed=../../configs/");
-    println!("cargo:rerun-if-changed=../../src/main/");
-    println!("cargo:rerun-if-changed=cpp/templates/");
 
-    // Discover models
-    let models = discover_models(&workspace_root)?;
-    println!(
-        "cargo:warning=Found {} model(s): {}",
-        models.len(),
-        models
-            .iter()
-            .map(|m| m.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-
-    // Get Verilator root
-    let verilator_root = String::from_utf8(
-        std::process::Command::new("verilator")
-            .arg("--getenv")
-            .arg("VERILATOR_ROOT")
-            .output()
-            .context("Failed to get VERILATOR_ROOT")?
-            .stdout,
-    )?;
-
-    // Build each model
-    for model in &models {
-        println!("cargo:warning=Processing model: {}", model.name);
-
-        // 1. Generate Verilog
-        generate_verilog(&sh, &workspace_root, model)?;
-
-        // 2. Run Verilator
-        run_verilator(&sh, &workspace_root, model)?;
-
-        // 3. Generate C++ wrapper
-        generate_cpp_wrapper(&workspace_root, model)?;
-
-        // 4. Generate Rust bridge module
-        generate_bridge_module(&workspace_root, model)?;
-
-        // 5. Compile wrapper
-        compile_wrapper(&workspace_root, model, &verilator_root)?;
-
-        // 6. Link Verilator libraries
-        link_verilator_libs(&workspace_root, model)?;
+    for entry in glob("../../configs/*.yaml").expect("Failed to read glob pattern") {
+        match entry {
+            Ok(path) => {
+                build_simulator(&path, &tools_dir)?;
+            }
+            Err(e) => {
+                return Err(anyhow!("{:?}", e));
+            }
+        }
     }
 
-    // Generate model registry
-    generate_model_registry(&workspace_root, &models)?;
+    Ok(())
+}
 
+fn build_simulator(path: &PathBuf, tools_dir: &Path) -> anyhow::Result<()> {
+    let model_name = path
+        .file_stem()
+        .ok_or(anyhow!("Failed to get filename"))?;
+    let model_name = model_name.to_str().unwrap();
+    let model_name_sane = model_name.replace("-", "_");
+
+    let out_dir = env::var("OUT_DIR").unwrap();
+
+    fs::create_dir_all(format!("{out_dir}/{model_name}"))?;
+
+    let sh = Shell::new()?;
+    let bin_dir = tools_dir.join("bin");
+
+    sh.change_dir("../../");
+    cmd!(sh, "./mill -i svarog.runMain svarog.VerilogGenerator --target-dir={out_dir}/{model_name} --config=configs/{model_name}.yaml --format=firrtl").run()?;
+    cmd!(sh,
+        "{bin_dir}/firtool --ir-hw --format=mlir {out_dir}/{model_name}/SvarogSoC.firrtl -o {out_dir}/{model_name}.hw.mlir"
+    ).run()?;
+    cmd!(sh,
+        "{bin_dir}/arcilator --observe-wires --observe-ports --observe-named-values --observe-registers --observe-memories --async-resets-as-sync --emit-llvm -o {out_dir}/{model_name}.ll {out_dir}/{model_name}.hw.mlir"
+    ).run()?;
+    cmd!(sh, "{bin_dir}/llc -O3 -o {out_dir}/{model_name}.o {out_dir}/{model_name}.ll").run()?;
+    cmd!(sh, "{bin_dir}/llvm-objcopy --filetype=obj --redefine-sym=SvarogSoC_eval={model_name_sane}_eval {out_dir}/{model_name}.o").run()?;
+
+    Ok(())
+}
+
+fn get_platform_release() -> anyhow::Result<PlatformRelease> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        Ok(PlatformRelease {
+            url: "https://github.com/llvm/circt/releases/download/firtool-1.139.0/circt-full-static-linux-x64.tar.gz",
+            sha256: "3d6370161e1f0bd78391d07446efa0d3abd16ea4b691471e4b64374045c9b045",
+            is_zip: false,
+        })
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        Ok(PlatformRelease {
+            url: "https://github.com/llvm/circt/releases/download/firtool-1.139.0/circt-full-static-macos-x64.tar.gz",
+            sha256: "eb8636a819d192833fb9f93cb9103aa6a85e1e810ec040e925bc7909a83f1758",
+            is_zip: false,
+        })
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        // Use x64 binary on ARM macOS (runs via Rosetta 2)
+        Ok(PlatformRelease {
+            url: "https://github.com/llvm/circt/releases/download/firtool-1.139.0/circt-full-static-macos-x64.tar.gz",
+            sha256: "eb8636a819d192833fb9f93cb9103aa6a85e1e810ec040e925bc7909a83f1758",
+            is_zip: false,
+        })
+    }
+
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    {
+        Ok(PlatformRelease {
+            url: "https://github.com/llvm/circt/releases/download/firtool-1.139.0/circt-full-static-windows-x64.zip",
+            sha256: "9226caa3599333cb38bbb357294d7c8775a1fe6712e2c03313a406ac8e8e4d83",
+            is_zip: true,
+        })
+    }
+
+    #[cfg(not(any(
+        all(target_os = "linux", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64")
+    )))]
+    {
+        Err(anyhow!(
+            "Unsupported platform: {} {}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ))
+    }
+}
+
+fn verify_sha256(path: &Path, expected_hash: &str) -> anyhow::Result<bool> {
+    let file = File::open(path).context("Failed to open file for hash verification")?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+
+    let mut buffer = [0u8; 8192];
+    loop {
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    let hash = hasher.finalize();
+    let hash_hex = format!("{:x}", hash);
+
+    Ok(hash_hex == expected_hash)
+}
+
+fn download_file(url: &str, dest: &Path) -> anyhow::Result<()> {
+    println!("cargo:warning=Downloading CIRCT tools from {}", url);
+
+    let response = ureq::get(url)
+        .call()
+        .context("Failed to download CIRCT release")?;
+
+    let mut dest_file = File::create(dest).context("Failed to create destination file")?;
+
+    let mut reader = response.into_reader();
+    let mut buffer = [0u8; 8192];
+    let mut total_bytes = 0u64;
+
+    loop {
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        dest_file.write_all(&buffer[..bytes_read])?;
+        total_bytes += bytes_read as u64;
+    }
+
+    println!(
+        "cargo:warning=Downloaded {} bytes to {}",
+        total_bytes,
+        dest.display()
+    );
+
+    Ok(())
+}
+
+fn extract_tar_gz(archive_path: &Path, dest_dir: &Path) -> anyhow::Result<()> {
+    println!(
+        "cargo:warning=Extracting {} to {}",
+        archive_path.display(),
+        dest_dir.display()
+    );
+
+    let file = File::open(archive_path).context("Failed to open archive")?;
+    let gz = GzDecoder::new(file);
+    let mut archive = Archive::new(gz);
+
+    // Extract to a temporary directory first, then move contents
+    let temp_extract_dir = dest_dir.join("_extract_temp");
+    fs::create_dir_all(&temp_extract_dir)?;
+
+    archive
+        .unpack(&temp_extract_dir)
+        .context("Failed to extract tar.gz archive")?;
+
+    // Find the extracted directory (usually named like "firtool-1.139.0")
+    // and move its contents to the bin directory
+    let bin_dir = dest_dir.join("bin");
+    fs::create_dir_all(&bin_dir)?;
+
+    // Look for the bin directory inside the extracted content
+    for entry in fs::read_dir(&temp_extract_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            let inner_bin = path.join("bin");
+            if inner_bin.exists() {
+                // Move all files from inner bin to our bin directory
+                for bin_entry in fs::read_dir(&inner_bin)? {
+                    let bin_entry = bin_entry?;
+                    let src = bin_entry.path();
+                    let dest = bin_dir.join(bin_entry.file_name());
+                    fs::rename(&src, &dest).or_else(|_| {
+                        // If rename fails (cross-device), copy and delete
+                        fs::copy(&src, &dest)?;
+                        fs::remove_file(&src)
+                    })?;
+                }
+            }
+        }
+    }
+
+    // Clean up temp directory
+    fs::remove_dir_all(&temp_extract_dir)?;
+
+    println!("cargo:warning=Extraction complete");
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn extract_zip(archive_path: &Path, dest_dir: &Path) -> anyhow::Result<()> {
+    println!(
+        "cargo:warning=Extracting {} to {}",
+        archive_path.display(),
+        dest_dir.display()
+    );
+
+    let file = File::open(archive_path).context("Failed to open archive")?;
+    let mut archive = zip::ZipArchive::new(file).context("Failed to read zip archive")?;
+
+    let bin_dir = dest_dir.join("bin");
+    fs::create_dir_all(&bin_dir)?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let outpath = match file.enclosed_name() {
+            Some(path) => path.to_owned(),
+            None => continue,
+        };
+
+        // We only care about files in the bin directory
+        let path_str = outpath.to_string_lossy();
+        if let Some(bin_idx) = path_str.find("/bin/") {
+            let filename = &path_str[bin_idx + 5..];
+            if !filename.is_empty() && !filename.contains('/') {
+                let dest_path = bin_dir.join(filename);
+                let mut outfile = File::create(&dest_path)?;
+                io::copy(&mut file, &mut outfile)?;
+
+                // Set executable permissions on Unix-like systems
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::set_permissions(&dest_path, fs::Permissions::from_mode(0o755))?;
+                }
+            }
+        }
+    }
+
+    println!("cargo:warning=Extraction complete");
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn extract_zip(_archive_path: &Path, _dest_dir: &Path) -> anyhow::Result<()> {
+    Err(anyhow!("ZIP extraction not expected on this platform"))
+}
+
+fn download_tools(tools_dir: &Path) -> anyhow::Result<()> {
+    let release = get_platform_release()?;
+
+    // Check if tools are already downloaded
+    let bin_dir = tools_dir.join("bin");
+    let arcilator_path = if cfg!(target_os = "windows") {
+        bin_dir.join("arcilator.exe")
+    } else {
+        bin_dir.join("arcilator")
+    };
+
+    // Check for version marker file
+    let version_marker = tools_dir.join(".version");
+    if arcilator_path.exists() && version_marker.exists() {
+        let installed_version = fs::read_to_string(&version_marker).unwrap_or_default();
+        if installed_version.trim() == CIRCT_VERSION {
+            println!("cargo:warning=CIRCT tools already installed ({})", CIRCT_VERSION);
+            return Ok(());
+        }
+    }
+
+    println!("cargo:warning=CIRCT tools not found or outdated, downloading...");
+
+    // Create tools directory
+    fs::create_dir_all(tools_dir).context("Failed to create tools directory")?;
+
+    // Determine archive filename
+    let archive_name = if release.is_zip {
+        "circt.zip"
+    } else {
+        "circt.tar.gz"
+    };
+    let archive_path = tools_dir.join(archive_name);
+
+    // Download the archive
+    download_file(release.url, &archive_path)?;
+
+    // Verify hash
+    println!("cargo:warning=Verifying SHA256 hash...");
+    if !verify_sha256(&archive_path, release.sha256)? {
+        fs::remove_file(&archive_path)?;
+        return Err(anyhow!(
+            "SHA256 hash mismatch! The downloaded file may be corrupted or tampered with."
+        ));
+    }
+    println!("cargo:warning=SHA256 hash verified successfully");
+
+    // Extract the archive
+    if release.is_zip {
+        extract_zip(&archive_path, tools_dir)?;
+    } else {
+        extract_tar_gz(&archive_path, tools_dir)?;
+    }
+
+    // Clean up archive
+    fs::remove_file(&archive_path)?;
+
+    // Write version marker
+    fs::write(&version_marker, CIRCT_VERSION)?;
+
+    // Set executable permissions on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(entries) = fs::read_dir(&bin_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
+                }
+            }
+        }
+    }
+
+    println!("cargo:warning=CIRCT tools installed successfully");
     Ok(())
 }

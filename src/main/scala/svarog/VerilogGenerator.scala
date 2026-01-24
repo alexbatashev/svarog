@@ -4,12 +4,14 @@ import chisel3._
 import chisel3.util.{Decoupled, log2Ceil}
 import circt.stage.FirtoolOption
 import org.chipsalliance.cde.config.Parameters
+import org.chipsalliance.diplomacy.nodes.MonitorsEnabled
 import org.chipsalliance.diplomacy.lazymodule.LazyModule
 import svarog.SvarogSoC
 import svarog.config.{ConfigLoader, BootloaderValidator, SoC}
 import svarog.VerilogGenerator.{bootloaderPath => bootloaderPath}
 import svarog.VerilogGenerator.{validatedBootloader => validatedBootloader}
-import firrtl.seqToAnnoSeq
+import circt.stage.ChiselStage
+import java.io.PrintWriter
 
 object VerilogGenerator extends App {
   private def parseArgs(args: Array[String]): Map[String, String] = {
@@ -40,6 +42,7 @@ object VerilogGenerator extends App {
   private val bootloaderPath = cli.get("bootloader")
   private val simulatorDebugIface =
     cli.get("simulator-debug-iface").exists(_.toLowerCase == "true")
+  private val outputFormat = cli.getOrElse("format", "combined")
 
   // Validate bootloader if provided
   private val validatedBootloader = bootloaderPath.flatMap { path =>
@@ -63,20 +66,59 @@ object VerilogGenerator extends App {
   private val config = SoC.fromYaml(yamlConfig, simulatorDebugIface)
 
   // Generate Verilog
-  implicit val p: Parameters = Parameters.empty
+  implicit val p: Parameters = Parameters.empty.alterPartial {
+    case MonitorsEnabled => false
+  }
 
-  emitVerilog(
-    LazyModule(new SvarogSoC(config, validatedBootloader)).module,
-    // new VerilatorTop(config, validatedBootloader),
-    Array("--target-dir", targetDir),
-    Seq(
-      FirtoolOption("--disable-all-randomization"),
-      FirtoolOption("--default-layer-specialization=enable"),
-      FirtoolOption(
+  def createModule: RawModule = LazyModule(new SvarogSoC(config, validatedBootloader)).module
+
+  if (outputFormat == "split") {
+    ChiselStage.emitSystemVerilogFile(
+      createModule,
+      Array("--target-dir", targetDir, "--split-verilog"),
+      Array(
+        "--disable-all-randomization",
         "--lowering-options=disallowPortDeclSharing,printDebugInfo"
-      ),
-      FirtoolOption("--preserve-values=all"),
-      FirtoolOption("--verification-flavor=sva")
+      )
     )
-  )
+  } else if (outputFormat == "combined") {
+    val sv = ChiselStage.emitSystemVerilog(
+      createModule,
+      Array.empty,
+      Array(
+        "--disable-all-randomization",
+        "--lowering-options=disallowPortDeclSharing,printDebugInfo"
+      )
+    )
+    new PrintWriter(targetDir + "/SvarogSoC.sv") { write(sv); close }
+  } else if (outputFormat == "firrtl") {
+    val mlir = ChiselStage.emitFIRRTLDialect(
+      createModule,
+      Array.empty,
+      Array(
+        "--disable-all-randomization",
+        "--lowering-options=disallowPortDeclSharing,printDebugInfo",
+        "--default-layer-specialization=disable",
+      )
+    )
+    new PrintWriter(targetDir + "/SvarogSoC.firrtl") { write(mlir); close }
+  } else {
+    System.err.println("--format can only be combined, split or firrtl")
+    sys.exit(1)
+  }
+
+  // emitVerilog(
+  //   LazyModule(new SvarogSoC(config, validatedBootloader)).module,
+  //   // new VerilatorTop(config, validatedBootloader),
+  //   Array("--target-dir", targetDir),
+  //   Seq(
+  //     FirtoolOption("--disable-all-randomization"),
+  //     FirtoolOption("--default-layer-specialization=enable"),
+  //     FirtoolOption(
+  //       "--lowering-options=disallowPortDeclSharing,printDebugInfo"
+  //     ),
+  //     FirtoolOption("--preserve-values=all"),
+  //     FirtoolOption("--verification-flavor=sva")
+  //   )
+  // )
 }

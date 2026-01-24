@@ -13,7 +13,7 @@ class RTC extends RawModule {
     val time = Output(UInt(64.W))
   })
 
-  val crossing = Module(new AsyncQueue(UInt(64.W)))
+  val crossing = Module(new AsyncQueue(UInt(64.W), AsyncQueueParams(depth = 1, safe = false)))
 
   withClockAndReset(io.rtcClock, reset) {
     val counter = RegInit(0.U(64.W))
