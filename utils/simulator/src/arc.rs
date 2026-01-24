@@ -1,5 +1,3 @@
-use libc::*;
-
 #[repr(C)]
 pub struct Signal {
     pub name: *const std::os::raw::c_char,

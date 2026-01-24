@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use clap::Parser;
+use simulator::list_arcilator_models;
 
 #[derive(Parser)]
 #[command(name = "svarog-sim")]
@@ -17,7 +18,7 @@ struct Args {
 
     /// VCD output file
     #[arg(long, default_value = "trace.vcd")]
-    vcd: Utf8PathBuf,
+    vcd: Option<Utf8PathBuf>,
 
     /// Maximum simulation cycles
     #[arg(long, default_value = "100000")]
@@ -59,17 +60,17 @@ fn parse_hex(s: &str) -> Result<u32, std::num::ParseIntError> {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    // if args.list_models {
-    //     println!("Available models:");
-    //     for model in Simulator::available_models() {
-    //         println!("  - {}", model.name());
-    //     }
-    //     return Ok(());
-    // }
+    if args.list_models {
+        println!("Available models:");
+        for model in list_arcilator_models() {
+            println!("  - {}", model.name());
+        }
+        return Ok(());
+    }
 
-    // let binary = args
-    //     .binary
-    //     .ok_or_else(|| anyhow::anyhow!("BINARY argument is required"))?;
+    let binary = args
+        .binary
+        .ok_or_else(|| anyhow::anyhow!("BINARY argument is required"))?;
 
     // // Determine which model to use
     // let model_id = if let Some(model_name) = &args.model {
@@ -82,8 +83,26 @@ fn main() -> Result<()> {
 
     // println!("Using model: {}", model_id.name());
 
-    // // Create simulator
+    // Create simulator
     // let sim = Simulator::new(model_id).context("Failed to create simulator")?;
+    let mut models = list_arcilator_models();
+    let mut sim = if let Some(model_name) = &args.model {
+        let pos = models
+            .iter()
+            .position(|model| model.name() == model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown model: {}", model_name))?;
+        models.swap_remove(pos)
+    } else {
+        models
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No models available"))?
+    };
+    sim.load_binary(
+        binary.into_std_path_buf().as_path(),
+        args.watchpoint.as_deref(),
+    )
+    .context("Failed to load ELF binary")?;
 
     // // Enable UART console if requested
     // if let Some(uart_index) = args.uart_console {

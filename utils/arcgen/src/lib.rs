@@ -176,11 +176,11 @@ pub fn load_models<P: AsRef<Path>>(state_json: P) -> io::Result<Vec<ModelInfo>> 
 // ============================================================================
 
 const RUST_KEYWORDS: &[&str] = &[
-    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
-    "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move",
-    "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true",
-    "type", "unsafe", "use", "where", "while", "abstract", "become", "box", "do", "final",
-    "macro", "override", "priv", "typeof", "unsized", "virtual", "yield", "try",
+    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
+    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
+    "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true", "type",
+    "unsafe", "use", "where", "while", "abstract", "become", "box", "do", "final", "macro",
+    "override", "priv", "typeof", "unsized", "virtual", "yield", "try",
 ];
 
 fn clean_name(name: &str) -> String {
@@ -204,6 +204,61 @@ fn clean_name(name: &str) -> String {
     }
 
     result
+}
+
+pub fn sanitize_ident(name: &str) -> String {
+    clean_name(name)
+}
+
+fn unique_clean_names(names: &[String], reserved: &mut HashSet<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(names.len());
+    for name in names {
+        let base = clean_name(name);
+        let mut candidate = base.clone();
+        let mut i = 0;
+        while reserved.contains(&candidate) {
+            i += 1;
+            candidate = format!("{}_{}", base, i);
+        }
+        reserved.insert(candidate.clone());
+        out.push(candidate);
+    }
+    out
+}
+
+fn find_io_field<'a>(io: &'a [StateInfo], io_fields: &'a [String], name: &str) -> Option<&'a str> {
+    if let Some(field) = io
+        .iter()
+        .zip(io_fields.iter())
+        .find(|(state, _)| state.name == name)
+        .map(|(_, field)| field.as_str())
+    {
+        return Some(field);
+    }
+
+    if name.starts_with("io_") {
+        return None;
+    }
+
+    let prefixed = format!("io_{}", name);
+    io.iter()
+        .zip(io_fields.iter())
+        .find(|(state, _)| state.name == prefixed)
+        .map(|(_, field)| field.as_str())
+}
+
+fn require_io_field<'a>(io: &'a [StateInfo], io_fields: &'a [String], name: &str) -> &'a str {
+    find_io_field(io, io_fields, name)
+        .unwrap_or_else(|| panic!("Missing required IO signal '{}'", name))
+}
+
+fn hierarchy_path(path: &str, name: &str) -> String {
+    let clean = clean_name(name);
+    if path.is_empty() {
+        clean
+    } else {
+        format!("{}_{}", path, clean)
+    }
 }
 
 fn state_rust_type_nonmemory(num_bits: u32) -> &'static str {
@@ -295,17 +350,798 @@ fn format_hierarchy(hierarchy: &StateHierarchy, indent_level: usize) -> String {
     )
 }
 
+fn render_model_body(
+    output: &mut String,
+    model: &ModelInfo,
+    view_depth: i32,
+    symbol_prefix: &str,
+    display_name: &str,
+) {
+    // Ensure IO names are unique and don't conflict with 'state'
+    let mut reserved: HashSet<String> = HashSet::new();
+    reserved.insert("state".to_string());
+
+    let io: Vec<_> = model
+        .io
+        .iter()
+        .map(|s| {
+            let mut state = s.clone();
+            if reserved.contains(&state.name) {
+                state.name = format!("{}_", state.name);
+            }
+            reserved.insert(state.name.clone());
+            state
+        })
+        .collect();
+
+    let eval_sym = format!("{}_eval", symbol_prefix);
+    let init_sym = format!("{}_initial", symbol_prefix);
+
+    // External function declarations
+    writeln!(output, "unsafe extern \"C\" {{").unwrap();
+    if !model.initial_fn_sym.is_empty() {
+        writeln!(output, "    fn {}(state: *mut std::ffi::c_void);", init_sym).unwrap();
+    }
+    writeln!(output, "    fn {}(state: *mut std::ffi::c_void);", eval_sym).unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
+
+    // Layout struct
+    writeln!(output, "/// Layout information for {}", model.name).unwrap();
+    writeln!(output, "pub struct {}Layout;", model.name).unwrap();
+    writeln!(output).unwrap();
+    writeln!(output, "impl {}Layout {{", model.name).unwrap();
+    writeln!(
+        output,
+        "    pub const NAME: &'static str = \"{}\";",
+        display_name
+    )
+    .unwrap();
+    writeln!(output, "    pub const NUM_STATES: usize = {};", io.len()).unwrap();
+    writeln!(
+        output,
+        "    pub const NUM_STATE_BYTES: usize = {};",
+        model.num_state_bytes
+    )
+    .unwrap();
+    writeln!(output).unwrap();
+
+    // IO signals
+    writeln!(output, "    pub const IO: [Signal; {}] = [", io.len()).unwrap();
+    for s in &io {
+        writeln!(output, "        {},", format_signal(s)).unwrap();
+    }
+    writeln!(output, "    ];").unwrap();
+    writeln!(output).unwrap();
+
+    // Hierarchy
+    if let Some(hierarchy) = model.hierarchy.first() {
+        writeln!(
+            output,
+            "    pub const HIERARCHY: StaticHierarchy = {};",
+            format_hierarchy(hierarchy, 2)
+        )
+        .unwrap();
+    }
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
+
+    // View struct for internal hierarchy
+    if let Some(hierarchy) = model.hierarchy.first() {
+        // Generate view structs for each hierarchy level
+        fn generate_view_structs(
+            output: &mut String,
+            hierarchy: &StateHierarchy,
+            depth: i32,
+            model_name: &str,
+            path: &str,
+        ) {
+            let current_path = hierarchy_path(path, &hierarchy.name);
+            let struct_name = format!("{}{}View", model_name, current_path);
+
+            writeln!(output, "#[allow(non_snake_case, non_camel_case_types)]").unwrap();
+            writeln!(output, "pub struct {}<'a> {{", struct_name).unwrap();
+
+            let mut reserved: HashSet<String> = HashSet::new();
+            let state_names: Vec<String> =
+                hierarchy.states.iter().map(|s| s.name.clone()).collect();
+            let state_fields = unique_clean_names(&state_names, &mut reserved);
+
+            for (state, field) in hierarchy.states.iter().zip(state_fields.iter()) {
+                let ty = state_rust_type(state);
+                writeln!(output, "    pub {}: &'a mut {},", field, ty).unwrap();
+            }
+
+            if depth != 0 {
+                let child_names: Vec<String> =
+                    hierarchy.children.iter().map(|c| c.name.clone()).collect();
+                let child_fields = unique_clean_names(&child_names, &mut reserved);
+                for (child, field) in hierarchy.children.iter().zip(child_fields.iter()) {
+                    let child_struct_name = format!(
+                        "{}{}View",
+                        model_name,
+                        hierarchy_path(&current_path, &child.name)
+                    );
+                    writeln!(output, "    pub {}: {}<'a>,", field, child_struct_name).unwrap();
+                }
+            }
+
+            writeln!(output, "}}").unwrap();
+            writeln!(output).unwrap();
+
+            // Recursively generate child view structs
+            if depth != 0 {
+                for child in &hierarchy.children {
+                    generate_view_structs(output, child, depth - 1, model_name, &current_path);
+                }
+            }
+        }
+
+        generate_view_structs(output, hierarchy, view_depth, &model.name, "");
+    }
+
+    // Main View struct
+    writeln!(output, "/// View into {} state", model.name).unwrap();
+    writeln!(output, "#[allow(non_snake_case, non_camel_case_types)]").unwrap();
+    writeln!(output, "pub struct {}View<'a> {{", model.name).unwrap();
+    let io_names: Vec<String> = io.iter().map(|s| s.name.clone()).collect();
+    let mut reserved_io: HashSet<String> = HashSet::new();
+    reserved_io.insert("state".to_string());
+    let io_fields = {
+        let mut out = Vec::with_capacity(io_names.len());
+        for name in &io_names {
+            let base = clean_name(name);
+            let mut candidate = base.clone();
+            let mut i = 0;
+            while reserved_io.contains(&candidate) {
+                i += 1;
+                candidate = format!("{}_{}", base, i);
+            }
+            reserved_io.insert(candidate.clone());
+            out.push(candidate);
+        }
+        out
+    };
+
+    let clock_field = require_io_field(&io, &io_fields, "clock");
+    let reset_field = require_io_field(&io, &io_fields, "reset");
+    let hart_id_valid_field = require_io_field(&io, &io_fields, "debug_hart_in_id_valid");
+    let hart_id_bits_field = require_io_field(&io, &io_fields, "debug_hart_in_id_bits");
+    let hart_halt_valid_field = require_io_field(&io, &io_fields, "debug_hart_in_bits_halt_valid");
+    let hart_halt_bits_field = require_io_field(&io, &io_fields, "debug_hart_in_bits_halt_bits");
+    let hart_watchpoint_valid_field =
+        require_io_field(&io, &io_fields, "debug_hart_in_bits_watchpoint_valid");
+    let hart_watchpoint_addr_field =
+        require_io_field(&io, &io_fields, "debug_hart_in_bits_watchpoint_bits_addr");
+    let debug_mem_in_valid_field = require_io_field(&io, &io_fields, "debug_mem_in_valid");
+    let debug_mem_in_ready_field = require_io_field(&io, &io_fields, "debug_mem_in_ready");
+    let debug_mem_in_addr_field = require_io_field(&io, &io_fields, "debug_mem_in_bits_addr");
+    let debug_mem_in_write_field = require_io_field(&io, &io_fields, "debug_mem_in_bits_write");
+    let debug_mem_in_data_field = require_io_field(&io, &io_fields, "debug_mem_in_bits_data");
+    let debug_mem_in_width_field = require_io_field(&io, &io_fields, "debug_mem_in_bits_reqWidth");
+    let debug_mem_in_instr_field = require_io_field(&io, &io_fields, "debug_mem_in_bits_instr");
+    let debug_mem_res_ready_field = require_io_field(&io, &io_fields, "debug_mem_res_ready");
+
+    for (s, field) in io.iter().zip(io_fields.iter()) {
+        let ty = state_rust_type(s);
+        writeln!(output, "    pub {}: &'a mut {},", field, ty).unwrap();
+    }
+    let mut internal_field_name: Option<String> = None;
+    if let Some(hierarchy) = model.hierarchy.first() {
+        let mut field = clean_name(&hierarchy.name);
+        if reserved_io.contains(&field) {
+            let base = field.clone();
+            let mut i = 0;
+            while reserved_io.contains(&field) {
+                i += 1;
+                field = format!("{}_{}", base, i);
+            }
+        }
+        reserved_io.insert(field.clone());
+        internal_field_name = Some(field.clone());
+        let internal_view_name = format!("{}{}View", model.name, clean_name(&hierarchy.name));
+        writeln!(output, "    pub {}: {}<'a>,", field, internal_view_name).unwrap();
+    }
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
+
+    // View constructor
+    writeln!(output, "impl<'a> {}View<'a> {{", model.name).unwrap();
+    writeln!(output, "    /// Create a new view into the state buffer").unwrap();
+    writeln!(output, "    ///").unwrap();
+    writeln!(output, "    /// # Safety").unwrap();
+    writeln!(
+        output,
+        "    /// The state buffer must be at least {} bytes",
+        model.num_state_bytes
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "    pub unsafe fn new(state: &'a mut [u8]) -> Self {{"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "        debug_assert!(state.len() >= {});",
+        model.num_state_bytes
+    )
+    .unwrap();
+    writeln!(output, "        Self {{").unwrap();
+
+    for (s, field) in io.iter().zip(io_fields.iter()) {
+        let ty = state_rust_type(s);
+        writeln!(
+            output,
+            "            {}: unsafe {{ &mut *(state.as_mut_ptr().add({}) as *mut {}) }},",
+            field, s.offset, ty
+        )
+        .unwrap();
+    }
+
+    if let Some(hierarchy) = model.hierarchy.first() {
+        fn generate_view_init(
+            output: &mut String,
+            hierarchy: &StateHierarchy,
+            depth: i32,
+            model_name: &str,
+            indent_level: usize,
+            path: &str,
+        ) {
+            let indent = "    ".repeat(indent_level);
+            let inner_indent = "    ".repeat(indent_level + 1);
+            let current_path = hierarchy_path(path, &hierarchy.name);
+            let struct_name = format!("{}{}View", model_name, current_path);
+
+            writeln!(output, "{}{} {{", indent, struct_name).unwrap();
+
+            let mut reserved: HashSet<String> = HashSet::new();
+            let state_names: Vec<String> =
+                hierarchy.states.iter().map(|s| s.name.clone()).collect();
+            let state_fields = unique_clean_names(&state_names, &mut reserved);
+            for (state, field) in hierarchy.states.iter().zip(state_fields.iter()) {
+                let ty = state_rust_type(state);
+                writeln!(
+                    output,
+                    "{}{}: unsafe {{ &mut *(state.as_mut_ptr().add({}) as *mut {}) }},",
+                    inner_indent, field, state.offset, ty
+                )
+                .unwrap();
+            }
+
+            if depth != 0 {
+                let child_names: Vec<String> =
+                    hierarchy.children.iter().map(|c| c.name.clone()).collect();
+                let child_fields = unique_clean_names(&child_names, &mut reserved);
+                for (child, field) in hierarchy.children.iter().zip(child_fields.iter()) {
+                    write!(output, "{}{}: ", inner_indent, field).unwrap();
+                    generate_view_init(
+                        output,
+                        child,
+                        depth - 1,
+                        model_name,
+                        indent_level + 1,
+                        &current_path,
+                    );
+                    writeln!(output, ",").unwrap();
+                }
+            }
+
+            write!(output, "{}}}", indent).unwrap();
+        }
+
+        let field = internal_field_name
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("internal");
+        write!(output, "            {}: ", field).unwrap();
+        generate_view_init(output, hierarchy, view_depth, &model.name, 3, "");
+        writeln!(output, ",").unwrap();
+    }
+
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
+
+    // Main model struct
+    writeln!(output, "/// {} simulation model", model.name).unwrap();
+    writeln!(output, "pub struct {} {{", model.name).unwrap();
+    writeln!(output, "    storage: Vec<u8>,").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "impl {} {{", model.name).unwrap();
+    writeln!(output, "    /// Create a new model instance").unwrap();
+    writeln!(output, "    pub fn new() -> Self {{").unwrap();
+    if !model.initial_fn_sym.is_empty() {
+        writeln!(
+            output,
+            "        let mut storage = vec![0u8; {}Layout::NUM_STATE_BYTES];",
+            model.name
+        )
+        .unwrap();
+        writeln!(output, "        unsafe {{").unwrap();
+        writeln!(
+            output,
+            "            {}(storage.as_mut_ptr() as *mut std::ffi::c_void);",
+            init_sym
+        )
+        .unwrap();
+        writeln!(output, "        }}").unwrap();
+    } else {
+        writeln!(
+            output,
+            "        let storage = vec![0u8; {}Layout::NUM_STATE_BYTES];",
+            model.name
+        )
+        .unwrap();
+    }
+    writeln!(output, "        Self {{ storage }}").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "    /// Get a view into the model state").unwrap();
+    writeln!(
+        output,
+        "    pub fn view(&mut self) -> {}View<'_> {{",
+        model.name
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "        unsafe {{ {}View::new(&mut self.storage) }}",
+        model.name
+    )
+    .unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "    /// Evaluate one simulation step").unwrap();
+    writeln!(output, "    pub fn eval(&mut self) {{").unwrap();
+    writeln!(output, "        unsafe {{").unwrap();
+    writeln!(
+        output,
+        "            {}(self.storage.as_mut_ptr() as *mut std::ffi::c_void);",
+        eval_sym
+    )
+    .unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "    /// Get raw access to the state buffer").unwrap();
+    writeln!(output, "    pub fn state(&self) -> &[u8] {{").unwrap();
+    writeln!(output, "        &self.storage").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "    /// Get mutable raw access to the state buffer").unwrap();
+    writeln!(output, "    pub fn state_mut(&mut self) -> &mut [u8] {{").unwrap();
+    writeln!(output, "        &mut self.storage").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "    pub fn load_binary<P: AsRef<std::path::Path>>(").unwrap();
+    writeln!(output, "        &mut self,").unwrap();
+    writeln!(output, "        path: P,").unwrap();
+    writeln!(output, "        watchpoint_symbol: Option<&str>,").unwrap();
+    writeln!(output, "    ) -> anyhow::Result<Option<u32>> {{").unwrap();
+    writeln!(output, "        let file_data = std::fs::read(path)?;").unwrap();
+    writeln!(output, "        let slice = file_data.as_slice();").unwrap();
+    writeln!(
+        output,
+        "        let file = elf::ElfBytes::<elf::endian::AnyEndian>::minimal_parse(slice)?;"
+    )
+    .unwrap();
+    writeln!(output).unwrap();
+    writeln!(
+        output,
+        "        let watchpoint_addr = if let Some(symbol_name) = watchpoint_symbol {{"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "            if let Some(symtab) = file.symbol_table()? {{"
+    )
+    .unwrap();
+    writeln!(output, "                let mut found_addr = None;").unwrap();
+    writeln!(output, "                for symbol in symtab.0.iter() {{").unwrap();
+    writeln!(
+        output,
+        "                    if let Ok(name) = symtab.1.get(symbol.st_name as usize) {{"
+    )
+    .unwrap();
+    writeln!(output, "                        if name == symbol_name {{").unwrap();
+    writeln!(
+        output,
+        "                            found_addr = Some(symbol.st_value as u32);"
+    )
+    .unwrap();
+    writeln!(output, "                            eprintln!(\"Found symbol '{{}}' at address 0x{{:08x}}\", symbol_name, symbol.st_value);").unwrap();
+    writeln!(output, "                            break;").unwrap();
+    writeln!(output, "                        }}").unwrap();
+    writeln!(output, "                    }}").unwrap();
+    writeln!(output, "                }}").unwrap();
+    writeln!(output, "                found_addr").unwrap();
+    writeln!(output, "            }} else {{").unwrap();
+    writeln!(
+        output,
+        "                eprintln!(\"Warning: No symbol table found in ELF file\");"
+    )
+    .unwrap();
+    writeln!(output, "                None").unwrap();
+    writeln!(output, "            }}").unwrap();
+    writeln!(output, "        }} else {{").unwrap();
+    writeln!(output, "            None").unwrap();
+    writeln!(output, "        }};").unwrap();
+    writeln!(output).unwrap();
+    writeln!(output, "        {{").unwrap();
+    writeln!(output, "            let mut view = self.view();").unwrap();
+    writeln!(output, "            *view.{clock_field} = 0;").unwrap();
+    writeln!(output, "            *view.{reset_field} = 1;").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "        self.init_debug_interface();").unwrap();
+    writeln!(output, "        {{").unwrap();
+    writeln!(output, "            let mut view = self.view();").unwrap();
+    writeln!(output, "            *view.{hart_id_valid_field} = 1;").unwrap();
+    writeln!(output, "            *view.{hart_id_bits_field} = 0;").unwrap();
+    writeln!(output, "            *view.{hart_halt_valid_field} = 1;").unwrap();
+    writeln!(output, "            *view.{hart_halt_bits_field} = 1;").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "        if let Some(addr) = watchpoint_addr {{").unwrap();
+    writeln!(output, "            let mut view = self.view();").unwrap();
+    writeln!(
+        output,
+        "            *view.{hart_watchpoint_valid_field} = 1;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "            *view.{hart_watchpoint_addr_field} = addr;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "            eprintln!(\"Setting watchpoint on address: 0x{{:08x}}\", addr);"
+    )
+    .unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "        self.eval();").unwrap();
+    writeln!(output, "        for _ in 0..5 {{").unwrap();
+    writeln!(output, "            self.tick();").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "        {{").unwrap();
+    writeln!(output, "            let mut view = self.view();").unwrap();
+    writeln!(output, "            *view.{reset_field} = 0;").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "        self.tick();").unwrap();
+    writeln!(output).unwrap();
+    writeln!(
+        output,
+        "        let sections_to_load = [\".text\", \".text.init\", \".data\"];"
+    )
+    .unwrap();
+    writeln!(output, "        for section_name in &sections_to_load {{").unwrap();
+    writeln!(
+        output,
+        "            if let Some(section_hdr) = file.section_header_by_name(section_name)? {{"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "                let (data, _) = file.section_data(&section_hdr)?;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "                let start_addr = section_hdr.sh_addr as u32;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "                self.upload_section(section_name, data, start_addr);"
+    )
+    .unwrap();
+    writeln!(output, "            }} else {{").unwrap();
+    writeln!(
+        output,
+        "                eprintln!(\"Warning: Section {{}} not found in ELF file\", section_name);"
+    )
+    .unwrap();
+    writeln!(output, "            }}").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output).unwrap();
+    writeln!(output, "        Ok(watchpoint_addr)").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "    fn init_debug_interface(&mut self) {{").unwrap();
+    writeln!(output, "        let mut view = self.view();").unwrap();
+    writeln!(output, "        *view.{hart_id_valid_field} = 0;").unwrap();
+    writeln!(output, "        *view.{hart_id_bits_field} = 0;").unwrap();
+    writeln!(output, "        *view.{hart_halt_valid_field} = 0;").unwrap();
+    writeln!(output, "        *view.{hart_halt_bits_field} = 0;").unwrap();
+    writeln!(output, "        *view.{hart_watchpoint_valid_field} = 0;").unwrap();
+    writeln!(output, "        *view.{hart_watchpoint_addr_field} = 0;").unwrap();
+    writeln!(output, "        *view.{debug_mem_in_valid_field} = 0;").unwrap();
+    writeln!(output, "        *view.{debug_mem_in_write_field} = 0;").unwrap();
+    writeln!(output, "        *view.{debug_mem_in_addr_field} = 0;").unwrap();
+    writeln!(output, "        *view.{debug_mem_in_data_field} = 0;").unwrap();
+    writeln!(output, "        *view.{debug_mem_in_width_field} = 0;").unwrap();
+    writeln!(output, "        *view.{debug_mem_in_instr_field} = 0;").unwrap();
+    writeln!(output, "        *view.{debug_mem_res_ready_field} = 1;").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "    fn tick(&mut self) {{").unwrap();
+    writeln!(output, "        {{").unwrap();
+    writeln!(output, "            let mut view = self.view();").unwrap();
+    writeln!(output, "            *view.{clock_field} = 1;").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "        self.eval();").unwrap();
+    writeln!(output, "        {{").unwrap();
+    writeln!(output, "            let mut view = self.view();").unwrap();
+    writeln!(output, "            *view.{clock_field} = 0;").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "        self.eval();").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(
+        output,
+        "    fn debug_mem_write(&mut self, addr: u32, data: u32, width: u8) {{"
+    )
+    .unwrap();
+    writeln!(output, "        {{").unwrap();
+    writeln!(output, "            let mut view = self.view();").unwrap();
+    writeln!(output, "            *view.{debug_mem_in_valid_field} = 1;").unwrap();
+    writeln!(
+        output,
+        "            *view.{debug_mem_in_addr_field} = addr;"
+    )
+    .unwrap();
+    writeln!(output, "            *view.{debug_mem_in_write_field} = 1;").unwrap();
+    writeln!(
+        output,
+        "            *view.{debug_mem_in_data_field} = data;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "            *view.{debug_mem_in_width_field} = width;"
+    )
+    .unwrap();
+    writeln!(output, "            *view.{debug_mem_in_instr_field} = 0;").unwrap();
+    writeln!(output, "            *view.{debug_mem_res_ready_field} = 1;").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "        self.eval();").unwrap();
+    writeln!(output, "        loop {{").unwrap();
+    writeln!(output, "            let ready = {{").unwrap();
+    writeln!(output, "                let view = self.view();").unwrap();
+    writeln!(
+        output,
+        "                *view.{debug_mem_in_ready_field} != 0"
+    )
+    .unwrap();
+    writeln!(output, "            }};").unwrap();
+    writeln!(output, "            if ready {{").unwrap();
+    writeln!(output, "                break;").unwrap();
+    writeln!(output, "            }}").unwrap();
+    writeln!(output, "            self.tick();").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "        {{").unwrap();
+    writeln!(output, "            let mut view = self.view();").unwrap();
+    writeln!(output, "            *view.{debug_mem_in_valid_field} = 0;").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "        self.tick();").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(
+        output,
+        "    fn write_mem_word(&mut self, addr: u32, data: u32) {{"
+    )
+    .unwrap();
+    writeln!(output, "        self.debug_mem_write(addr, data, 2);").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(
+        output,
+        "    fn write_mem_byte(&mut self, addr: u32, data: u8) {{"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "        self.debug_mem_write(addr, data as u32, 0);"
+    )
+    .unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(
+        output,
+        "    fn upload_section(&mut self, section_name: &str, data: &[u8], start_addr: u32) {{"
+    )
+    .unwrap();
+    writeln!(output, "        eprintln!(\"Loading section {{}} ({{}} bytes) starting at address 0x{{:08x}}\", section_name, data.len(), start_addr);").unwrap();
+    writeln!(output).unwrap();
+    writeln!(output, "        let mut chunk_iter = data.chunks_exact(4);").unwrap();
+    writeln!(
+        output,
+        "        for (i, chunk) in chunk_iter.by_ref().enumerate() {{"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "            let word = u32::from_le_bytes(chunk.try_into().unwrap());"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "            let addr = start_addr + (i as u32 * 4);"
+    )
+    .unwrap();
+    writeln!(output, "            if i < 10 {{").unwrap();
+    writeln!(
+        output,
+        "                eprintln!(\"  [0x{{:08x}}] = 0x{{:08x}}\", addr, word);"
+    )
+    .unwrap();
+    writeln!(output, "            }}").unwrap();
+    writeln!(output, "            self.write_mem_word(addr, word);").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output).unwrap();
+    writeln!(output, "        let remainder = chunk_iter.remainder();").unwrap();
+    writeln!(output, "        if !remainder.is_empty() {{").unwrap();
+    writeln!(
+        output,
+        "            let start_offset = (data.len() - remainder.len()) as u32;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "            for (byte_offset, byte) in remainder.iter().enumerate() {{"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "                let addr = start_addr + start_offset + byte_offset as u32;"
+    )
+    .unwrap();
+    writeln!(output, "                self.write_mem_byte(addr, *byte);").unwrap();
+    writeln!(output, "            }}").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "impl Default for {} {{", model.name).unwrap();
+    writeln!(output, "    fn default() -> Self {{").unwrap();
+    writeln!(output, "        Self::new()").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "impl crate::Simulator for {} {{", model.name).unwrap();
+    writeln!(output, "    fn name(&self) -> &'static str {{").unwrap();
+    writeln!(output, "        {}Layout::NAME", model.name).unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(
+        output,
+        "    fn load_binary(&mut self, path: &std::path::Path, watchpoint_symbol: Option<&str>) -> anyhow::Result<Option<u32>> {{"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "        {}::load_binary(self, path, watchpoint_symbol)",
+        model.name
+    )
+    .unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(
+        output,
+        "    fn step(&mut self) -> Result<(), crate::Error> {{"
+    )
+    .unwrap();
+    writeln!(output, "        self.eval();").unwrap();
+    writeln!(output, "        Ok(())").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
+
+    // Generate port macros similar to C++ version
+    writeln!(output, "/// Macro to iterate over all IO ports").unwrap();
+    writeln!(output, "#[macro_export]").unwrap();
+    writeln!(output, "macro_rules! {}_ports {{", symbol_prefix).unwrap();
+    writeln!(output, "    ($macro:ident) => {{").unwrap();
+    for field in &io_fields {
+        writeln!(output, "        $macro!({});", field).unwrap();
+    }
+    writeln!(output, "    }};").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
+}
+
+pub fn render_model_module(
+    model: &ModelInfo,
+    view_depth: i32,
+    module_name: &str,
+    symbol_prefix: &str,
+    display_name: &str,
+) -> String {
+    let mut output = String::new();
+
+    writeln!(output, "// Auto-generated by arcgen - do not edit manually").unwrap();
+    writeln!(output).unwrap();
+    writeln!(output, "pub mod {} {{", module_name).unwrap();
+    writeln!(output, "    use crate::arc::{{Signal, SignalType}};").unwrap();
+    writeln!(output).unwrap();
+
+    writeln!(output, "    #[allow(non_camel_case_types)]").unwrap();
+    writeln!(output, "    pub struct StaticHierarchy {{").unwrap();
+    writeln!(output, "        pub name: *const std::ffi::c_char,").unwrap();
+    writeln!(output, "        pub num_states: u32,").unwrap();
+    writeln!(output, "        pub num_children: u32,").unwrap();
+    writeln!(output, "        pub states: &'static [Signal],").unwrap();
+    writeln!(output, "        pub children: &'static [StaticHierarchy],").unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(
+        output,
+        "    // SAFETY: StaticHierarchy contains only raw pointers to static strings"
+    )
+    .unwrap();
+    writeln!(output, "    unsafe impl Sync for StaticHierarchy {{}}").unwrap();
+    writeln!(output).unwrap();
+
+    let mut body = String::new();
+    render_model_body(&mut body, model, view_depth, symbol_prefix, display_name);
+    for line in body.lines() {
+        writeln!(output, "    {}", line).unwrap();
+    }
+    writeln!(output, "}}").unwrap();
+
+    output
+}
+
+pub struct ModelListEntry {
+    pub module_name: String,
+    pub type_name: String,
+}
+
+pub fn render_model_list(entries: &[ModelListEntry]) -> String {
+    let mut output = String::new();
+    writeln!(
+        output,
+        "pub fn list_arcilator_models() -> Vec<Box<dyn crate::Simulator>> {{"
+    )
+    .unwrap();
+    writeln!(output, "    vec![").unwrap();
+    for entry in entries {
+        writeln!(
+            output,
+            "        Box::new({}::{}::new()),",
+            entry.module_name, entry.type_name
+        )
+        .unwrap();
+    }
+    writeln!(output, "    ]").unwrap();
+    writeln!(output, "}}").unwrap();
+    output
+}
+
 pub fn render_rust_code(models: &[ModelInfo], view_depth: i32) -> String {
     let mut output = String::new();
 
     // Header
     writeln!(output, "// Auto-generated by arcgen - do not edit manually").unwrap();
     writeln!(output).unwrap();
-    writeln!(output, "use crate::arc::{{Signal, SignalType, Hierarchy}};").unwrap();
+    writeln!(output, "use crate::arc::{{Signal, SignalType}};").unwrap();
     writeln!(output).unwrap();
 
     // Static hierarchy structure (for compile-time data)
-    writeln!(output, "#[derive(Debug)]").unwrap();
+    writeln!(output, "#[allow(non_camel_case_types)]").unwrap();
     writeln!(output, "pub struct StaticHierarchy {{").unwrap();
     writeln!(output, "    pub name: *const std::ffi::c_char,").unwrap();
     writeln!(output, "    pub num_states: u32,").unwrap();
@@ -314,329 +1150,16 @@ pub fn render_rust_code(models: &[ModelInfo], view_depth: i32) -> String {
     writeln!(output, "    pub children: &'static [StaticHierarchy],").unwrap();
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();
-    writeln!(output, "// SAFETY: StaticHierarchy contains only raw pointers to static strings").unwrap();
+    writeln!(
+        output,
+        "// SAFETY: StaticHierarchy contains only raw pointers to static strings"
+    )
+    .unwrap();
     writeln!(output, "unsafe impl Sync for StaticHierarchy {{}}").unwrap();
     writeln!(output).unwrap();
 
     for model in models {
-        // Ensure IO names are unique and don't conflict with 'state'
-        let mut reserved: HashSet<String> = HashSet::new();
-        reserved.insert("state".to_string());
-
-        let io: Vec<_> = model
-            .io
-            .iter()
-            .map(|s| {
-                let mut state = s.clone();
-                if reserved.contains(&state.name) {
-                    state.name = format!("{}_", state.name);
-                }
-                reserved.insert(state.name.clone());
-                state
-            })
-            .collect();
-
-        // External function declarations
-        writeln!(output, "extern \"C\" {{").unwrap();
-        if !model.initial_fn_sym.is_empty() {
-            writeln!(
-                output,
-                "    fn {}_initial(state: *mut std::ffi::c_void);",
-                model.name
-            )
-            .unwrap();
-        }
-        writeln!(
-            output,
-            "    fn {}_eval(state: *mut std::ffi::c_void);",
-            model.name
-        )
-        .unwrap();
-        writeln!(output, "}}").unwrap();
-        writeln!(output).unwrap();
-
-        // Layout struct
-        writeln!(output, "/// Layout information for {}", model.name).unwrap();
-        writeln!(output, "pub struct {}Layout;", model.name).unwrap();
-        writeln!(output).unwrap();
-        writeln!(output, "impl {}Layout {{", model.name).unwrap();
-        writeln!(
-            output,
-            "    pub const NAME: &'static str = \"{}\";",
-            model.name
-        )
-        .unwrap();
-        writeln!(output, "    pub const NUM_STATES: usize = {};", io.len()).unwrap();
-        writeln!(
-            output,
-            "    pub const NUM_STATE_BYTES: usize = {};",
-            model.num_state_bytes
-        )
-        .unwrap();
-        writeln!(output).unwrap();
-
-        // IO signals
-        writeln!(
-            output,
-            "    pub const IO: [Signal; {}] = [",
-            io.len()
-        )
-        .unwrap();
-        for s in &io {
-            writeln!(output, "        {},", format_signal(s)).unwrap();
-        }
-        writeln!(output, "    ];").unwrap();
-        writeln!(output).unwrap();
-
-        // Hierarchy
-        if let Some(hierarchy) = model.hierarchy.first() {
-            writeln!(
-                output,
-                "    pub const HIERARCHY: StaticHierarchy = {};",
-                format_hierarchy(hierarchy, 2)
-            )
-            .unwrap();
-        }
-        writeln!(output, "}}").unwrap();
-        writeln!(output).unwrap();
-
-        // View struct for internal hierarchy
-        if let Some(hierarchy) = model.hierarchy.first() {
-            // Generate view structs for each hierarchy level
-            fn generate_view_structs(
-                output: &mut String,
-                hierarchy: &StateHierarchy,
-                depth: i32,
-                model_name: &str,
-            ) {
-                let struct_name = format!("{}{}View", model_name, clean_name(&hierarchy.name));
-
-                writeln!(output, "#[allow(non_snake_case)]").unwrap();
-                writeln!(output, "pub struct {}<'a> {{", struct_name).unwrap();
-
-                for state in &hierarchy.states {
-                    let clean = clean_name(&state.name);
-                    let ty = state_rust_type(state);
-                    writeln!(output, "    pub {}: &'a mut {},", clean, ty).unwrap();
-                }
-
-                if depth != 0 {
-                    for child in &hierarchy.children {
-                        let clean = clean_name(&child.name);
-                        let child_struct_name =
-                            format!("{}{}View", model_name, clean_name(&child.name));
-                        writeln!(output, "    pub {}: {}<'a>,", clean, child_struct_name).unwrap();
-                    }
-                }
-
-                writeln!(output, "}}").unwrap();
-                writeln!(output).unwrap();
-
-                // Recursively generate child view structs
-                if depth != 0 {
-                    for child in &hierarchy.children {
-                        generate_view_structs(output, child, depth - 1, model_name);
-                    }
-                }
-            }
-
-            generate_view_structs(&mut output, hierarchy, view_depth, &model.name);
-        }
-
-        // Main View struct
-        writeln!(output, "/// View into {} state", model.name).unwrap();
-        writeln!(output, "#[allow(non_snake_case)]").unwrap();
-        writeln!(output, "pub struct {}View<'a> {{", model.name).unwrap();
-        for s in &io {
-            let clean = clean_name(&s.name);
-            let ty = state_rust_type(s);
-            writeln!(output, "    pub {}: &'a mut {},", clean, ty).unwrap();
-        }
-        if let Some(hierarchy) = model.hierarchy.first() {
-            let internal_view_name =
-                format!("{}{}View", model.name, clean_name(&hierarchy.name));
-            writeln!(
-                output,
-                "    pub {}: {}<'a>,",
-                clean_name(&hierarchy.name),
-                internal_view_name
-            )
-            .unwrap();
-        }
-        writeln!(output, "}}").unwrap();
-        writeln!(output).unwrap();
-
-        // View constructor
-        writeln!(output, "impl<'a> {}View<'a> {{", model.name).unwrap();
-        writeln!(
-            output,
-            "    /// Create a new view into the state buffer"
-        )
-        .unwrap();
-        writeln!(output, "    ///").unwrap();
-        writeln!(output, "    /// # Safety").unwrap();
-        writeln!(
-            output,
-            "    /// The state buffer must be at least {} bytes",
-            model.num_state_bytes
-        )
-        .unwrap();
-        writeln!(
-            output,
-            "    pub unsafe fn new(state: &'a mut [u8]) -> Self {{"
-        )
-        .unwrap();
-        writeln!(
-            output,
-            "        debug_assert!(state.len() >= {});",
-            model.num_state_bytes
-        )
-        .unwrap();
-        writeln!(output, "        Self {{").unwrap();
-
-        for s in &io {
-            let clean = clean_name(&s.name);
-            let ty = state_rust_type(s);
-            writeln!(
-                output,
-                "            {}: &mut *(state.as_mut_ptr().add({}) as *mut {}),",
-                clean, s.offset, ty
-            )
-            .unwrap();
-        }
-
-        if let Some(hierarchy) = model.hierarchy.first() {
-            fn generate_view_init(
-                output: &mut String,
-                hierarchy: &StateHierarchy,
-                depth: i32,
-                model_name: &str,
-                indent_level: usize,
-            ) {
-                let indent = "    ".repeat(indent_level);
-                let inner_indent = "    ".repeat(indent_level + 1);
-                let struct_name = format!("{}{}View", model_name, clean_name(&hierarchy.name));
-
-                writeln!(output, "{}{} {{", indent, struct_name).unwrap();
-
-                for state in &hierarchy.states {
-                    let clean = clean_name(&state.name);
-                    let ty = state_rust_type(state);
-                    writeln!(
-                        output,
-                        "{}{}: &mut *(state.as_mut_ptr().add({}) as *mut {}),",
-                        inner_indent, clean, state.offset, ty
-                    )
-                    .unwrap();
-                }
-
-                if depth != 0 {
-                    for child in &hierarchy.children {
-                        let clean = clean_name(&child.name);
-                        write!(output, "{}{}: ", inner_indent, clean).unwrap();
-                        generate_view_init(output, child, depth - 1, model_name, indent_level + 1);
-                        writeln!(output, ",").unwrap();
-                    }
-                }
-
-                write!(output, "{}}}", indent).unwrap();
-            }
-
-            write!(
-                output,
-                "            {}: ",
-                clean_name(&hierarchy.name)
-            )
-            .unwrap();
-            generate_view_init(&mut output, hierarchy, view_depth, &model.name, 3);
-            writeln!(output, ",").unwrap();
-        }
-
-        writeln!(output, "        }}").unwrap();
-        writeln!(output, "    }}").unwrap();
-        writeln!(output, "}}").unwrap();
-        writeln!(output).unwrap();
-
-        // Main model struct
-        writeln!(output, "/// {} simulation model", model.name).unwrap();
-        writeln!(output, "pub struct {} {{", model.name).unwrap();
-        writeln!(output, "    storage: Vec<u8>,").unwrap();
-        writeln!(output, "}}").unwrap();
-        writeln!(output).unwrap();
-
-        writeln!(output, "impl {} {{", model.name).unwrap();
-        writeln!(output, "    /// Create a new model instance").unwrap();
-        writeln!(output, "    pub fn new() -> Self {{").unwrap();
-        writeln!(
-            output,
-            "        let mut storage = vec![0u8; {}Layout::NUM_STATE_BYTES];",
-            model.name
-        )
-        .unwrap();
-        if !model.initial_fn_sym.is_empty() {
-            writeln!(output, "        unsafe {{").unwrap();
-            writeln!(
-                output,
-                "            {}_initial(storage.as_mut_ptr() as *mut std::ffi::c_void);",
-                model.name
-            )
-            .unwrap();
-            writeln!(output, "        }}").unwrap();
-        }
-        writeln!(output, "        Self {{ storage }}").unwrap();
-        writeln!(output, "    }}").unwrap();
-        writeln!(output).unwrap();
-
-        writeln!(output, "    /// Get a view into the model state").unwrap();
-        writeln!(output, "    pub fn view(&mut self) -> {}View<'_> {{", model.name).unwrap();
-        writeln!(output, "        unsafe {{ {}View::new(&mut self.storage) }}", model.name).unwrap();
-        writeln!(output, "    }}").unwrap();
-        writeln!(output).unwrap();
-
-        writeln!(output, "    /// Evaluate one simulation step").unwrap();
-        writeln!(output, "    pub fn eval(&mut self) {{").unwrap();
-        writeln!(output, "        unsafe {{").unwrap();
-        writeln!(
-            output,
-            "            {}_eval(self.storage.as_mut_ptr() as *mut std::ffi::c_void);",
-            model.name
-        )
-        .unwrap();
-        writeln!(output, "        }}").unwrap();
-        writeln!(output, "    }}").unwrap();
-        writeln!(output).unwrap();
-
-        writeln!(output, "    /// Get raw access to the state buffer").unwrap();
-        writeln!(output, "    pub fn state(&self) -> &[u8] {{").unwrap();
-        writeln!(output, "        &self.storage").unwrap();
-        writeln!(output, "    }}").unwrap();
-        writeln!(output).unwrap();
-
-        writeln!(output, "    /// Get mutable raw access to the state buffer").unwrap();
-        writeln!(output, "    pub fn state_mut(&mut self) -> &mut [u8] {{").unwrap();
-        writeln!(output, "        &mut self.storage").unwrap();
-        writeln!(output, "    }}").unwrap();
-        writeln!(output, "}}").unwrap();
-        writeln!(output).unwrap();
-
-        writeln!(output, "impl Default for {} {{", model.name).unwrap();
-        writeln!(output, "    fn default() -> Self {{").unwrap();
-        writeln!(output, "        Self::new()").unwrap();
-        writeln!(output, "    }}").unwrap();
-        writeln!(output, "}}").unwrap();
-        writeln!(output).unwrap();
-
-        // Generate port macros similar to C++ version
-        writeln!(output, "/// Macro to iterate over all IO ports").unwrap();
-        writeln!(output, "#[macro_export]").unwrap();
-        writeln!(output, "macro_rules! {}_ports {{", model.name.to_lowercase()).unwrap();
-        writeln!(output, "    ($macro:ident) => {{").unwrap();
-        for s in &io {
-            writeln!(output, "        $macro!({});", clean_name(&s.name)).unwrap();
-        }
-        writeln!(output, "    }};").unwrap();
-        writeln!(output, "}}").unwrap();
-        writeln!(output).unwrap();
+        render_model_body(&mut output, model, view_depth, &model.name, &model.name);
     }
 
     output

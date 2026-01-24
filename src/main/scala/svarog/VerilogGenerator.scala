@@ -70,7 +70,9 @@ object VerilogGenerator extends App {
     case MonitorsEnabled => false
   }
 
-  def createModule: RawModule = LazyModule(new SvarogSoC(config, validatedBootloader)).module
+  def createModule: RawModule = LazyModule(
+    new SvarogSoC(config, validatedBootloader)
+  ).module
 
   if (outputFormat == "split") {
     ChiselStage.emitSystemVerilogFile(
@@ -98,7 +100,7 @@ object VerilogGenerator extends App {
       Array(
         "--disable-all-randomization",
         "--lowering-options=disallowPortDeclSharing,printDebugInfo",
-        "--default-layer-specialization=disable",
+        "--default-layer-specialization=disable"
       )
     )
     new PrintWriter(targetDir + "/SvarogSoC.firrtl") { write(mlir); close }
@@ -106,19 +108,4 @@ object VerilogGenerator extends App {
     System.err.println("--format can only be combined, split or firrtl")
     sys.exit(1)
   }
-
-  // emitVerilog(
-  //   LazyModule(new SvarogSoC(config, validatedBootloader)).module,
-  //   // new VerilatorTop(config, validatedBootloader),
-  //   Array("--target-dir", targetDir),
-  //   Seq(
-  //     FirtoolOption("--disable-all-randomization"),
-  //     FirtoolOption("--default-layer-specialization=enable"),
-  //     FirtoolOption(
-  //       "--lowering-options=disallowPortDeclSharing,printDebugInfo"
-  //     ),
-  //     FirtoolOption("--preserve-values=all"),
-  //     FirtoolOption("--verification-flavor=sva")
-  //   )
-  // )
 }

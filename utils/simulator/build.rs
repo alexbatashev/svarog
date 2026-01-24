@@ -1,16 +1,19 @@
 use std::env;
+use std::fmt::Write as FmtWrite;
 use std::fs::{self, File};
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, anyhow};
+use anyhow::{anyhow, Context};
+use arcgen::{load_models, render_model_list, render_model_module, sanitize_ident, ModelListEntry};
 use flate2::read::GzDecoder;
 use glob::glob;
 use sha2::{Digest, Sha256};
 use tar::Archive;
-use xshell::{Shell, cmd};
+use xshell::{cmd, Shell};
 
 const CIRCT_VERSION: &str = "firtool-1.139.0";
+const ARCGEN_VIEW_DEPTH: i32 = 2;
 
 struct PlatformRelease {
     url: &'static str,
@@ -31,10 +34,17 @@ fn main() -> anyhow::Result<()> {
 
     println!("cargo:rerun-if-changed=../../configs/");
 
+    let out_dir = PathBuf::from(env::var("OUT_DIR")?);
+    let arcilator_dir = out_dir.join("arcilator");
+    fs::create_dir_all(&arcilator_dir)?;
+
+    let mut all_entries: Vec<ModelListEntry> = Vec::new();
+
     for entry in glob("../../configs/*.yaml").expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => {
-                build_simulator(&path, &tools_dir)?;
+                let entries = build_simulator(&path, &tools_dir, &arcilator_dir)?;
+                all_entries.extend(entries);
             }
             Err(e) => {
                 return Err(anyhow!("{:?}", e));
@@ -42,10 +52,16 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    write_arcilator_include(&out_dir, &all_entries)?;
+
     Ok(())
 }
 
-fn build_simulator(path: &PathBuf, tools_dir: &Path) -> anyhow::Result<()> {
+fn build_simulator(
+    path: &PathBuf,
+    tools_dir: &Path,
+    arcilator_dir: &Path,
+) -> anyhow::Result<Vec<ModelListEntry>> {
     let model_name = path.file_stem().ok_or(anyhow!("Failed to get filename"))?;
     let model_name = model_name.to_str().unwrap();
     let model_name_sane = model_name.replace("-", "_");
@@ -58,19 +74,80 @@ fn build_simulator(path: &PathBuf, tools_dir: &Path) -> anyhow::Result<()> {
     let bin_dir = tools_dir.join("bin");
 
     sh.change_dir("../../");
-    cmd!(sh, "./mill -i svarog.runMain svarog.VerilogGenerator --target-dir={out_dir}/{model_name} --config=configs/{model_name}.yaml --format=firrtl").run()?;
+    cmd!(sh, "./mill -i svarog.runMain svarog.VerilogGenerator --simulator-debug-iface=true --target-dir={out_dir}/{model_name} --config=configs/{model_name}.yaml --format=firrtl").run()?;
     cmd!(sh,
         "{bin_dir}/firtool --ir-hw --format=mlir {out_dir}/{model_name}/SvarogSoC.firrtl -o {out_dir}/{model_name}.hw.mlir"
     ).run()?;
     cmd!(sh,
         "{bin_dir}/arcilator --observe-wires --observe-ports --observe-named-values --observe-registers --observe-memories --async-resets-as-sync --emit-llvm -o {out_dir}/{model_name}.ll --state-file={out_dir}/{model_name}.json {out_dir}/{model_name}.hw.mlir"
     ).run()?;
+
+    let state_json = format!("{out_dir}/{model_name}.json");
+    let models = load_models(&state_json)
+        .with_context(|| format!("Failed to load state JSON from {}", state_json))?;
+    if models.is_empty() {
+        return Err(anyhow!("No models found in {}", state_json));
+    }
+
+    let mut entries = Vec::new();
+    let mut objcopy_args: Vec<String> = Vec::new();
+
+    for (index, model) in models.iter().enumerate() {
+        let suffix = if models.len() == 1 {
+            String::new()
+        } else {
+            format!("_{}", index)
+        };
+
+        let module_base = format!("{}{}", model_name_sane, suffix);
+        let module_name = sanitize_ident(&module_base);
+        let symbol_prefix = module_name.clone();
+
+        let model_rs = render_model_module(
+            model,
+            ARCGEN_VIEW_DEPTH,
+            &module_name,
+            &symbol_prefix,
+            model_name,
+        );
+        let model_path = arcilator_dir.join(format!("{}.rs", module_name));
+        fs::write(&model_path, model_rs)?;
+
+        entries.push(ModelListEntry {
+            module_name: module_name.clone(),
+            type_name: model.name.clone(),
+        });
+
+        let eval_src = format!("{}_eval", model.name);
+        let eval_dst = format!("{}_eval", symbol_prefix);
+        objcopy_args.push(format!("--redefine-sym={}={}", eval_src, eval_dst));
+
+        if !model.initial_fn_sym.is_empty() {
+            let init_dst = format!("{}_initial", symbol_prefix);
+            objcopy_args.push(format!(
+                "--redefine-sym={}={}",
+                model.initial_fn_sym, init_dst
+            ));
+        }
+        if !model.final_fn_sym.is_empty() {
+            let final_dst = format!("{}_final", symbol_prefix);
+            objcopy_args.push(format!(
+                "--redefine-sym={}={}",
+                model.final_fn_sym, final_dst
+            ));
+        }
+    }
+
     cmd!(
         sh,
-        "{bin_dir}/llc --filetype=obj -O3 -o {out_dir}/{model_name}.o {out_dir}/{model_name}.ll"
+        "{bin_dir}/llc --filetype=obj --relocation-model=pic -O3 -o {out_dir}/{model_name}.o {out_dir}/{model_name}.ll"
     )
     .run()?;
-    cmd!(sh, "{bin_dir}/llvm-objcopy --redefine-sym=SvarogSoC_eval={model_name_sane}_eval {out_dir}/{model_name}.o").run()?;
+    cmd!(
+        sh,
+        "{bin_dir}/llvm-objcopy {objcopy_args...} {out_dir}/{model_name}.o"
+    )
+    .run()?;
     cmd!(
         sh,
         "{bin_dir}/llvm-ar crus {out_dir}/{model_name}/lib{model_name_sane}.a {out_dir}/{model_name}.o"
@@ -80,6 +157,32 @@ fn build_simulator(path: &PathBuf, tools_dir: &Path) -> anyhow::Result<()> {
     println!("cargo:rustc-link-search=native={out_dir}/{model_name}");
     println!("cargo:rustc-link-lib=static={model_name_sane}");
 
+    Ok(entries)
+}
+
+fn write_arcilator_include(out_dir: &Path, entries: &[ModelListEntry]) -> anyhow::Result<()> {
+    let mut output = String::new();
+    writeln!(
+        output,
+        "// Auto-generated by simulator build.rs - do not edit manually"
+    )?;
+    writeln!(output, "pub mod arcilator_gen {{")?;
+    for entry in entries {
+        writeln!(
+            output,
+            "    include!(concat!(env!(\"OUT_DIR\"), \"/arcilator/{}.rs\"));",
+            entry.module_name
+        )?;
+    }
+    writeln!(output)?;
+
+    let list_code = render_model_list(entries);
+    for line in list_code.lines() {
+        writeln!(output, "    {}", line)?;
+    }
+    writeln!(output, "}}")?;
+
+    fs::write(out_dir.join("arcilator.rs"), output)?;
     Ok(())
 }
 
