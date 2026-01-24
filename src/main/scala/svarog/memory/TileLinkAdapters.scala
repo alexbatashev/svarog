@@ -188,7 +188,7 @@ final class MemoryIOTileLinkAdapter(
 
     out.a.valid := state === State.sAWait
     out.a.bits := {
-      val size = maskToSize(savedReq.mask)
+      val size = log2Ceil(beatBytes).U
       val data = savedReq.dataWrite.asUInt
       val mask = savedReq.mask.asUInt
       val sourceId = edge.client.masters.head.sourceId.start.U
@@ -256,11 +256,6 @@ final class MemoryIOTileLinkBundleAdapter(
     )
   }
 
-  // Find the byte offset (first set bit in mask)
-  private def maskToOffset(mask: Vec[Bool]): UInt = {
-    PriorityEncoder(mask.asUInt)
-  }
-
   mem.req.ready := state === State.sIdle
   mem.resp.valid := tl.d.valid && state === State.sDWait
   mem.resp.bits.valid := !tl.d.bits.denied && !tl.d.bits.corrupt
@@ -270,16 +265,13 @@ final class MemoryIOTileLinkBundleAdapter(
 
   tl.a.valid := state === State.sAWait
   tl.a.bits := {
-    val size = maskToSize(savedReq.mask)
-    val offset = maskToOffset(savedReq.mask)
+    val size = log2Ceil(wordSize).U
     val sourceId = edge.client.masters.head.sourceId.start.U
-    // Compute actual byte address from word-aligned address + offset
-    val byteAddr = savedReq.address + offset
     // savedReq.dataWrite/mask are already aligned to word lanes
     val data = savedReq.dataWrite.asUInt
     val mask = savedReq.mask.asUInt
-    val (_, getA) = edge.Get(sourceId, byteAddr, size)
-    val (_, putA) = edge.Put(sourceId, byteAddr, size, data, mask)
+    val (_, getA) = edge.Get(sourceId, savedReq.address, size)
+    val (_, putA) = edge.Put(sourceId, savedReq.address, size, data, mask)
     val a = Wire(new TLBundleA(edge.bundle))
     a := getA
     when(savedIsWrite) {

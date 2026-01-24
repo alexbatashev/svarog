@@ -13,6 +13,7 @@ import svarog.debug.HartDebugIO
 import svarog.debug.HartDebugModule
 import svarog.decoder.InstWord
 import svarog.decoder.MicroOp
+import svarog.decoder.OpType
 import svarog.decoder.SimpleDecoder
 import svarog.memory.MemoryIO
 import svarog.memory.MemoryRequest
@@ -114,11 +115,21 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
   val wbWriteAddr = regFile.writeIo.writeAddr
   val wbWriteData = regFile.writeIo.writeData
 
+  private val memBypassValid =
+    memory.io.res.valid && memory.io.res.bits.gprWrite &&
+      (memory.io.res.bits.rd =/= 0.U)
+  private val memBypassAddr = memory.io.res.bits.rd
+  private val memBypassData = memory.io.res.bits.gprData
+
   def bypass(readAddr: UInt, readData: UInt): UInt = {
     Mux(
-      wbWriteEn && (wbWriteAddr =/= 0.U) && (wbWriteAddr === readAddr),
-      wbWriteData,
-      readData
+      memBypassValid && (memBypassAddr === readAddr),
+      memBypassData,
+      Mux(
+        wbWriteEn && (wbWriteAddr =/= 0.U) && (wbWriteAddr === readAddr),
+        wbWriteData,
+        readData
+      )
     )
   }
 
@@ -283,6 +294,8 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
   hazardUnit.io.memCsr := memory.io.csrHazard
   hazardUnit.io.wbCsr := writeback.io.csrHazard
   hazardUnit.io.watchpointHit := debug.io.watchpointTriggered
-  execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold || trapFlushHold
+
+  execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold ||
+    trapFlushHold || memory.io.hazard.valid
   writeback.io.halt := halt
 }
