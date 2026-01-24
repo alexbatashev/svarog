@@ -216,12 +216,42 @@ class TLUART(baseAddr: Long, busWidth: Int = 32, dataWidth: Int = 8)(implicit
     val baudDividerReg = RegInit(434.U(16.W))
     uartCore.io.baudDivider := baudDividerReg
 
-    // Status register: bit 0 = TX ready, bit 1 = RX valid
-    val status = Cat(0.U(6.W), uartCore.io.rx.valid, uartCore.io.tx.ready)
+    // TX buffer registers - needed because RegField's Decoupled handling
+    // expects to drive valid/bits directly, but we need proper handshaking
+    val txDataReg = RegInit(0.U(dataWidth.W))
+    val txValidReg = RegInit(false.B)
+    val txWriteAck = RegInit(false.B)
+
+    uartCore.io.tx.bits := txDataReg
+    uartCore.io.tx.valid := txValidReg
+
+    when(uartCore.io.tx.fire) {
+      txValidReg := false.B
+    }
+
+    // Status register: bit 0 = TX ready (can accept new data), bit 1 = RX valid
+    // TX is ready when not currently waiting to transmit
+    val txReady = uartCore.io.tx.ready && !txValidReg
+    val status = Cat(0.U(6.W), uartCore.io.rx.valid, txReady)
 
     node.regmap(
       DATA_REG -> Seq(
-        RegField(dataWidth, uartCore.io.rx, uartCore.io.tx)
+        RegField(
+          dataWidth,
+          uartCore.io.rx,
+          RegWriteFn((valid, oready, data) => {
+            val canAccept = !txValidReg
+            when(txWriteAck && oready) {
+              txWriteAck := false.B
+            }
+            when(valid && canAccept) {
+              txDataReg := data
+              txValidReg := true.B
+              txWriteAck := true.B
+            }
+            (canAccept, txWriteAck)
+          })
+        )
       ),
       STATUS_REG -> Seq(
         RegField.r(8, status)

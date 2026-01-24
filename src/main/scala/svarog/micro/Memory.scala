@@ -147,7 +147,7 @@ class Memory(xlen: Int) extends Module {
   when(pendingRequest) {
     io.hazard.valid := !pendingInst.isStore && pendingInst.rd =/= 0.U
     io.hazard.bits := pendingInst.rd
-  }.elsewhen(io.ex.valid && io.ex.bits.gprWrite && io.ex.bits.rd =/= 0.U) {
+  }.elsewhen(io.ex.fire && io.ex.bits.gprWrite && io.ex.bits.rd =/= 0.U) {
     io.hazard.valid := true.B
     io.hazard.bits := io.ex.bits.rd
   }

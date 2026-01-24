@@ -200,8 +200,8 @@ impl Simulator {
         self.model.set_reset(0);
         self.tick(false);
 
-        // Load sections: .text, .text.init, and .data
-        let sections_to_load = [".text", ".text.init", ".data"];
+        // Load sections: .text, .text.init, .data, and .rodata
+        let sections_to_load = [".text", ".text.init", ".data", ".rodata"];
         for section_name in &sections_to_load {
             if let Some(section_hdr) = file.section_header_by_name(section_name)? {
                 let (data, _) = file.section_data(&section_hdr)?;
