@@ -207,7 +207,8 @@ class Execute(isa: ISA) extends Module {
   val acceptUop = io.uop.valid && canDequeue
   val executeUop = acceptUop || executingMultiCycle || multiCycleComplete
 
-  val opReady = !needFlush && (!io.stall || executingMultiCycle || multiCycleComplete)
+  val opReady =
+    !needFlush && (!io.stall || executingMultiCycle || multiCycleComplete)
 
   when(executeUop && opReady) {
     switch(activeUop.opType) {

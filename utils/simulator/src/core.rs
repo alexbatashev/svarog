@@ -1,9 +1,9 @@
 use std::{cell::RefCell, convert::TryInto, path::Path};
 
 use anyhow::{Context, Result};
-use elf::{endian::AnyEndian, ElfBytes};
+use elf::{ElfBytes, endian::AnyEndian};
 
-use crate::models::{create_model, VerilatorModelVariant};
+use crate::models::{VerilatorModelVariant, create_model};
 use crate::uart::UartDecoder;
 use crate::{ModelId, RegisterFile, TestResult};
 
