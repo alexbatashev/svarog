@@ -807,7 +807,6 @@ fn render_model_body(
     )
     .unwrap();
     writeln!(output, "        }}").unwrap();
-    writeln!(output, "        self.eval();").unwrap();
     writeln!(output, "        for _ in 0..5 {{").unwrap();
     writeln!(output, "            self.tick();").unwrap();
     writeln!(output, "        }}").unwrap();
@@ -819,37 +818,59 @@ fn render_model_body(
     writeln!(output).unwrap();
     writeln!(
         output,
-        "        let sections_to_load = [\".text\", \".text.init\", \".data\"];"
-    )
-    .unwrap();
-    writeln!(output, "        for section_name in &sections_to_load {{").unwrap();
-    writeln!(
-        output,
-        "            if let Some(section_hdr) = file.section_header_by_name(section_name)? {{"
+        "        let (shdrs_opt, strtab_opt) = file.section_headers_with_strtab()?;"
     )
     .unwrap();
     writeln!(
         output,
-        "                let (data, _) = file.section_data(&section_hdr)?;"
+        "        if let (Some(shdrs), Some(strtab)) = (shdrs_opt, strtab_opt) {{"
+    )
+    .unwrap();
+    writeln!(output, "            for shdr in shdrs.iter() {{").unwrap();
+    writeln!(
+        output,
+        "                let is_alloc = (shdr.sh_flags & (elf::abi::SHF_ALLOC as u64)) != 0;"
     )
     .unwrap();
     writeln!(
         output,
-        "                let start_addr = section_hdr.sh_addr as u32;"
+        "                let is_nobits = shdr.sh_type == (elf::abi::SHT_NOBITS as u32);"
     )
     .unwrap();
     writeln!(
         output,
-        "                self.upload_section(section_name, data, start_addr);"
+        "                if !is_alloc || is_nobits || shdr.sh_size == 0 {{"
     )
     .unwrap();
-    writeln!(output, "            }} else {{").unwrap();
+    writeln!(output, "                    continue;").unwrap();
+    writeln!(output, "                }}").unwrap();
     writeln!(
         output,
-        "                eprintln!(\"Warning: Section {{}} not found in ELF file\", section_name);"
+        "                let name = strtab.get(shdr.sh_name as usize).unwrap_or(\"<unknown>\");"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "                let (data, _) = file.section_data(&shdr)?;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "                let start_addr = shdr.sh_addr as u32;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "                self.upload_section(name, data, start_addr);"
     )
     .unwrap();
     writeln!(output, "            }}").unwrap();
+    writeln!(output, "        }} else {{").unwrap();
+    writeln!(
+        output,
+        "            eprintln!(\"Warning: No section headers found in ELF file\");"
+    )
+    .unwrap();
     writeln!(output, "        }}").unwrap();
     writeln!(output).unwrap();
     writeln!(output, "        Ok(watchpoint_addr)").unwrap();
@@ -877,12 +898,12 @@ fn render_model_body(
     writeln!(output, "    fn tick(&mut self) {{").unwrap();
     writeln!(output, "        {{").unwrap();
     writeln!(output, "            let mut view = self.view();").unwrap();
-    writeln!(output, "            *view.{clock_field} = 1;").unwrap();
+    writeln!(output, "            *view.{clock_field} = 0;").unwrap();
     writeln!(output, "        }}").unwrap();
     writeln!(output, "        self.eval();").unwrap();
     writeln!(output, "        {{").unwrap();
     writeln!(output, "            let mut view = self.view();").unwrap();
-    writeln!(output, "            *view.{clock_field} = 0;").unwrap();
+    writeln!(output, "            *view.{clock_field} = 1;").unwrap();
     writeln!(output, "        }}").unwrap();
     writeln!(output, "        self.eval();").unwrap();
     writeln!(output, "    }}").unwrap();
@@ -925,16 +946,31 @@ fn render_model_body(
     )
     .unwrap();
     writeln!(output, "            }};").unwrap();
+    writeln!(output, "            self.tick();").unwrap();
     writeln!(output, "            if ready {{").unwrap();
     writeln!(output, "                break;").unwrap();
     writeln!(output, "            }}").unwrap();
-    writeln!(output, "            self.tick();").unwrap();
     writeln!(output, "        }}").unwrap();
     writeln!(output, "        {{").unwrap();
     writeln!(output, "            let mut view = self.view();").unwrap();
     writeln!(output, "            *view.{debug_mem_in_valid_field} = 0;").unwrap();
+    writeln!(output, "            *view.{debug_mem_in_write_field} = 0;").unwrap();
     writeln!(output, "        }}").unwrap();
     writeln!(output, "        self.tick();").unwrap();
+    writeln!(output, "        for _ in 0..30 {{").unwrap();
+    writeln!(output, "            let ready = {{").unwrap();
+    writeln!(output, "                let view = self.view();").unwrap();
+    writeln!(
+        output,
+        "                *view.{debug_mem_in_ready_field} != 0"
+    )
+    .unwrap();
+    writeln!(output, "            }};").unwrap();
+    writeln!(output, "            self.tick();").unwrap();
+    writeln!(output, "            if ready {{").unwrap();
+    writeln!(output, "                break;").unwrap();
+    writeln!(output, "            }}").unwrap();
+    writeln!(output, "        }}").unwrap();
     writeln!(output, "    }}").unwrap();
     writeln!(output).unwrap();
 
@@ -1030,6 +1066,26 @@ fn render_model_body(
     writeln!(output, "    }}").unwrap();
     writeln!(
         output,
+        "    fn io(&self) -> &'static [crate::arc::Signal] {{"
+    )
+    .unwrap();
+    writeln!(output, "        &{}Layout::IO", model.name).unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(
+        output,
+        "    fn hierarchy(&self) -> &'static crate::arc::StaticHierarchy {{"
+    )
+    .unwrap();
+    writeln!(output, "        &{}Layout::HIERARCHY", model.name).unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output, "    fn state_buf(&self) -> &[u8] {{").unwrap();
+    writeln!(output, "        {}::state(self)", model.name).unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(output, "    fn state_buf_mut(&mut self) -> &mut [u8] {{").unwrap();
+    writeln!(output, "        {}::state_mut(self)", model.name).unwrap();
+    writeln!(output, "    }}").unwrap();
+    writeln!(
+        output,
         "    fn load_binary(&mut self, path: &std::path::Path, watchpoint_symbol: Option<&str>) -> anyhow::Result<Option<u32>> {{"
     )
     .unwrap();
@@ -1076,23 +1132,11 @@ pub fn render_model_module(
     writeln!(output, "// Auto-generated by arcgen - do not edit manually").unwrap();
     writeln!(output).unwrap();
     writeln!(output, "pub mod {} {{", module_name).unwrap();
-    writeln!(output, "    use crate::arc::{{Signal, SignalType}};").unwrap();
-    writeln!(output).unwrap();
-
-    writeln!(output, "    #[allow(non_camel_case_types)]").unwrap();
-    writeln!(output, "    pub struct StaticHierarchy {{").unwrap();
-    writeln!(output, "        pub name: *const std::ffi::c_char,").unwrap();
-    writeln!(output, "        pub num_states: u32,").unwrap();
-    writeln!(output, "        pub num_children: u32,").unwrap();
-    writeln!(output, "        pub states: &'static [Signal],").unwrap();
-    writeln!(output, "        pub children: &'static [StaticHierarchy],").unwrap();
-    writeln!(output, "    }}").unwrap();
     writeln!(
         output,
-        "    // SAFETY: StaticHierarchy contains only raw pointers to static strings"
+        "    use crate::arc::{{Signal, SignalType, StaticHierarchy}};"
     )
     .unwrap();
-    writeln!(output, "    unsafe impl Sync for StaticHierarchy {{}}").unwrap();
     writeln!(output).unwrap();
 
     let mut body = String::new();
@@ -1137,25 +1181,11 @@ pub fn render_rust_code(models: &[ModelInfo], view_depth: i32) -> String {
     // Header
     writeln!(output, "// Auto-generated by arcgen - do not edit manually").unwrap();
     writeln!(output).unwrap();
-    writeln!(output, "use crate::arc::{{Signal, SignalType}};").unwrap();
-    writeln!(output).unwrap();
-
-    // Static hierarchy structure (for compile-time data)
-    writeln!(output, "#[allow(non_camel_case_types)]").unwrap();
-    writeln!(output, "pub struct StaticHierarchy {{").unwrap();
-    writeln!(output, "    pub name: *const std::ffi::c_char,").unwrap();
-    writeln!(output, "    pub num_states: u32,").unwrap();
-    writeln!(output, "    pub num_children: u32,").unwrap();
-    writeln!(output, "    pub states: &'static [Signal],").unwrap();
-    writeln!(output, "    pub children: &'static [StaticHierarchy],").unwrap();
-    writeln!(output, "}}").unwrap();
-    writeln!(output).unwrap();
     writeln!(
         output,
-        "// SAFETY: StaticHierarchy contains only raw pointers to static strings"
+        "use crate::arc::{{Signal, SignalType, StaticHierarchy}};"
     )
     .unwrap();
-    writeln!(output, "unsafe impl Sync for StaticHierarchy {{}}").unwrap();
     writeln!(output).unwrap();
 
     for model in models {

@@ -1,4 +1,4 @@
-mod arc;
+pub mod arc;
 mod uart;
 
 use std::path::Path;
@@ -13,6 +13,10 @@ pub enum Error {
 
 pub trait Simulator {
     fn name(&self) -> &'static str;
+    fn io(&self) -> &'static [crate::arc::Signal];
+    fn hierarchy(&self) -> &'static crate::arc::StaticHierarchy;
+    fn state_buf(&self) -> &[u8];
+    fn state_buf_mut(&mut self) -> &mut [u8];
     fn step(&mut self) -> Result<(), Error>;
     fn print_stats(&self) {
         unimplemented!("Stats not supported")
@@ -26,6 +30,8 @@ pub trait Simulator {
         unimplemented!("ELF binary loading not supported yet")
     }
 }
+
+pub use uart::UartDecoder;
 
 include!(concat!(env!("OUT_DIR"), "/arcilator.rs"));
 
