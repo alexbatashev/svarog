@@ -210,10 +210,10 @@ class TLChipDebugModule(
     when(state === State.sIdle && debug.mem_in.valid) {
       memIsInstr := debug.mem_in.bits.instr
       memIsWrite := debug.mem_in.bits.write
-      savedAddr := byteAddr
+      savedAddr := wordAlignedAddr
       savedData := shiftedWriteData.asUInt
       savedMask := shiftedMask.asUInt
-      savedSize := maskToSize(shiftedMask.asUInt)
+      savedSize := log2Ceil(wordSize).U
       memWordOffset := wordOffset
       state := State.sAWait
     }

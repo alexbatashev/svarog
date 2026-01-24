@@ -204,9 +204,12 @@ class Execute(isa: ISA) extends Module {
 
   io.csrFile.read <> csr.io.csr.read
 
-  when(
-    (io.uop.valid || executingMultiCycle || multiCycleComplete) && !needFlush
-  ) {
+  val acceptUop = io.uop.valid && canDequeue
+  val executeUop = acceptUop || executingMultiCycle || multiCycleComplete
+
+  val opReady = !needFlush && (!io.stall || executingMultiCycle || multiCycleComplete)
+
+  when(executeUop && opReady) {
     switch(activeUop.opType) {
       is(OpType.ALU) {
         io.res.bits.gprResult := alu.io.output
@@ -252,24 +255,30 @@ class Execute(isa: ISA) extends Module {
           }
         }
 
-        io.branch.valid := taken
-        needFlush := taken
-        io.branch.bits.targetPC := activeUop.pc + activeUop.imm
+        when(acceptUop) {
+          io.branch.valid := taken
+          needFlush := taken
+          io.branch.bits.targetPC := activeUop.pc + activeUop.imm
+        }
       }
 
       is(OpType.JAL) {
         // Unconditional jump
-        io.branch.valid := true.B
-        io.branch.bits.targetPC := activeUop.pc + activeUop.imm
-        io.res.bits.gprResult := activeUop.pc + 4.U // Save return address
+        when(acceptUop) {
+          io.branch.valid := true.B
+          io.branch.bits.targetPC := activeUop.pc + activeUop.imm
+          io.res.bits.gprResult := activeUop.pc + 4.U // Save return address
+        }
       }
 
       is(OpType.JALR) {
         // Indirect jump
-        io.branch.valid := true.B
-        val target = io.regFile.readData1 + activeUop.imm
-        io.branch.bits.targetPC := Cat(target(31, 1), 0.U(1.W)) // Clear LSB
-        io.res.bits.gprResult := activeUop.pc + 4.U // Save return address
+        when(acceptUop) {
+          io.branch.valid := true.B
+          val target = io.regFile.readData1 + activeUop.imm
+          io.branch.bits.targetPC := Cat(target(31, 1), 0.U(1.W)) // Clear LSB
+          io.res.bits.gprResult := activeUop.pc + 4.U // Save return address
+        }
       }
 
       is(OpType.MUL) {
