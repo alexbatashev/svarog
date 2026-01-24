@@ -1,14 +1,14 @@
+use std::env;
 use std::fs::{self, File};
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::env;
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use flate2::read::GzDecoder;
 use glob::glob;
 use sha2::{Digest, Sha256};
 use tar::Archive;
-use xshell::{cmd, Shell};
+use xshell::{Shell, cmd};
 
 const CIRCT_VERSION: &str = "firtool-1.139.0";
 
@@ -46,9 +46,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn build_simulator(path: &PathBuf, tools_dir: &Path) -> anyhow::Result<()> {
-    let model_name = path
-        .file_stem()
-        .ok_or(anyhow!("Failed to get filename"))?;
+    let model_name = path.file_stem().ok_or(anyhow!("Failed to get filename"))?;
     let model_name = model_name.to_str().unwrap();
     let model_name_sane = model_name.replace("-", "_");
 
@@ -65,10 +63,22 @@ fn build_simulator(path: &PathBuf, tools_dir: &Path) -> anyhow::Result<()> {
         "{bin_dir}/firtool --ir-hw --format=mlir {out_dir}/{model_name}/SvarogSoC.firrtl -o {out_dir}/{model_name}.hw.mlir"
     ).run()?;
     cmd!(sh,
-        "{bin_dir}/arcilator --observe-wires --observe-ports --observe-named-values --observe-registers --observe-memories --async-resets-as-sync --emit-llvm -o {out_dir}/{model_name}.ll {out_dir}/{model_name}.hw.mlir"
+        "{bin_dir}/arcilator --observe-wires --observe-ports --observe-named-values --observe-registers --observe-memories --async-resets-as-sync --emit-llvm -o {out_dir}/{model_name}.ll --state-file={out_dir}/{model_name}.json {out_dir}/{model_name}.hw.mlir"
     ).run()?;
-    cmd!(sh, "{bin_dir}/llc -O3 -o {out_dir}/{model_name}.o {out_dir}/{model_name}.ll").run()?;
-    cmd!(sh, "{bin_dir}/llvm-objcopy --filetype=obj --redefine-sym=SvarogSoC_eval={model_name_sane}_eval {out_dir}/{model_name}.o").run()?;
+    cmd!(
+        sh,
+        "{bin_dir}/llc --filetype=obj -O3 -o {out_dir}/{model_name}.o {out_dir}/{model_name}.ll"
+    )
+    .run()?;
+    cmd!(sh, "{bin_dir}/llvm-objcopy --redefine-sym=SvarogSoC_eval={model_name_sane}_eval {out_dir}/{model_name}.o").run()?;
+    cmd!(
+        sh,
+        "{bin_dir}/llvm-ar crus {out_dir}/{model_name}/lib{model_name_sane}.a {out_dir}/{model_name}.o"
+    )
+    .run()?;
+
+    println!("cargo:rustc-link-search=native={out_dir}/{model_name}");
+    println!("cargo:rustc-link-lib=static={model_name_sane}");
 
     Ok(())
 }
@@ -295,7 +305,10 @@ fn download_tools(tools_dir: &Path) -> anyhow::Result<()> {
     if arcilator_path.exists() && version_marker.exists() {
         let installed_version = fs::read_to_string(&version_marker).unwrap_or_default();
         if installed_version.trim() == CIRCT_VERSION {
-            println!("cargo:warning=CIRCT tools already installed ({})", CIRCT_VERSION);
+            println!(
+                "cargo:warning=CIRCT tools already installed ({})",
+                CIRCT_VERSION
+            );
             return Ok(());
         }
     }
