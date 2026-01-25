@@ -70,6 +70,9 @@ trap_handler:
     la t1, ecall_here
     bne t0, t1, trap_fail_epc
 
+    addi t0, t0, 4
+    csrw mepc, t0
+
     csrr t0, mscratch
     li t1, 0xA5A5A5A5
     sw t1, 0(t0)
