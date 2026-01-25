@@ -688,6 +688,9 @@ ee_printf(const char *fmt, ...)
     while (*p)
     {
         uart_send_char(*p);
+        if (*p == '\n') {
+            uart_send_char('\r');
+        }
         n++;
         p++;
     }
