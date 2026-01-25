@@ -9,11 +9,27 @@ import org.chipsalliance.diplomacy.lazymodule.{LazyModule, LazyModuleImp}
 object MachineCSRAddrs {
   val MSTATUS = 0x300 // Machine status
   val MISA = 0x301 // Machine ISA (read-only for now)
+  val MEDELEG = 0x302 // Machine exception delegation
+  val MIDELEG = 0x303 // Machine interrupt delegation
   val MTVEC = 0x305 // Machine trap-handler base address
+  val MSTATUSH = 0x310 // Machine status high (RV32 only)
+  val MSCRATCH = 0x340 // Machine scratch register
   val MEPC = 0x341 // Machine exception program counter
   val MCAUSE = 0x342 // Machine trap cause
+  val MTVAL = 0x343 // Machine trap value
 
-  val all = Seq(MSTATUS, MISA, MTVEC, MEPC, MCAUSE)
+  val all = Seq(
+    MSTATUS,
+    MISA,
+    MEDELEG,
+    MIDELEG,
+    MTVEC,
+    MSTATUSH,
+    MSCRATCH,
+    MEPC,
+    MCAUSE,
+    MTVAL
+  )
 }
 
 /** Trap entry request bundle */
@@ -71,6 +87,11 @@ class MachineCSRImp(outer: MachineCSR, xlen: Int) extends LazyModuleImp(outer) {
   // For M-mode only: MPP(12:11), MPIE(7), MIE(3) are the main writable bits
   private val mstatus = RegInit(0.U(xlen.W))
 
+  private val mstatush = RegInit(0.U(32.W))
+
+  private val medeleg = RegInit(0.U(xlen.W))
+  private val mideleg = RegInit(0.U(xlen.W))
+
   // misa register - read-only, reports supported extensions
   // RV64I: MXL=2 (64-bit), I extension (bit 8)
   private val misaMXL = if (xlen == 64) 2.U(2.W) else 1.U(2.W)
@@ -82,6 +103,8 @@ class MachineCSRImp(outer: MachineCSR, xlen: Int) extends LazyModuleImp(outer) {
   // BASE: trap handler base address (bits [xlen-1:2], must be 4-byte aligned)
   private val mtvec = RegInit(0.U(xlen.W))
 
+  private val mscratch = RegInit(0.U(xlen.W))
+
   // mepc register - exception program counter
   private val mepc = RegInit(0.U(xlen.W))
 
@@ -90,16 +113,24 @@ class MachineCSRImp(outer: MachineCSR, xlen: Int) extends LazyModuleImp(outer) {
   // Bits [xlen-2:0]: cause code
   private val mcause = RegInit(0.U(xlen.W))
 
+  private val mtval = RegInit(0.U(xlen.W))
+
   // Address decode
   private val addr = port.m2s.addr
   private val selStatus = addr === MachineCSRAddrs.MSTATUS.U
   private val selIsa = addr === MachineCSRAddrs.MISA.U
+  private val selEdeleg = addr === MachineCSRAddrs.MEDELEG.U
+  private val selIdeleg = addr === MachineCSRAddrs.MIDELEG.U
   private val selTvec = addr === MachineCSRAddrs.MTVEC.U
+  private val selStatusH = addr === MachineCSRAddrs.MSTATUSH.U
+  private val selScratch = addr === MachineCSRAddrs.MSCRATCH.U
   private val selEpc = addr === MachineCSRAddrs.MEPC.U
   private val selCause = addr === MachineCSRAddrs.MCAUSE.U
+  private val selTval = addr === MachineCSRAddrs.MTVAL.U
 
   // Any address hit
-  private val hit = selStatus || selIsa || selTvec || selEpc || selCause
+  private val hit = selStatus || selIsa || selEdeleg || selIdeleg || selTvec ||
+    selStatusH || selScratch || selEpc || selCause || selTval
 
   // Read mux
   port.s2m.rdata := MuxCase(
@@ -107,9 +138,14 @@ class MachineCSRImp(outer: MachineCSR, xlen: Int) extends LazyModuleImp(outer) {
     Seq(
       selStatus -> mstatus,
       selIsa -> misa,
+      selEdeleg -> medeleg,
+      selIdeleg -> mideleg,
       selTvec -> mtvec,
+      selStatusH -> Mux(xlen.U === 32.U, mstatush, 0.U(xlen.W)),
+      selScratch -> mscratch,
       selEpc -> mepc,
-      selCause -> mcause
+      selCause -> mcause,
+      selTval -> mtval
     )
   )
   port.s2m.hit := hit
@@ -129,12 +165,27 @@ class MachineCSRImp(outer: MachineCSR, xlen: Int) extends LazyModuleImp(outer) {
     when(selTvec) {
       mtvec := port.m2s.wdata
     }
+    when(selStatusH && xlen.U === 32.U) {
+      mstatush := port.m2s.wdata(31, 0)
+    }
+    when(selEdeleg) {
+      medeleg := port.m2s.wdata
+    }
+    when(selIdeleg) {
+      mideleg := port.m2s.wdata
+    }
+    when(selScratch) {
+      mscratch := port.m2s.wdata
+    }
     when(selEpc) {
       // mepc should be aligned to IALIGN (4 bytes for RV64I without C extension)
       mepc := Cat(port.m2s.wdata(xlen - 1, 2), 0.U(2.W))
     }
     when(selCause) {
       mcause := port.m2s.wdata
+    }
+    when(selTval) {
+      mtval := port.m2s.wdata
     }
   }
 

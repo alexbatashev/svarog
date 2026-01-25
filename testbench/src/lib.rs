@@ -10,9 +10,14 @@ use anyhow::{Context, Result};
 pub use simulator::{ModelId, RegisterFile, Simulator, TestResult};
 
 /// Run test in Spike and return register state
-pub fn run_spike_test(elf_path: &Path, watchpoint_addr: Option<u32>) -> Result<TestResult> {
+pub fn run_spike_test(
+    elf_path: &Path,
+    watchpoint_addr: Option<u32>,
+    isa: &str,
+) -> Result<TestResult> {
     let mut child = Command::new("spike")
-        .args(&["--isa=RV32I", "-l", "--log-commits"])
+        .arg(format!("--isa={isa}"))
+        .args(["-l", "--log-commits"])
         .arg(elf_path)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

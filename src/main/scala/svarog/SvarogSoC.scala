@@ -113,6 +113,20 @@ class SvarogSoC(
     // Connect RTC time to Timer
     outer.timer.module.io.time := rtc.io.time
 
+    if (config.simulatorDebug || sys.env.get("SVAROG_DUMP_XBAR").contains("1")) {
+      println("TLXbar managers (name: base/mask, supportsGet/Put)")
+      outer.xbar.node.out.foreach { case (_, edge) =>
+        edge.manager.managers.foreach { manager =>
+          val ranges = manager.address
+            .map(a => f"0x${a.base}%x/0x${a.mask}%x")
+            .mkString(", ")
+          println(
+            s"- ${manager.name}: ${ranges} get=${manager.supportsGet} put=${manager.supportsPutFull}"
+          )
+        }
+      }
+    }
+
     // Flatten debug signals from all tiles
     val allDebugPorts = tiles.flatMap(_.module.io.debug)
     val allRegData = tiles.flatMap(_.module.io.debugRegData)
