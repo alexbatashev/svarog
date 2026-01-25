@@ -141,6 +141,8 @@ fn run_verilator(sh: &Shell, workspace_root: &Path, model: &ModelInfo) -> Result
          --trace
          -O3
          --build
+         --threads 4
+         --no-assert
          -Mdir {verilator_out_dir}
          {verilog_file}"
     )

@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util.{Decoupled, log2Ceil}
 import circt.stage.FirtoolOption
 import org.chipsalliance.cde.config.Parameters
+import org.chipsalliance.diplomacy.nodes.MonitorsEnabled
 import org.chipsalliance.diplomacy.lazymodule.LazyModule
 import svarog.SvarogSoC
 import svarog.config.{ConfigLoader, BootloaderValidator, SoC}
@@ -63,7 +64,9 @@ object VerilogGenerator extends App {
   private val config = SoC.fromYaml(yamlConfig, simulatorDebugIface)
 
   // Generate Verilog
-  implicit val p: Parameters = Parameters.empty
+  implicit val p: Parameters = Parameters.empty.alterPartial {
+    case MonitorsEnabled => false
+  }
 
   emitVerilog(
     LazyModule(new SvarogSoC(config, validatedBootloader)).module,

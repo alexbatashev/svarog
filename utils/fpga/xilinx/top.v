@@ -1,22 +1,22 @@
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
+// Company:
+// Engineer:
+//
 // Create Date: 12/27/2025 09:55:20 AM
-// Design Name: 
+// Design Name:
 // Module Name: top
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
+// Project Name:
+// Target Devices:
+// Tool Versions:
+// Description:
+//
+// Dependencies:
+//
 // Revision:
 // Revision 0.01 - File Created
 // Additional Comments:
-// 
+//
 //////////////////////////////////////////////////////////////////////////////////
 
 
@@ -54,7 +54,8 @@ module top(
           .io_gpio_2_output(gpio2_output),
           .io_gpio_3_write(gpio3_write),
           .io_gpio_3_input(gpio3_input),
-          .io_gpio_3_output(gpio3_output)
+          .io_gpio_3_output(gpio3_output),
+          .io_rtcClock(clk)
       );
 
       always @(posedge clk or negedge rst_n) begin
