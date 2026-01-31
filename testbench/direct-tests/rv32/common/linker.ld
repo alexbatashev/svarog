@@ -36,21 +36,21 @@ SECTIONS
         __bss_end = .;
     } > RAM
 
+    /* Stack grows down from end of RAM (must fit within 64K: 0x80000000-0x8000FFFF) */
+    /* Place stack first to ensure it fits, then tohost after */
+    . = ALIGN(16);
+    .stack : {
+        . += 0xE000;  /* Allocate most of remaining RAM for stack */
+        _stack_top = .;
+    } > RAM
+
     /* tohost/fromhost for test signaling */
-    /* Place at known address for watchpoint */
-    . = 0x80001000;
+    . = ALIGN(16);
     .tohost : {
         tohost = .;
         . += 8;
         fromhost = .;
         . += 8;
-    } > RAM
-
-    /* Stack at end of RAM */
-    . = 0x8000F000;
-    .stack : {
-        . += 0x1000;
-        _stack_top = .;
     } > RAM
 
     /* Discard unneeded sections */
