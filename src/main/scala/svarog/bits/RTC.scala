@@ -13,27 +13,28 @@ class RTC extends RawModule {
     val time = Output(UInt(64.W))
   })
 
-  val crossing = Module(new AsyncQueue(UInt(64.W)))
-
-  withClockAndReset(io.rtcClock, reset) {
+  val counterGray = withClockAndReset(io.rtcClock, reset) {
     val counter = RegInit(0.U(64.W))
     counter := counter + 1.U
 
-    crossing.io.enq.valid := true.B
-    crossing.io.enq.bits := counter
+    val gray = RegInit(0.U(64.W))
+    gray := counter ^ (counter >> 1)
+    gray
   }
 
-  crossing.io.enq_clock := io.rtcClock
-  crossing.io.enq_reset := reset
-  crossing.io.deq_clock := clk
-  crossing.io.deq_reset := reset
-  crossing.io.deq.ready := true.B
-
   withClockAndReset(clk, reset) {
-    val time = RegInit(0.U(64.W))
-    when(crossing.io.deq.valid) {
-      time := crossing.io.deq.bits
-    }
-    io.time := time
+    val graySync = AsyncResetSynchronizerShiftReg(
+      in = counterGray,
+      sync = 3,
+      name = Some("rtc_gray_sync")
+    )
+
+    val timeBinary = Wire(UInt(64.W))
+    val binaryBits = (0 until 64).map { i =>
+      (graySync >> i).xorR.asUInt
+    }.reverse
+    timeBinary := Cat(binaryBits)
+
+    io.time := RegNext(timeBinary)
   }
 }
