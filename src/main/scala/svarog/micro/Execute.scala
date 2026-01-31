@@ -107,8 +107,8 @@ class Execute(isa: ISA) extends Module {
 
   // Exception detection: illegal instruction (INVALID opcode), ecall, or ebreak
   val isException = activeUop.illegal ||
-                    activeUop.opType === OpType.ECALL ||
-                    activeUop.opType === OpType.EBREAK
+    activeUop.opType === OpType.ECALL ||
+    activeUop.opType === OpType.EBREAK
 
   // This execution unit is not fully pipelined. New instructions can only be
   // accepted when all of the FUs are ready and no multi-cycle op is executing.
@@ -151,11 +151,14 @@ class Execute(isa: ISA) extends Module {
   // Signal exception when detected
   when(io.uop.valid && isException && !needFlush && !executingMultiCycle) {
     io.exception.valid := true.B
-    io.exception.bits.cause := MuxCase(2.U, Seq(
-      (activeUop.opType === OpType.ECALL) -> 11.U,   // ecall from M-mode
-      (activeUop.opType === OpType.EBREAK) -> 3.U    // breakpoint
-      // default is 2.U for illegal instruction
-    ))
+    io.exception.bits.cause := MuxCase(
+      2.U,
+      Seq(
+        (activeUop.opType === OpType.ECALL) -> 11.U, // ecall from M-mode
+        (activeUop.opType === OpType.EBREAK) -> 3.U // breakpoint
+        // default is 2.U for illegal instruction
+      )
+    )
   }
 
   // Load/store address

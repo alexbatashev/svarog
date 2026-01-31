@@ -20,7 +20,8 @@ class ZicsrInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
     val vectors = Seq(
       DecodeVector(
         pc = 0,
-        instruction = BigInt("34011173", 16), // csrrw x2, mscratch, x2 (mscratch=0x340)
+        instruction =
+          BigInt("34011173", 16), // csrrw x2, mscratch, x2 (mscratch=0x340)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.CSRRW)
           dut.io.decoded.rd.expect(2.U)
@@ -32,7 +33,8 @@ class ZicsrInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       DecodeVector(
         pc = 4,
-        instruction = BigInt("30512173", 16), // csrrs x2, mtvec, x2 (mtvec=0x305)
+        instruction =
+          BigInt("30512173", 16), // csrrs x2, mtvec, x2 (mtvec=0x305)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.CSRRS)
           dut.io.decoded.rd.expect(2.U)
@@ -122,28 +124,31 @@ class ZicsrInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
     val vectors = Seq(
       DecodeVector(
         pc = 0,
-        instruction = BigInt("F1402573", 16), // csrrs x10, mhartid, x0 (mhartid=0xF14)
+        instruction =
+          BigInt("F1402573", 16), // csrrs x10, mhartid, x0 (mhartid=0xF14)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.CSRRS)
-          dut.io.decoded.csrAddr.expect(0xF14.U)
+          dut.io.decoded.csrAddr.expect(0xf14.U)
           dut.io.decoded.rd.expect(10.U)
         }
       ),
       DecodeVector(
         pc = 4,
-        instruction = BigInt("C00025F3", 16), // csrrs x11, cycle, x0 (cycle=0xC00)
+        instruction =
+          BigInt("C00025F3", 16), // csrrs x11, cycle, x0 (cycle=0xC00)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.CSRRS)
-          dut.io.decoded.csrAddr.expect(0xC00.U)
+          dut.io.decoded.csrAddr.expect(0xc00.U)
           dut.io.decoded.rd.expect(11.U)
         }
       ),
       DecodeVector(
         pc = 8,
-        instruction = BigInt("C8102673", 16), // csrrs x12, cycleh, x0 (cycleh=0xC81)
+        instruction =
+          BigInt("C8102673", 16), // csrrs x12, cycleh, x0 (cycleh=0xC81)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.CSRRS)
-          dut.io.decoded.csrAddr.expect(0xC81.U)
+          dut.io.decoded.csrAddr.expect(0xc81.U)
           dut.io.decoded.rd.expect(12.U)
         }
       )
@@ -249,7 +254,8 @@ class ZicsrInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       DecodeVector(
         pc = 4,
-        instruction = BigInt("00000073", 16), // ecall (SYSTEM opcode but wrong funct3)
+        instruction =
+          BigInt("00000073", 16), // ecall (SYSTEM opcode but wrong funct3)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.INVALID)
         }
@@ -318,7 +324,8 @@ class ZicsrInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
     val vectors = Seq(
       DecodeVector(
         pc = 0,
-        instruction = BigInt("34005173", 16), // csrrwi x2, mscratch, 0 (zimm=0b00000)
+        instruction =
+          BigInt("34005173", 16), // csrrwi x2, mscratch, 0 (zimm=0b00000)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.CSRRW)
           dut.io.decoded.hasImm.expect(true.B)
@@ -327,7 +334,8 @@ class ZicsrInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       DecodeVector(
         pc = 4,
-        instruction = BigInt("3050E173", 16), // csrrsi x2, mtvec, 1 (zimm=0b00001)
+        instruction =
+          BigInt("3050E173", 16), // csrrsi x2, mtvec, 1 (zimm=0b00001)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.CSRRS)
           dut.io.decoded.hasImm.expect(true.B)
@@ -336,7 +344,8 @@ class ZicsrInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       DecodeVector(
         pc = 8,
-        instruction = BigInt("304FF173", 16), // csrrci x2, mie, 31 (zimm=0b11111)
+        instruction =
+          BigInt("304FF173", 16), // csrrci x2, mie, 31 (zimm=0b11111)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.CSRRC)
           dut.io.decoded.hasImm.expect(true.B)
@@ -346,7 +355,8 @@ class ZicsrInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       DecodeVector(
         pc = 12,
-        instruction = BigInt("34085173", 16), // csrrwi x2, mscratch, 16 (zimm=0b10000)
+        instruction =
+          BigInt("34085173", 16), // csrrwi x2, mscratch, 16 (zimm=0b10000)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.CSRRW)
           dut.io.decoded.hasImm.expect(true.B)
@@ -356,7 +366,8 @@ class ZicsrInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       DecodeVector(
         pc = 16,
-        instruction = BigInt("3048D173", 16), // csrrwi x2, mie, 17 (zimm=0b10001)
+        instruction =
+          BigInt("3048D173", 16), // csrrwi x2, mie, 17 (zimm=0b10001)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.CSRRW)
           dut.io.decoded.hasImm.expect(true.B)

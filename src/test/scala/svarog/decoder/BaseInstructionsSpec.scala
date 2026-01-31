@@ -166,7 +166,8 @@ class BaseInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
           dut.io.decoded.rd.expect(1.U)
           dut.io.decoded.rs1.expect(1.U)
           dut.io.decoded.hasImm.expect(true.B)
-          dut.io.decoded.imm.expect(BigInt("FFFFFFFF", 16).U) // sign-extended -1
+          dut.io.decoded.imm
+            .expect(BigInt("FFFFFFFF", 16).U) // sign-extended -1
         }
       ),
       DecodeVector(
@@ -552,7 +553,8 @@ class BaseInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
       ),
       DecodeVector(
         pc = 8,
-        instruction = BigInt("8330000F", 16), // fence.tso (specific encoding of fence)
+        instruction =
+          BigInt("8330000F", 16), // fence.tso (specific encoding of fence)
         check = { dut =>
           dut.io.decoded.opType.expect(OpType.FENCE)
           dut.io.decoded.hasImm.expect(false.B)

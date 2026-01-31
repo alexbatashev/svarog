@@ -23,8 +23,12 @@ object MulDivTypeFields {
     def chiselType = OpType()
     override def default = BitPat(OpType.INVALID)
     def genTable(op: RInst): BitPat = op.funct3 match {
-      case MulDivFunct3.MUL | MulDivFunct3.MULH | MulDivFunct3.MULHSU | MulDivFunct3.MULHU => BitPat(OpType.MUL)
-      case MulDivFunct3.DIV | MulDivFunct3.DIVU | MulDivFunct3.REM | MulDivFunct3.REMU => BitPat(OpType.DIV)
+      case MulDivFunct3.MUL | MulDivFunct3.MULH | MulDivFunct3.MULHSU |
+          MulDivFunct3.MULHU =>
+        BitPat(OpType.MUL)
+      case MulDivFunct3.DIV | MulDivFunct3.DIVU | MulDivFunct3.REM |
+          MulDivFunct3.REMU =>
+        BitPat(OpType.DIV)
     }
   }
 
@@ -42,11 +46,11 @@ case object mulOp extends DecodeField[RInst, MulOp.Type] {
   override def default = BitPat(MulOp.MUL)
   def genTable(op: RInst): BitPat = {
     op.funct3 match {
-      case MulDivFunct3.MUL => BitPat(MulOp.MUL)
-      case MulDivFunct3.MULH => BitPat(MulOp.MULH)
+      case MulDivFunct3.MUL    => BitPat(MulOp.MUL)
+      case MulDivFunct3.MULH   => BitPat(MulOp.MULH)
       case MulDivFunct3.MULHSU => BitPat(MulOp.MULHSU)
-      case MulDivFunct3.MULHU => BitPat(MulOp.MULHU)
-      case _ => BitPat(MulOp.MUL)
+      case MulDivFunct3.MULHU  => BitPat(MulOp.MULHU)
+      case _                   => BitPat(MulOp.MUL)
     }
   }
 }
@@ -58,11 +62,11 @@ case object divOp extends DecodeField[RInst, DivOp.Type] {
   override def default = BitPat(DivOp.DIV)
   def genTable(op: RInst): BitPat = {
     op.funct3 match {
-      case MulDivFunct3.DIV => BitPat(DivOp.DIV)
+      case MulDivFunct3.DIV  => BitPat(DivOp.DIV)
       case MulDivFunct3.DIVU => BitPat(DivOp.DIVU)
-      case MulDivFunct3.REM => BitPat(DivOp.REM)
+      case MulDivFunct3.REM  => BitPat(DivOp.REM)
       case MulDivFunct3.REMU => BitPat(DivOp.REMU)
-      case _ => BitPat(DivOp.DIV)
+      case _                 => BitPat(DivOp.DIV)
     }
   }
 }
@@ -82,7 +86,7 @@ case class MInstructions(xlen: Int) extends Module {
     RInst("0000001", MulDivFunct3.DIV, Opcodes.MULDIV),
     RInst("0000001", MulDivFunct3.DIVU, Opcodes.MULDIV),
     RInst("0000001", MulDivFunct3.REM, Opcodes.MULDIV),
-    RInst("0000001", MulDivFunct3.REMU, Opcodes.MULDIV),
+    RInst("0000001", MulDivFunct3.REMU, Opcodes.MULDIV)
   )
 
   val mTable = new DecodeTable(

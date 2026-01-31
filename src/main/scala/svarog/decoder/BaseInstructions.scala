@@ -26,7 +26,11 @@ object Funct3 {
 }
 
 // Special I-type for shift instructions that need to check imm[10] (bit 30)
-case class ShiftIInst(val funct7: String, val funct3: String, val opcode: String) extends DecodePattern {
+case class ShiftIInst(
+    val funct7: String,
+    val funct3: String,
+    val opcode: String
+) extends DecodePattern {
   require(funct7.length() == 7)
   require(funct3.length() == 3)
   require(opcode.length() == 7)
@@ -34,7 +38,9 @@ case class ShiftIInst(val funct7: String, val funct3: String, val opcode: String
   private val shamt = "?????"
   private val reg = "?????"
 
-  def bitPat: BitPat = BitPat("b" + funct7 + shamt + reg + funct3 + reg + opcode)
+  def bitPat: BitPat = BitPat(
+    "b" + funct7 + shamt + reg + funct3 + reg + opcode
+  )
 }
 
 object LoadFields {
@@ -44,12 +50,12 @@ object LoadFields {
     override def default = BitPat(MemWidth.WORD)
     def genTable(op: IInst): BitPat = {
       op.funct3 match {
-        case LoadFunct3.LB => BitPat(MemWidth.BYTE)
-        case LoadFunct3.LH => BitPat(MemWidth.HALF)
-        case LoadFunct3.LW => BitPat(MemWidth.WORD)
+        case LoadFunct3.LB  => BitPat(MemWidth.BYTE)
+        case LoadFunct3.LH  => BitPat(MemWidth.HALF)
+        case LoadFunct3.LW  => BitPat(MemWidth.WORD)
         case LoadFunct3.LBU => BitPat(MemWidth.BYTE)
         case LoadFunct3.LHU => BitPat(MemWidth.HALF)
-        case _ => BitPat(MemWidth.WORD)
+        case _              => BitPat(MemWidth.WORD)
       }
     }
   }
@@ -62,7 +68,7 @@ object LoadFields {
       op.funct3 match {
         case LoadFunct3.LBU => BitPat(1.U(1.W))
         case LoadFunct3.LHU => BitPat(1.U(1.W))
-        case _ => BitPat(0.U(1.W))
+        case _              => BitPat(0.U(1.W))
       }
     }
   }
@@ -75,16 +81,16 @@ case object aluRegOp extends DecodeField[RInst, ALUOp.Type] {
   def genTable(op: RInst): BitPat = {
     (op.funct7, op.funct3) match {
       case (Funct7.DEFAULT, Funct3.ADD_SUB) => BitPat(ALUOp.ADD)
-      case (Funct7.ALT, Funct3.ADD_SUB) => BitPat(ALUOp.SUB)
-      case (_, Funct3.SLL) => BitPat(ALUOp.SLL)
-      case (_, Funct3.SLT) => BitPat(ALUOp.SLT)
-      case (_, Funct3.SLTU) => BitPat(ALUOp.SLTU)
-      case (_, Funct3.XOR) => BitPat(ALUOp.XOR)
+      case (Funct7.ALT, Funct3.ADD_SUB)     => BitPat(ALUOp.SUB)
+      case (_, Funct3.SLL)                  => BitPat(ALUOp.SLL)
+      case (_, Funct3.SLT)                  => BitPat(ALUOp.SLT)
+      case (_, Funct3.SLTU)                 => BitPat(ALUOp.SLTU)
+      case (_, Funct3.XOR)                  => BitPat(ALUOp.XOR)
       case (Funct7.DEFAULT, Funct3.SRL_SRA) => BitPat(ALUOp.SRL)
-      case (Funct7.ALT, Funct3.SRL_SRA) => BitPat(ALUOp.SRA)
-      case (_, Funct3.OR) => BitPat(ALUOp.OR)
-      case (_, Funct3.AND) => BitPat(ALUOp.AND)
-      case _ => BitPat(ALUOp.ADD)
+      case (Funct7.ALT, Funct3.SRL_SRA)     => BitPat(ALUOp.SRA)
+      case (_, Funct3.OR)                   => BitPat(ALUOp.OR)
+      case (_, Funct3.AND)                  => BitPat(ALUOp.AND)
+      case _                                => BitPat(ALUOp.ADD)
     }
   }
 }
@@ -96,12 +102,12 @@ case object aluImmOp extends DecodeField[IInst, ALUOp.Type] {
   def genTable(op: IInst): BitPat = {
     op.funct3 match {
       case Funct3.ADD_SUB => BitPat(ALUOp.ADD) // ADDI (no SUBI)
-      case Funct3.SLT => BitPat(ALUOp.SLT)
-      case Funct3.SLTU => BitPat(ALUOp.SLTU)
-      case Funct3.XOR => BitPat(ALUOp.XOR)
-      case Funct3.OR => BitPat(ALUOp.OR)
-      case Funct3.AND => BitPat(ALUOp.AND)
-      case _ => BitPat(ALUOp.ADD)
+      case Funct3.SLT     => BitPat(ALUOp.SLT)
+      case Funct3.SLTU    => BitPat(ALUOp.SLTU)
+      case Funct3.XOR     => BitPat(ALUOp.XOR)
+      case Funct3.OR      => BitPat(ALUOp.OR)
+      case Funct3.AND     => BitPat(ALUOp.AND)
+      case _              => BitPat(ALUOp.ADD)
     }
   }
 }
@@ -121,10 +127,10 @@ object ShiftITypeFields {
     override def default = BitPat(ALUOp.ADD)
     def genTable(op: ShiftIInst): BitPat = {
       (op.funct7, op.funct3) match {
-        case (Funct7.DEFAULT, Funct3.SLL) => BitPat(ALUOp.SLL)
+        case (Funct7.DEFAULT, Funct3.SLL)     => BitPat(ALUOp.SLL)
         case (Funct7.DEFAULT, Funct3.SRL_SRA) => BitPat(ALUOp.SRL)
-        case (Funct7.ALT, Funct3.SRL_SRA) => BitPat(ALUOp.SRA)
-        case _ => BitPat(ALUOp.ADD)
+        case (Funct7.ALT, Funct3.SRL_SRA)     => BitPat(ALUOp.SRA)
+        case _                                => BitPat(ALUOp.ADD)
       }
     }
   }
@@ -164,7 +170,7 @@ case class BaseInstructions(xlen: Int) extends Module {
     RInst(Funct7.DEFAULT, Funct3.SRL_SRA, Opcodes.ALU_REG), // SRL
     RInst(Funct7.ALT, Funct3.SRL_SRA, Opcodes.ALU_REG), // SRA
     RInst(Funct7.DEFAULT, Funct3.OR, Opcodes.ALU_REG),
-    RInst(Funct7.DEFAULT, Funct3.AND, Opcodes.ALU_REG),
+    RInst(Funct7.DEFAULT, Funct3.AND, Opcodes.ALU_REG)
   )
 
   val iTypeInstrs = Seq(
@@ -179,22 +185,22 @@ case class BaseInstructions(xlen: Int) extends Module {
     IInst(LoadFunct3.LW, Opcodes.LOAD),
     IInst(LoadFunct3.LBU, Opcodes.LOAD),
     IInst(LoadFunct3.LHU, Opcodes.LOAD),
-    IInst(JALRFunct3.JALR, Opcodes.JALR),
+    IInst(JALRFunct3.JALR, Opcodes.JALR)
   )
 
   val shiftITypeInstrs = Seq(
-    ShiftIInst(Funct7.DEFAULT, Funct3.SLL, Opcodes.ALU_IMM),     // SLLI
+    ShiftIInst(Funct7.DEFAULT, Funct3.SLL, Opcodes.ALU_IMM), // SLLI
     ShiftIInst(Funct7.DEFAULT, Funct3.SRL_SRA, Opcodes.ALU_IMM), // SRLI
-    ShiftIInst(Funct7.ALT, Funct3.SRL_SRA, Opcodes.ALU_IMM),     // SRAI
+    ShiftIInst(Funct7.ALT, Funct3.SRL_SRA, Opcodes.ALU_IMM) // SRAI
   )
 
   val uTypeInstrs = Seq(
     UInst(Opcodes.LUI),
-    UInst(Opcodes.AUIPC),
+    UInst(Opcodes.AUIPC)
   )
 
   val jTypeInstrs = Seq(
-    JInst(Opcodes.JAL),
+    JInst(Opcodes.JAL)
   )
 
   val branchInstrs = Seq(
@@ -203,24 +209,24 @@ case class BaseInstructions(xlen: Int) extends Module {
     BInst(BranchFunct3.BLT, Opcodes.BRANCH),
     BInst(BranchFunct3.BGE, Opcodes.BRANCH),
     BInst(BranchFunct3.BLTU, Opcodes.BRANCH),
-    BInst(BranchFunct3.BGEU, Opcodes.BRANCH),
+    BInst(BranchFunct3.BGEU, Opcodes.BRANCH)
   )
 
   val storeInstrs = Seq(
     SInst(StoreFunct3.SB, Opcodes.STORE),
     SInst(StoreFunct3.SH, Opcodes.STORE),
-    SInst(StoreFunct3.SW, Opcodes.STORE),
+    SInst(StoreFunct3.SW, Opcodes.STORE)
   )
 
   val systemInstrs = Seq(
     SystemInst(SystemImm12.ECALL),
     SystemInst(SystemImm12.EBREAK),
-    SystemInst(SystemImm12.MRET),
+    SystemInst(SystemImm12.MRET)
   )
 
   val fenceInstrs = Seq(
     IInst(FenceFunct3.FENCE, Opcodes.MISC_MEM),
-    IInst(FenceFunct3.FENCE_I, Opcodes.MISC_MEM),
+    IInst(FenceFunct3.FENCE_I, Opcodes.MISC_MEM)
   )
 
   // Create decode tables
@@ -231,7 +237,12 @@ case class BaseInstructions(xlen: Int) extends Module {
 
   val iTable = new DecodeTable(
     iTypeInstrs,
-    Seq(ITypeFields.opType, LoadFields.memWidth, LoadFields.memUnsigned, aluImmOp)
+    Seq(
+      ITypeFields.opType,
+      LoadFields.memWidth,
+      LoadFields.memUnsigned,
+      aluImmOp
+    )
   )
 
   val shiftITable = new DecodeTable(
@@ -291,13 +302,15 @@ case class BaseInstructions(xlen: Int) extends Module {
 
   // Use opType to determine if a decoder matched (opType != INVALID means match)
   val rTypeValid = rTypeDecoded(RTypeFields.opType) =/= OpType.INVALID
-  val shiftITypeValid = shiftITypeDecoded(ShiftITypeFields.opType) =/= OpType.INVALID
+  val shiftITypeValid =
+    shiftITypeDecoded(ShiftITypeFields.opType) =/= OpType.INVALID
   val iTypeValid = iTypeDecoded(ITypeFields.opType) =/= OpType.INVALID
   val uTypeValid = uTypeDecoded(UTypeFields.opType) =/= OpType.INVALID
   val jTypeValid = jTypeDecoded(JTypeFields.opType) =/= OpType.INVALID
   val branchTypeValid = branchTypeDecoded(BTypeFields.opType) =/= OpType.INVALID
   val storeTypeValid = storeTypeDecoded(STypeFields.opType) =/= OpType.INVALID
-  val systemTypeValid = systemTypeDecoded(SystemFields.opType) =/= OpType.INVALID
+  val systemTypeValid =
+    systemTypeDecoded(SystemFields.opType) =/= OpType.INVALID
   val fenceTypeValid = fenceTypeDecoded(FenceFields.opType) =/= OpType.INVALID
 
   // Common register fields

@@ -8,7 +8,8 @@ import svarog.memory.MemWidth
 import svarog.bits.MulOp
 import svarog.bits.DivOp
 
-case class RInst(val funct7: String, val funct3: String, val opcode: String) extends DecodePattern {
+case class RInst(val funct7: String, val funct3: String, val opcode: String)
+    extends DecodePattern {
   require(funct7.length() == 7)
   require(funct3.length() == 3)
   require(opcode.length() == 7)
@@ -97,9 +98,9 @@ object ITypeFields {
     override def default = BitPat(OpType.INVALID)
     def genTable(op: IInst): BitPat = op.opcode match {
       case Opcodes.ALU_IMM => BitPat(OpType.ALU)
-      case Opcodes.LOAD => BitPat(OpType.LOAD)
-      case Opcodes.JALR => BitPat(OpType.JALR)
-      case _ => BitPat(OpType.INVALID)
+      case Opcodes.LOAD    => BitPat(OpType.LOAD)
+      case Opcodes.JALR    => BitPat(OpType.JALR)
+      case _               => BitPat(OpType.INVALID)
     }
   }
 }
@@ -112,9 +113,9 @@ object UTypeFields {
     override def default = BitPat(OpType.INVALID)
     def genTable(op: UInst): BitPat = {
       op.opcode match {
-        case Opcodes.LUI => BitPat(OpType.LUI)
+        case Opcodes.LUI   => BitPat(OpType.LUI)
         case Opcodes.AUIPC => BitPat(OpType.AUIPC)
-        case _ => BitPat(OpType.INVALID)
+        case _             => BitPat(OpType.INVALID)
       }
     }
   }
@@ -145,13 +146,13 @@ object BTypeFields {
     override def default = BitPat(BranchOp.INVALID)
     def genTable(op: BInst): BitPat = {
       op.funct3 match {
-        case BranchFunct3.BEQ => BitPat(BranchOp.BEQ)
-        case BranchFunct3.BNE => BitPat(BranchOp.BNE)
-        case BranchFunct3.BLT => BitPat(BranchOp.BLT)
-        case BranchFunct3.BGE => BitPat(BranchOp.BGE)
+        case BranchFunct3.BEQ  => BitPat(BranchOp.BEQ)
+        case BranchFunct3.BNE  => BitPat(BranchOp.BNE)
+        case BranchFunct3.BLT  => BitPat(BranchOp.BLT)
+        case BranchFunct3.BGE  => BitPat(BranchOp.BGE)
         case BranchFunct3.BLTU => BitPat(BranchOp.BLTU)
         case BranchFunct3.BGEU => BitPat(BranchOp.BGEU)
-        case _ => BitPat(BranchOp.INVALID)
+        case _                 => BitPat(BranchOp.INVALID)
       }
     }
   }
@@ -175,7 +176,7 @@ object STypeFields {
         case StoreFunct3.SB => BitPat(MemWidth.BYTE)
         case StoreFunct3.SH => BitPat(MemWidth.HALF)
         case StoreFunct3.SW => BitPat(MemWidth.WORD)
-        case _ => BitPat(MemWidth.WORD)
+        case _              => BitPat(MemWidth.WORD)
       }
     }
   }
@@ -189,9 +190,9 @@ object FenceFields {
     override def default = BitPat(OpType.INVALID)
     def genTable(op: IInst): BitPat = {
       op.funct3 match {
-        case FenceFunct3.FENCE => BitPat(OpType.FENCE)
+        case FenceFunct3.FENCE   => BitPat(OpType.FENCE)
         case FenceFunct3.FENCE_I => BitPat(OpType.FENCE_I)
-        case _ => BitPat(OpType.INVALID)
+        case _                   => BitPat(OpType.INVALID)
       }
     }
   }
@@ -208,7 +209,7 @@ object CSRFields {
         case CSRFunct3.CSRRW | CSRFunct3.CSRRWI => BitPat(OpType.CSRRW)
         case CSRFunct3.CSRRS | CSRFunct3.CSRRSI => BitPat(OpType.CSRRS)
         case CSRFunct3.CSRRC | CSRFunct3.CSRRCI => BitPat(OpType.CSRRC)
-        case _ => BitPat(OpType.INVALID)
+        case _                                  => BitPat(OpType.INVALID)
       }
     }
   }
@@ -219,7 +220,8 @@ object CSRFields {
     override def default = BitPat(0.U(1.W))
     def genTable(op: IInst): BitPat = {
       op.funct3 match {
-        case CSRFunct3.CSRRWI | CSRFunct3.CSRRSI | CSRFunct3.CSRRCI => BitPat(1.U(1.W))
+        case CSRFunct3.CSRRWI | CSRFunct3.CSRRSI | CSRFunct3.CSRRCI =>
+          BitPat(1.U(1.W))
         case _ => BitPat(0.U(1.W))
       }
     }
@@ -241,10 +243,10 @@ object SystemFields {
     override def default = BitPat(OpType.INVALID)
     def genTable(op: SystemInst): BitPat = {
       op.imm12 match {
-        case SystemImm12.ECALL => BitPat(OpType.ECALL)
+        case SystemImm12.ECALL  => BitPat(OpType.ECALL)
         case SystemImm12.EBREAK => BitPat(OpType.EBREAK)
-        case SystemImm12.MRET => BitPat(OpType.MRET)
-        case _ => BitPat(OpType.INVALID)
+        case SystemImm12.MRET   => BitPat(OpType.MRET)
+        case _                  => BitPat(OpType.INVALID)
       }
     }
   }

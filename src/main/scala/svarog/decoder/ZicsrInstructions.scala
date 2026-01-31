@@ -18,7 +18,7 @@ case class ZicsrInstructions(xlen: Int) extends Module {
     IInst(CSRFunct3.CSRRC, Opcodes.SYSTEM),
     IInst(CSRFunct3.CSRRWI, Opcodes.SYSTEM),
     IInst(CSRFunct3.CSRRSI, Opcodes.SYSTEM),
-    IInst(CSRFunct3.CSRRCI, Opcodes.SYSTEM),
+    IInst(CSRFunct3.CSRRCI, Opcodes.SYSTEM)
   )
 
   // Create decode table
