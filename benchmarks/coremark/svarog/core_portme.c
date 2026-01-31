@@ -64,7 +64,7 @@ barebones_clock()
         hi2 = *mtime_hi;
     } while (hi1 != hi2);
 
-    return lo;
+    return ((CORETIMETYPE)hi1 << 32) | lo;
 }
 /* Define : TIMER_RES_DIVIDER
         Divider to trade off timer resolution and total time that can be
@@ -135,7 +135,9 @@ get_time(void)
 secs_ret
 time_in_secs(CORE_TICKS ticks)
 {
-    secs_ret retval = ((secs_ret)ticks) / (secs_ret)EE_TICKS_PER_SEC;
+    ee_u64   ticks64 = (ee_u64)ticks;
+    secs_ret retval
+        = (secs_ret)(ticks64 / (ee_u64)EE_TICKS_PER_SEC);
     return retval;
 }
 
