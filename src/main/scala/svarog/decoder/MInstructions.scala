@@ -87,7 +87,7 @@ case class MInstructions(xlen: Int) extends Module {
 
   val mTable = new DecodeTable(
     mInstrs,
-    Seq(MulDivTypeFields.mulOpType, mulOp, divOp, RTypeFields.hasImm, RTypeFields.regWrite)
+    Seq(MulDivTypeFields.mulOpType, mulOp, divOp)
   )
 
   val mDecoded = mTable.decode(io.instruction)
@@ -111,7 +111,7 @@ case class MInstructions(xlen: Int) extends Module {
     io.decoded.opType := mDecoded(MulDivTypeFields.mulOpType)
     io.decoded.mulOp := mDecoded(mulOp)
     io.decoded.divOp := mDecoded(divOp)
-    io.decoded.hasImm := mDecoded(RTypeFields.hasImm)
-    io.decoded.regWrite := mDecoded(RTypeFields.regWrite) && (rd =/= 0.U)
+    io.decoded.hasImm := false.B
+    io.decoded.regWrite := true.B
   }
 }

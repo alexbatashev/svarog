@@ -37,6 +37,37 @@ case class ShiftIInst(val funct7: String, val funct3: String, val opcode: String
   def bitPat: BitPat = BitPat("b" + funct7 + shamt + reg + funct3 + reg + opcode)
 }
 
+object LoadFields {
+  case object memWidth extends DecodeField[IInst, MemWidth.Type] {
+    def name = "memWidth"
+    def chiselType = MemWidth()
+    override def default = BitPat(MemWidth.WORD)
+    def genTable(op: IInst): BitPat = {
+      op.funct3 match {
+        case LoadFunct3.LB => BitPat(MemWidth.BYTE)
+        case LoadFunct3.LH => BitPat(MemWidth.HALF)
+        case LoadFunct3.LW => BitPat(MemWidth.WORD)
+        case LoadFunct3.LBU => BitPat(MemWidth.BYTE)
+        case LoadFunct3.LHU => BitPat(MemWidth.HALF)
+        case _ => BitPat(MemWidth.WORD)
+      }
+    }
+  }
+
+  case object memUnsigned extends DecodeField[IInst, Bool] {
+    def name = "memUnsigned"
+    def chiselType = Bool()
+    override def default = BitPat(0.U(1.W))
+    def genTable(op: IInst): BitPat = {
+      op.funct3 match {
+        case LoadFunct3.LBU => BitPat(1.U(1.W))
+        case LoadFunct3.LHU => BitPat(1.U(1.W))
+        case _ => BitPat(0.U(1.W))
+      }
+    }
+  }
+}
+
 case object aluRegOp extends DecodeField[RInst, ALUOp.Type] {
   def name = "aluRegOp"
   def chiselType = ALUOp()
@@ -123,7 +154,6 @@ case class BaseInstructions(xlen: Int) extends Module {
     val instruction = Input(UInt(32.W))
   })
 
-  // Define R-type instructions
   val rTypeInstrs = Seq(
     RInst(Funct7.DEFAULT, Funct3.ADD_SUB, Opcodes.ALU_REG), // Add
     RInst(Funct7.ALT, Funct3.ADD_SUB, Opcodes.ALU_REG), // Sub
@@ -137,40 +167,36 @@ case class BaseInstructions(xlen: Int) extends Module {
     RInst(Funct7.DEFAULT, Funct3.AND, Opcodes.ALU_REG),
   )
 
-  // Define I-type instructions (non-shift)
   val iTypeInstrs = Seq(
-    IInst(Funct3.ADD_SUB, Opcodes.ALU_IMM), // ADDI
-    IInst(Funct3.SLT, Opcodes.ALU_IMM),     // SLTI
-    IInst(Funct3.SLTU, Opcodes.ALU_IMM),    // SLTIU
-    IInst(Funct3.XOR, Opcodes.ALU_IMM),     // XORI
-    IInst(Funct3.OR, Opcodes.ALU_IMM),      // ORI
-    IInst(Funct3.AND, Opcodes.ALU_IMM),     // ANDI
+    IInst(Funct3.ADD_SUB, Opcodes.ALU_IMM),
+    IInst(Funct3.SLT, Opcodes.ALU_IMM),
+    IInst(Funct3.SLTU, Opcodes.ALU_IMM),
+    IInst(Funct3.XOR, Opcodes.ALU_IMM),
+    IInst(Funct3.OR, Opcodes.ALU_IMM),
+    IInst(Funct3.AND, Opcodes.ALU_IMM),
+    IInst(LoadFunct3.LB, Opcodes.LOAD),
+    IInst(LoadFunct3.LH, Opcodes.LOAD),
+    IInst(LoadFunct3.LW, Opcodes.LOAD),
+    IInst(LoadFunct3.LBU, Opcodes.LOAD),
+    IInst(LoadFunct3.LHU, Opcodes.LOAD),
+    IInst(JALRFunct3.JALR, Opcodes.JALR),
   )
 
-  // Define I-type shift instructions (need funct7 to distinguish)
   val shiftITypeInstrs = Seq(
     ShiftIInst(Funct7.DEFAULT, Funct3.SLL, Opcodes.ALU_IMM),     // SLLI
     ShiftIInst(Funct7.DEFAULT, Funct3.SRL_SRA, Opcodes.ALU_IMM), // SRLI
     ShiftIInst(Funct7.ALT, Funct3.SRL_SRA, Opcodes.ALU_IMM),     // SRAI
   )
 
-  // Define U-type instructions (LUI, AUIPC)
   val uTypeInstrs = Seq(
     UInst(Opcodes.LUI),
     UInst(Opcodes.AUIPC),
   )
 
-  // Define J-type instructions (JAL)
   val jTypeInstrs = Seq(
     JInst(Opcodes.JAL),
   )
 
-  // Define JALR instruction (I-type)
-  val jalrInstrs = Seq(
-    IInst(JALRFunct3.JALR, Opcodes.JALR),
-  )
-
-  // Define Branch instructions (B-type)
   val branchInstrs = Seq(
     BInst(BranchFunct3.BEQ, Opcodes.BRANCH),
     BInst(BranchFunct3.BNE, Opcodes.BRANCH),
@@ -180,30 +206,18 @@ case class BaseInstructions(xlen: Int) extends Module {
     BInst(BranchFunct3.BGEU, Opcodes.BRANCH),
   )
 
-  // Define Load instructions (I-type)
-  val loadInstrs = Seq(
-    IInst(LoadFunct3.LB, Opcodes.LOAD),
-    IInst(LoadFunct3.LH, Opcodes.LOAD),
-    IInst(LoadFunct3.LW, Opcodes.LOAD),
-    IInst(LoadFunct3.LBU, Opcodes.LOAD),
-    IInst(LoadFunct3.LHU, Opcodes.LOAD),
-  )
-
-  // Define Store instructions (S-type)
   val storeInstrs = Seq(
     SInst(StoreFunct3.SB, Opcodes.STORE),
     SInst(StoreFunct3.SH, Opcodes.STORE),
     SInst(StoreFunct3.SW, Opcodes.STORE),
   )
 
-  // Define System instructions (ECALL, EBREAK, MRET)
   val systemInstrs = Seq(
     SystemInst(SystemImm12.ECALL),
     SystemInst(SystemImm12.EBREAK),
     SystemInst(SystemImm12.MRET),
   )
 
-  // Define FENCE instructions (I-type)
   val fenceInstrs = Seq(
     IInst(FenceFunct3.FENCE, Opcodes.MISC_MEM),
     IInst(FenceFunct3.FENCE_I, Opcodes.MISC_MEM),
@@ -212,47 +226,37 @@ case class BaseInstructions(xlen: Int) extends Module {
   // Create decode tables
   val rTable = new DecodeTable(
     rTypeInstrs,
-    Seq(RTypeFields.opType, aluRegOp, RTypeFields.hasImm, RTypeFields.regWrite)
+    Seq(RTypeFields.opType, aluRegOp)
   )
 
   val iTable = new DecodeTable(
     iTypeInstrs,
-    Seq(ITypeFields.opType, aluImmOp, ITypeFields.hasImm, ITypeFields.regWrite)
+    Seq(ITypeFields.opType, LoadFields.memWidth, LoadFields.memUnsigned, aluImmOp)
   )
 
   val shiftITable = new DecodeTable(
     shiftITypeInstrs,
-    Seq(ShiftITypeFields.opType, ShiftITypeFields.aluOp, ShiftITypeFields.hasImm, ShiftITypeFields.regWrite)
+    Seq(ShiftITypeFields.opType, ShiftITypeFields.aluOp)
   )
 
   val uTable = new DecodeTable(
     uTypeInstrs,
-    Seq(UTypeFields.opType, UTypeFields.hasImm, UTypeFields.regWrite)
+    Seq(UTypeFields.opType)
   )
 
   val jTable = new DecodeTable(
     jTypeInstrs,
-    Seq(JTypeFields.opType, JTypeFields.hasImm, JTypeFields.regWrite)
-  )
-
-  val jalrTable = new DecodeTable(
-    jalrInstrs,
-    Seq(JALRFields.opType, JALRFields.hasImm, JALRFields.regWrite)
+    Seq(JTypeFields.opType)
   )
 
   val branchTable = new DecodeTable(
     branchInstrs,
-    Seq(BTypeFields.opType, BTypeFields.branchFunc, BTypeFields.hasImm, BTypeFields.regWrite)
-  )
-
-  val loadTable = new DecodeTable(
-    loadInstrs,
-    Seq(LoadFields.opType, LoadFields.memWidth, LoadFields.memUnsigned, LoadFields.hasImm, LoadFields.regWrite)
+    Seq(BTypeFields.opType, BTypeFields.branchFunc)
   )
 
   val storeTable = new DecodeTable(
     storeInstrs,
-    Seq(STypeFields.opType, STypeFields.memWidth, STypeFields.hasImm, STypeFields.regWrite)
+    Seq(STypeFields.opType, STypeFields.memWidth)
   )
 
   val systemTable = new DecodeTable(
@@ -262,7 +266,7 @@ case class BaseInstructions(xlen: Int) extends Module {
 
   val fenceTable = new DecodeTable(
     fenceInstrs,
-    Seq(FenceFields.opType, FenceFields.hasImm, FenceFields.regWrite)
+    Seq(FenceFields.opType)
   )
 
   // Decode the instruction
@@ -271,9 +275,7 @@ case class BaseInstructions(xlen: Int) extends Module {
   val shiftITypeDecoded = shiftITable.decode(io.instruction)
   val uTypeDecoded = uTable.decode(io.instruction)
   val jTypeDecoded = jTable.decode(io.instruction)
-  val jalrTypeDecoded = jalrTable.decode(io.instruction)
   val branchTypeDecoded = branchTable.decode(io.instruction)
-  val loadTypeDecoded = loadTable.decode(io.instruction)
   val storeTypeDecoded = storeTable.decode(io.instruction)
   val systemTypeDecoded = systemTable.decode(io.instruction)
   val fenceTypeDecoded = fenceTable.decode(io.instruction)
@@ -293,9 +295,7 @@ case class BaseInstructions(xlen: Int) extends Module {
   val iTypeValid = iTypeDecoded(ITypeFields.opType) =/= OpType.INVALID
   val uTypeValid = uTypeDecoded(UTypeFields.opType) =/= OpType.INVALID
   val jTypeValid = jTypeDecoded(JTypeFields.opType) =/= OpType.INVALID
-  val jalrTypeValid = jalrTypeDecoded(JALRFields.opType) =/= OpType.INVALID
   val branchTypeValid = branchTypeDecoded(BTypeFields.opType) =/= OpType.INVALID
-  val loadTypeValid = loadTypeDecoded(LoadFields.opType) =/= OpType.INVALID
   val storeTypeValid = storeTypeDecoded(STypeFields.opType) =/= OpType.INVALID
   val systemTypeValid = systemTypeDecoded(SystemFields.opType) =/= OpType.INVALID
   val fenceTypeValid = fenceTypeDecoded(FenceFields.opType) =/= OpType.INVALID
@@ -312,61 +312,49 @@ case class BaseInstructions(xlen: Int) extends Module {
   when(rTypeValid) {
     io.decoded.opType := rTypeDecoded(RTypeFields.opType)
     io.decoded.aluOp := rTypeDecoded(aluRegOp)
-    io.decoded.hasImm := rTypeDecoded(RTypeFields.hasImm)
-    io.decoded.regWrite := rTypeDecoded(RTypeFields.regWrite) && (rd =/= 0.U)
+    io.decoded.hasImm := false.B
+    io.decoded.regWrite := true.B
     io.decoded.rs2 := rs2
   }.elsewhen(shiftITypeValid) {
     io.decoded.opType := shiftITypeDecoded(ShiftITypeFields.opType)
     io.decoded.aluOp := shiftITypeDecoded(ShiftITypeFields.aluOp)
-    io.decoded.hasImm := shiftITypeDecoded(ShiftITypeFields.hasImm)
-    io.decoded.regWrite := shiftITypeDecoded(ShiftITypeFields.regWrite) && (rd =/= 0.U)
+    io.decoded.hasImm := true.B
+    io.decoded.regWrite := true.B
     io.decoded.rs2 := 0.U
     io.immGen.format := ImmFormat.I
   }.elsewhen(iTypeValid) {
     io.decoded.opType := iTypeDecoded(ITypeFields.opType)
     io.decoded.aluOp := iTypeDecoded(aluImmOp)
-    io.decoded.hasImm := iTypeDecoded(ITypeFields.hasImm)
-    io.decoded.regWrite := iTypeDecoded(ITypeFields.regWrite) && (rd =/= 0.U)
-    io.decoded.rs2 := 0.U
-    io.immGen.format := ImmFormat.I
-  }.elsewhen(loadTypeValid) {
-    io.decoded.opType := loadTypeDecoded(LoadFields.opType)
-    io.decoded.memWidth := loadTypeDecoded(LoadFields.memWidth)
-    io.decoded.memUnsigned := loadTypeDecoded(LoadFields.memUnsigned)
-    io.decoded.hasImm := loadTypeDecoded(LoadFields.hasImm)
-    io.decoded.regWrite := loadTypeDecoded(LoadFields.regWrite) && (rd =/= 0.U)
+    io.decoded.hasImm := true.B
+    io.decoded.regWrite := true.B
+    io.decoded.memWidth := iTypeDecoded(LoadFields.memWidth)
+    io.decoded.memUnsigned := iTypeDecoded(LoadFields.memUnsigned)
     io.decoded.rs2 := 0.U
     io.immGen.format := ImmFormat.I
   }.elsewhen(storeTypeValid) {
     io.decoded.opType := storeTypeDecoded(STypeFields.opType)
     io.decoded.memWidth := storeTypeDecoded(STypeFields.memWidth)
-    io.decoded.hasImm := storeTypeDecoded(STypeFields.hasImm)
-    io.decoded.regWrite := storeTypeDecoded(STypeFields.regWrite)
+    io.decoded.hasImm := true.B
+    io.decoded.regWrite := false.B
     io.decoded.rs2 := rs2
     io.immGen.format := ImmFormat.S
   }.elsewhen(branchTypeValid) {
     io.decoded.opType := branchTypeDecoded(BTypeFields.opType)
     io.decoded.branchFunc := branchTypeDecoded(BTypeFields.branchFunc)
-    io.decoded.hasImm := branchTypeDecoded(BTypeFields.hasImm)
-    io.decoded.regWrite := branchTypeDecoded(BTypeFields.regWrite)
+    io.decoded.hasImm := true.B
+    io.decoded.regWrite := false.B
     io.decoded.rs2 := rs2
     io.immGen.format := ImmFormat.B
-  }.elsewhen(jalrTypeValid) {
-    io.decoded.opType := jalrTypeDecoded(JALRFields.opType)
-    io.decoded.hasImm := jalrTypeDecoded(JALRFields.hasImm)
-    io.decoded.regWrite := jalrTypeDecoded(JALRFields.regWrite) && (rd =/= 0.U)
-    io.decoded.rs2 := 0.U
-    io.immGen.format := ImmFormat.I
   }.elsewhen(jTypeValid) {
     io.decoded.opType := jTypeDecoded(JTypeFields.opType)
-    io.decoded.hasImm := jTypeDecoded(JTypeFields.hasImm)
-    io.decoded.regWrite := jTypeDecoded(JTypeFields.regWrite) && (rd =/= 0.U)
+    io.decoded.hasImm := true.B
+    io.decoded.regWrite := true.B
     io.decoded.rs2 := 0.U
     io.immGen.format := ImmFormat.J
   }.elsewhen(uTypeValid) {
     io.decoded.opType := uTypeDecoded(UTypeFields.opType)
-    io.decoded.hasImm := uTypeDecoded(UTypeFields.hasImm)
-    io.decoded.regWrite := uTypeDecoded(UTypeFields.regWrite) && (rd =/= 0.U)
+    io.decoded.hasImm := true.B
+    io.decoded.regWrite := true.B
     io.decoded.rs2 := 0.U
     io.immGen.format := ImmFormat.U
   }.elsewhen(systemTypeValid) {
@@ -376,8 +364,8 @@ case class BaseInstructions(xlen: Int) extends Module {
     io.decoded.rs2 := 0.U
   }.elsewhen(fenceTypeValid) {
     io.decoded.opType := fenceTypeDecoded(FenceFields.opType)
-    io.decoded.hasImm := fenceTypeDecoded(FenceFields.hasImm)
-    io.decoded.regWrite := fenceTypeDecoded(FenceFields.regWrite)
+    io.decoded.hasImm := false.B
+    io.decoded.regWrite := false.B
     io.decoded.rs2 := 0.U
   }
 

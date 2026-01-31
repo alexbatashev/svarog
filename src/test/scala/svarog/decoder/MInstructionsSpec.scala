@@ -138,47 +138,6 @@ class MInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
     }
   }
 
-  it should "not write to x0 register" in {
-    val vectors = Seq(
-      DecodeVector(
-        pc = 0,
-        instruction = BigInt("02208033", 16), // mul x0, x1, x2
-        check = { dut =>
-          dut.io.decoded.opType.expect(OpType.MUL)
-          dut.io.decoded.rd.expect(0.U)
-          dut.io.decoded.regWrite.expect(false.B) // Should be false for x0
-        }
-      ),
-      DecodeVector(
-        pc = 4,
-        instruction = BigInt("0220C033", 16), // div x0, x1, x2
-        check = { dut =>
-          dut.io.decoded.opType.expect(OpType.DIV)
-          dut.io.decoded.rd.expect(0.U)
-          dut.io.decoded.regWrite.expect(false.B) // Should be false for x0
-        }
-      ),
-      DecodeVector(
-        pc = 8,
-        instruction = BigInt("02208133", 16), // mul x2, x1, x2
-        check = { dut =>
-          dut.io.decoded.opType.expect(OpType.MUL)
-          dut.io.decoded.rd.expect(2.U)
-          dut.io.decoded.regWrite.expect(true.B) // Should be true for non-x0
-        }
-      )
-    )
-
-    simulate(new MInstructions(xlen)) { dut =>
-      for (vector <- vectors) {
-        dut.io.instruction.poke(vector.instruction.U)
-        dut.io.pc.poke(vector.pc.U)
-        dut.clock.step(1)
-        vector.check(dut)
-      }
-    }
-  }
-
   it should "mark non-M-extension instructions as INVALID" in {
     val vectors = Seq(
       DecodeVector(

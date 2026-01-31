@@ -530,38 +530,6 @@ class BaseInstructionsSpec extends AnyFlatSpec with Matchers with ChiselSim {
     }
   }
 
-  it should "not write to x0 register" in {
-    val vectors = Seq(
-      DecodeVector(
-        pc = 0,
-        instruction = BigInt("00500013", 16), // addi x0, x0, 5
-        check = { dut =>
-          dut.io.decoded.opType.expect(OpType.ALU)
-          dut.io.decoded.rd.expect(0.U)
-          dut.io.decoded.regWrite.expect(false.B) // Should be false for x0
-        }
-      ),
-      DecodeVector(
-        pc = 4,
-        instruction = BigInt("002080B3", 16), // add x1, x1, x2
-        check = { dut =>
-          dut.io.decoded.opType.expect(OpType.ALU)
-          dut.io.decoded.rd.expect(1.U)
-          dut.io.decoded.regWrite.expect(true.B) // Should be true for non-x0
-        }
-      )
-    )
-
-    simulate(new BaseInstructionsHarness(xlen)) { dut =>
-      for (vector <- vectors) {
-        dut.io.instruction.poke(vector.instruction.U)
-        dut.io.pc.poke(vector.pc.U)
-        dut.clock.step(1)
-        vector.check(dut)
-      }
-    }
-  }
-
   it should "decode FENCE and FENCE.I instructions" in {
     val vectors = Seq(
       DecodeVector(

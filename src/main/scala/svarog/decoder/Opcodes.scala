@@ -87,20 +87,6 @@ object RTypeFields {
     override def default = BitPat(OpType.INVALID)
     def genTable(op: RInst): BitPat = BitPat(OpType.ALU)
   }
-
-  case object hasImm extends DecodeField[RInst, Bool] {
-    def name = "hasImm"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: RInst): BitPat = BitPat(0.U(1.W)) // R-type never has immediate
-  }
-
-  case object regWrite extends DecodeField[RInst, Bool] {
-    def name = "regWrite"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: RInst): BitPat = BitPat(1.U(1.W)) // R-type always writes (will gate by rd != 0 later)
-  }
 }
 
 // DecodeField implementations for I-type instructions (non-shift)
@@ -109,21 +95,12 @@ object ITypeFields {
     def name = "opType"
     def chiselType = OpType()
     override def default = BitPat(OpType.INVALID)
-    def genTable(op: IInst): BitPat = BitPat(OpType.ALU)
-  }
-
-  case object hasImm extends DecodeField[IInst, Bool] {
-    def name = "hasImm"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: IInst): BitPat = BitPat(1.U(1.W)) // I-type always has immediate
-  }
-
-  case object regWrite extends DecodeField[IInst, Bool] {
-    def name = "regWrite"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: IInst): BitPat = BitPat(1.U(1.W))
+    def genTable(op: IInst): BitPat = op.opcode match {
+      case Opcodes.ALU_IMM => BitPat(OpType.ALU)
+      case Opcodes.LOAD => BitPat(OpType.LOAD)
+      case Opcodes.JALR => BitPat(OpType.JALR)
+      case _ => BitPat(OpType.INVALID)
+    }
   }
 }
 
@@ -141,20 +118,6 @@ object UTypeFields {
       }
     }
   }
-
-  case object hasImm extends DecodeField[UInst, Bool] {
-    def name = "hasImm"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: UInst): BitPat = BitPat(1.U(1.W))
-  }
-
-  case object regWrite extends DecodeField[UInst, Bool] {
-    def name = "regWrite"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: UInst): BitPat = BitPat(1.U(1.W))
-  }
 }
 
 // DecodeField implementations for J-type instructions (JAL)
@@ -164,20 +127,6 @@ object JTypeFields {
     def chiselType = OpType()
     override def default = BitPat(OpType.INVALID)
     def genTable(op: JInst): BitPat = BitPat(OpType.JAL)
-  }
-
-  case object hasImm extends DecodeField[JInst, Bool] {
-    def name = "hasImm"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: JInst): BitPat = BitPat(1.U(1.W))
-  }
-
-  case object regWrite extends DecodeField[JInst, Bool] {
-    def name = "regWrite"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: JInst): BitPat = BitPat(1.U(1.W))
   }
 }
 
@@ -206,20 +155,6 @@ object BTypeFields {
       }
     }
   }
-
-  case object hasImm extends DecodeField[BInst, Bool] {
-    def name = "hasImm"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: BInst): BitPat = BitPat(1.U(1.W))
-  }
-
-  case object regWrite extends DecodeField[BInst, Bool] {
-    def name = "regWrite"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: BInst): BitPat = BitPat(0.U(1.W)) // Branches don't write to registers
-  }
 }
 
 // DecodeField implementations for S-type instructions (stores)
@@ -244,97 +179,6 @@ object STypeFields {
       }
     }
   }
-
-  case object hasImm extends DecodeField[SInst, Bool] {
-    def name = "hasImm"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: SInst): BitPat = BitPat(1.U(1.W))
-  }
-
-  case object regWrite extends DecodeField[SInst, Bool] {
-    def name = "regWrite"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: SInst): BitPat = BitPat(0.U(1.W)) // Stores don't write to registers
-  }
-}
-
-// DecodeField implementations for Load instructions (I-type with memory operations)
-object LoadFields {
-  case object opType extends DecodeField[IInst, OpType.Type] {
-    def name = "opType"
-    def chiselType = OpType()
-    override def default = BitPat(OpType.INVALID)
-    def genTable(op: IInst): BitPat = BitPat(OpType.LOAD)
-  }
-
-  case object memWidth extends DecodeField[IInst, MemWidth.Type] {
-    def name = "memWidth"
-    def chiselType = MemWidth()
-    override def default = BitPat(MemWidth.WORD)
-    def genTable(op: IInst): BitPat = {
-      op.funct3 match {
-        case LoadFunct3.LB => BitPat(MemWidth.BYTE)
-        case LoadFunct3.LH => BitPat(MemWidth.HALF)
-        case LoadFunct3.LW => BitPat(MemWidth.WORD)
-        case LoadFunct3.LBU => BitPat(MemWidth.BYTE)
-        case LoadFunct3.LHU => BitPat(MemWidth.HALF)
-        case _ => BitPat(MemWidth.WORD)
-      }
-    }
-  }
-
-  case object memUnsigned extends DecodeField[IInst, Bool] {
-    def name = "memUnsigned"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: IInst): BitPat = {
-      op.funct3 match {
-        case LoadFunct3.LBU => BitPat(1.U(1.W))
-        case LoadFunct3.LHU => BitPat(1.U(1.W))
-        case _ => BitPat(0.U(1.W))
-      }
-    }
-  }
-
-  case object hasImm extends DecodeField[IInst, Bool] {
-    def name = "hasImm"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: IInst): BitPat = BitPat(1.U(1.W))
-  }
-
-  case object regWrite extends DecodeField[IInst, Bool] {
-    def name = "regWrite"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: IInst): BitPat = BitPat(1.U(1.W))
-  }
-}
-
-// DecodeField implementations for JALR (I-type with special handling)
-object JALRFields {
-  case object opType extends DecodeField[IInst, OpType.Type] {
-    def name = "opType"
-    def chiselType = OpType()
-    override def default = BitPat(OpType.INVALID)
-    def genTable(op: IInst): BitPat = BitPat(OpType.JALR)
-  }
-
-  case object hasImm extends DecodeField[IInst, Bool] {
-    def name = "hasImm"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: IInst): BitPat = BitPat(1.U(1.W))
-  }
-
-  case object regWrite extends DecodeField[IInst, Bool] {
-    def name = "regWrite"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: IInst): BitPat = BitPat(1.U(1.W))
-  }
 }
 
 // DecodeField implementations for FENCE instructions
@@ -350,20 +194,6 @@ object FenceFields {
         case _ => BitPat(OpType.INVALID)
       }
     }
-  }
-
-  case object hasImm extends DecodeField[IInst, Bool] {
-    def name = "hasImm"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: IInst): BitPat = BitPat(0.U(1.W))
-  }
-
-  case object regWrite extends DecodeField[IInst, Bool] {
-    def name = "regWrite"
-    def chiselType = Bool()
-    override def default = BitPat(0.U(1.W))
-    def genTable(op: IInst): BitPat = BitPat(0.U(1.W))
   }
 }
 
