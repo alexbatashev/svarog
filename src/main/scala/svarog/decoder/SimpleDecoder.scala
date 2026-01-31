@@ -37,11 +37,11 @@ class SimpleDecoder(xlen: Int) extends Module {
 
   val mDecoder = Some(Module(new MInstructions(xlen)))
 
-  io.decoded.bits := MicroOp.getInvalid(xlen)
+  // Start with base decoder result (which always provides valid PC even for INVALID instructions)
+  io.decoded.bits := baseDecoder.io.decoded
 
-  when(baseDecoder.io.decoded.opType =/= OpType.INVALID) {
-    io.decoded.bits := baseDecoder.io.decoded
-  }.elsewhen(zicsrDecoder.io.decoded.opType =/= OpType.INVALID) {
+  // Override with more specific decoders if they match
+  when(zicsrDecoder.io.decoded.opType =/= OpType.INVALID) {
     io.decoded.bits := zicsrDecoder.io.decoded
   }
 

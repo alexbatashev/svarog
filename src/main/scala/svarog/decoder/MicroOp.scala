@@ -24,6 +24,10 @@ object OpType extends ChiselEnum {
   val CSRRC = Value
   val SYSTEM = Value
   val MRET = Value
+  val EBREAK = Value
+  val ECALL = Value
+  val FENCE = Value
+  val FENCE_I = Value
 }
 
 class MicroOp(val xlen: Int) extends Bundle {
@@ -41,7 +45,6 @@ class MicroOp(val xlen: Int) extends Bundle {
   val branchFunc = Output(BranchOp.Type())
   val regWrite = Output(Bool())
   val pc = Output(UInt(xlen.W))
-  val isEcall = Output(Bool())
   val csrAddr = Output(UInt(12.W))
 
   def illegal: Bool = opType === OpType.INVALID
@@ -64,7 +67,6 @@ object MicroOp {
     invalid.branchFunc := BranchOp.INVALID
     invalid.regWrite := false.B
     invalid.pc := 0.U
-    invalid.isEcall := false.B
     invalid.csrAddr := 0.U
     invalid
   }
