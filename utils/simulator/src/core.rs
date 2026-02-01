@@ -11,6 +11,18 @@ use crate::{ModelId, RegisterFile, TestResult};
 /// RTC clock divider - rtcClock runs 50x slower than main clock
 const RTC_CLOCK_DIVIDER: u64 = 50;
 
+pub enum Backend {
+    Verilator,
+    VerilatorMonitored,
+}
+
+trait SimulatorImpl {
+    fn xlen(&self, hart: u32) -> u8;
+    fn isa(&self, hart: u32) -> &'static str;
+    fn backend(&self) -> Backend;
+    fn name(&self) -> &'static str;
+}
+
 pub struct Simulator {
     model: VerilatorModelVariant,
     timestamp: RefCell<u64>,
