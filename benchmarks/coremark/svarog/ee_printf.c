@@ -50,7 +50,7 @@ skip_atoi(const char **s)
 }
 
 static char *
-number(char *str, long num, int base, int size, int precision, int type)
+number(char *str, long long num, int base, int size, int precision, int type)
 {
     char  c, sign, tmp[66];
     char *dig = digits;
@@ -101,8 +101,8 @@ number(char *str, long num, int base, int size, int precision, int type)
     {
         while (num != 0)
         {
-            tmp[i++] = dig[((unsigned long)num) % (unsigned)base];
-            num      = ((unsigned long)num) / (unsigned)base;
+            tmp[i++] = dig[((unsigned long long)num) % (unsigned)base];
+            num      = ((unsigned long long)num) / (unsigned)base;
         }
     }
 
@@ -461,7 +461,7 @@ static int
 ee_vsprintf(char *buf, const char *fmt, va_list args)
 {
     int           len;
-    unsigned long num;
+    unsigned long long num;
     int           i, base;
     char *        str;
     char *        s;
@@ -541,6 +541,11 @@ ee_vsprintf(char *buf, const char *fmt, va_list args)
         {
             qualifier = *fmt;
             fmt++;
+            if (qualifier == 'l' && *fmt == 'l')
+            {
+                qualifier = 'L';
+                fmt++;
+            }
         }
 
         // Default base
@@ -645,8 +650,20 @@ ee_vsprintf(char *buf, const char *fmt, va_list args)
                 continue;
         }
 
-        if (qualifier == 'l')
-            num = va_arg(args, unsigned long);
+        if (qualifier == 'L')
+        {
+            if (flags & SIGN)
+                num = va_arg(args, long long);
+            else
+                num = va_arg(args, unsigned long long);
+        }
+        else if (qualifier == 'l')
+        {
+            if (flags & SIGN)
+                num = va_arg(args, long long);
+            else
+                num = va_arg(args, unsigned long long);
+        }
         else if (flags & SIGN)
             num = va_arg(args, int);
         else

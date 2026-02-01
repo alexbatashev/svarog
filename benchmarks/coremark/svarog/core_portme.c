@@ -82,6 +82,44 @@ barebones_clock()
 
 /** Define Host specific (POSIX), or target specific global time variables. */
 static CORETIMETYPE start_time_val, stop_time_val;
+static ee_u64 cycle_start, cycle_end;
+static ee_u64 instret_start, instret_end;
+
+static ee_u64 read_cycle_counter(void)
+{
+#if __riscv_xlen == 32
+    ee_u32 hi1, lo, hi2;
+    do
+    {
+        asm volatile("rdcycleh %0" : "=r"(hi1));
+        asm volatile("rdcycle %0" : "=r"(lo));
+        asm volatile("rdcycleh %0" : "=r"(hi2));
+    } while (hi1 != hi2);
+    return ((ee_u64)hi1 << 32) | lo;
+#else
+    ee_u64 val;
+    asm volatile("rdcycle %0" : "=r"(val));
+    return val;
+#endif
+}
+
+static ee_u64 read_instret_counter(void)
+{
+#if __riscv_xlen == 32
+    ee_u32 hi1, lo, hi2;
+    do
+    {
+        asm volatile("rdinstreth %0" : "=r"(hi1));
+        asm volatile("rdinstret %0" : "=r"(lo));
+        asm volatile("rdinstreth %0" : "=r"(hi2));
+    } while (hi1 != hi2);
+    return ((ee_u64)hi1 << 32) | lo;
+#else
+    ee_u64 val;
+    asm volatile("rdinstret %0" : "=r"(val));
+    return val;
+#endif
+}
 
 /* Function : start_time
         This function will be called right before starting the timed portion of
@@ -167,6 +205,9 @@ portable_init(core_portable *p, int *argc, char *argv[])
     coremark_mem_idx = 0;
 #endif
     p->portable_id = 1;
+
+    cycle_start = read_cycle_counter();
+    instret_start = read_instret_counter();
 }
 /* Function : portable_fini
         Target specific final code
@@ -175,6 +216,12 @@ void
 portable_fini(core_portable *p)
 {
     p->portable_id = 0;
+
+    cycle_end = read_cycle_counter();
+    instret_end = read_instret_counter();
+
+    ee_printf("CoreMark cycle count  : %llu\n", cycle_end - cycle_start);
+    ee_printf("CoreMark instret count: %llu\n", instret_end - instret_start);
 }
 
 void *

@@ -16,6 +16,7 @@ class Writeback(xlen: Int) extends Module {
     val debugPC = Valid(UInt(xlen.W))
     val debugStore = Valid(UInt(xlen.W)) // For watchpoint support
     val halt = Input(Bool())
+    val retired = Output(Bool())
   })
 
   // Always ready - don't backpressure based on halt
@@ -35,6 +36,8 @@ class Writeback(xlen: Int) extends Module {
   // Watchpoint support: signal store operations
   io.debugStore.valid := io.in.valid && io.in.bits.isStore
   io.debugStore.bits := io.in.bits.storeAddr
+
+  io.retired := io.in.valid
 
   io.regFile.writeEn := false.B
   io.regFile.writeAddr := 0.U

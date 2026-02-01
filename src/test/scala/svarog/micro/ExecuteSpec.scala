@@ -12,7 +12,8 @@ import svarog.config.ISA
 class ExecuteSpec extends AnyFlatSpec with Matchers with ChiselSim {
   behavior of "Execute"
 
-  private val isa = ISA(xlen = 32, mult = true, zmmul = true, zicsr = true)
+  private val isa =
+    ISA(xlen = 32, mult = true, zmmul = true, zicsr = true, zicntr = false)
 
   it should "compute ADDI correctly" in {
     simulate(new Execute(isa)) { dut =>

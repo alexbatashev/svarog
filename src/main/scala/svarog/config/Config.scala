@@ -17,12 +17,15 @@ import scala.util.Try
   *   Multiplication only extension support, implied by 'M'
   * @param zicsr
   *   Control and Status Register support, must be always present
+  * @param zicntr
+  *   Base counters (cycle/instret) support
   */
 case class ISA(
     xlen: Int,
     mult: Boolean,
     zmmul: Boolean,
-    zicsr: Boolean
+    zicsr: Boolean,
+    zicntr: Boolean
 )
 
 object ISA {
@@ -53,7 +56,7 @@ object ISA {
           }
 
           val supportedBase = Set('i', 'm')
-          val supportedZ = Set("zmmul", "zicsr")
+          val supportedZ = Set("zmmul", "zicsr", "zicntr")
 
           val unsupportedBase = baseExtensions -- supportedBase
           val unsupportedZ = zExtensions -- supportedZ
@@ -70,7 +73,8 @@ object ISA {
             mult = baseExtensions.contains('m'),
             zmmul =
               zExtensions.contains("zmmul") || baseExtensions.contains('m'),
-            zicsr = zExtensions.contains("zicsr")
+            zicsr = zExtensions.contains("zicsr"),
+            zicntr = zExtensions.contains("zicntr")
           )
         }
 
