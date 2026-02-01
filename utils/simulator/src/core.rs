@@ -1,8 +1,8 @@
 use std::{cell::RefCell, convert::TryInto, path::Path};
 
 use anyhow::{Context, Result};
-use elf::{ElfBytes, endian::AnyEndian};
 use elf::abi::{SHF_ALLOC, SHT_NOBITS};
+use elf::{ElfBytes, endian::AnyEndian};
 
 use crate::models::{VerilatorModelVariant, create_model};
 use crate::uart::UartDecoder;
@@ -211,9 +211,7 @@ impl Simulator {
                     continue;
                 }
 
-                let name = strtab
-                    .get(shdr.sh_name as usize)
-                    .unwrap_or("<unknown>");
+                let name = strtab.get(shdr.sh_name as usize).unwrap_or("<unknown>");
                 let (data, _) = file.section_data(&shdr)?;
                 let start_addr = shdr.sh_addr as u32;
                 self.upload_section(name, data, start_addr);
