@@ -26,3 +26,8 @@ harness = false
 name = "direct-tests"
 path = "tests/direct-tests.rs"
 harness = false
+
+[[test]]
+name = "riscv-arch"
+path = "tests/riscv-arch.rs"
+harness = false

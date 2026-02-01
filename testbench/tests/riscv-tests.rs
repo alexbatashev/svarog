@@ -106,7 +106,8 @@ fn run_test_impl(test_path: &Path, model_id: ModelId) -> Result<()> {
 
     // Run Spike and compare architectural state
     println!("Running Spike for {}", test_name);
-    let spike_result = run_spike_test(test_path, tohost_addr).context("Spike simulation failed")?;
+    let spike_result =
+        run_spike_test(test_path, tohost_addr, "RV32I").context("Spike simulation failed")?;
 
     println!("Comparing architectural state");
     compare_results(&verilator_result, &spike_result)?;
