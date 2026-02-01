@@ -149,7 +149,7 @@ fn build_direct_tests(sh: &Shell, workspace_dir: &Path) -> Result<()> {
             // Compile and link in one step
             cmd!(
                 sh,
-                "riscv32-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -nostdlib -nostartfiles -static -T {linker_script} -o {output_elf} {crt0} {path}"
+                "riscv32-unknown-elf-gcc -march=rv32i_zicsr_zicntr -mabi=ilp32 -nostdlib -nostartfiles -static -T {linker_script} -o {output_elf} {crt0} {path}"
             )
             .run()
             .with_context(|| format!("Failed to build direct test: {}", test_name))?;

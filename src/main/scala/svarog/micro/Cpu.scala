@@ -22,6 +22,7 @@ import svarog.config.Cluster
 import svarog.csr.{
   CSRBusAdapter,
   CSRXbar,
+  CounterCSR,
   MachineInfoCSR,
   MachineCSR,
   InterruptCSR
@@ -56,12 +57,20 @@ class Cpu(
   val machineInfoCSR = LazyModule(new MachineInfoCSR(hartId))
   val machineCSR = LazyModule(new MachineCSR(xlen))
   val interruptCSR = LazyModule(new InterruptCSR)
+  val counterCSR = if (config.isa.zicntr) {
+    Some(LazyModule(new CounterCSR(xlen)))
+  } else {
+    None
+  }
 
   // Connect CSR nodes
   csrXbar.node := csrAdapter.node
   machineInfoCSR.node := csrXbar.node
   machineCSR.node := csrXbar.node
   interruptCSR.node := csrXbar.node
+  counterCSR.foreach { counter =>
+    counter.node := csrXbar.node
+  }
 
   lazy val module = new CpuImp(this)
 }
@@ -298,4 +307,9 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
   execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold ||
     trapFlushHold || memory.io.hazard.valid
   writeback.io.halt := halt
+
+  outer.counterCSR.foreach { counter =>
+    counter.module.io.cycleTick := true.B
+    counter.module.io.instretTick := writeback.io.retired
+  }
 }
