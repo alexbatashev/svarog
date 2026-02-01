@@ -18,7 +18,7 @@ class ConfigSpec extends AnyFlatSpec with Matchers {
       mult = false,
       zmmul = false,
       zicsr = false,
-      zicntr = false,
+      zicntr = false
     )
   }
 
@@ -30,7 +30,7 @@ class ConfigSpec extends AnyFlatSpec with Matchers {
       mult = false,
       zmmul = false,
       zicsr = false,
-      zicntr = false,
+      zicntr = false
     )
   }
 
@@ -42,7 +42,7 @@ class ConfigSpec extends AnyFlatSpec with Matchers {
       mult = true,
       zmmul = true, // M extension implies zmmul
       zicsr = false,
-      zicntr = false,
+      zicntr = false
     )
   }
 
@@ -54,7 +54,7 @@ class ConfigSpec extends AnyFlatSpec with Matchers {
       mult = false,
       zmmul = false,
       zicsr = true,
-      zicntr = false,
+      zicntr = false
     )
   }
 
@@ -66,7 +66,7 @@ class ConfigSpec extends AnyFlatSpec with Matchers {
       mult = false,
       zmmul = true,
       zicsr = false,
-      zicntr = false,
+      zicntr = false
     )
   }
 
@@ -78,7 +78,7 @@ class ConfigSpec extends AnyFlatSpec with Matchers {
       mult = true,
       zmmul = true,
       zicsr = true,
-      zicntr = false,
+      zicntr = false
     )
   }
 
@@ -90,7 +90,7 @@ class ConfigSpec extends AnyFlatSpec with Matchers {
       mult = true,
       zmmul = true, // M extension implies zmmul
       zicsr = true,
-      zicntr = false,
+      zicntr = false
     )
   }
 
@@ -102,7 +102,7 @@ class ConfigSpec extends AnyFlatSpec with Matchers {
       mult = true,
       zmmul = true, // M extension implies zmmul
       zicsr = true,
-      zicntr = false,
+      zicntr = false
     )
   }
 
@@ -195,7 +195,7 @@ class ConfigSpec extends AnyFlatSpec with Matchers {
         mult = true,
         zmmul = true, // M extension implies zmmul
         zicsr = true,
-        zicntr = false,
+        zicntr = false
       )
     )
   }
@@ -222,7 +222,7 @@ numCores: 4
           mult = true,
           zmmul = true,
           zicsr = true,
-          zicntr = false,
+          zicntr = false
         ), // M extension implies zmmul
         numCores = 4
       )
@@ -263,7 +263,8 @@ memories: []
         clusters = Seq(
           Cluster(
             coreType = Micro,
-            isa = ISA(32, mult = true, zmmul = true, zicsr = false, zicntr = false),
+            isa =
+              ISA(32, mult = true, zmmul = true, zicsr = false, zicntr = false),
             numCores = 2
           )
         ),
