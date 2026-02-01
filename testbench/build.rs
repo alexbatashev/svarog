@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::Path;
-use xshell::{cmd, Shell};
+use xshell::{Shell, cmd};
 
 fn main() -> Result<()> {
     let sh = Shell::new()?;
@@ -171,6 +171,28 @@ fn build_riscv_arch_tests(sh: &Shell, riscv_arch_dir: &Path) -> Result<()> {
 
     if !suite_dir.exists() {
         anyhow::bail!("Missing riscv-arch-test suite at {:?}", suite_dir);
+    }
+
+    // Patch arch_test.h to disable compressed instructions
+    let patch_stamp = riscv_arch_dir.join(".svarog_norvc_patch_applied");
+    if !patch_stamp.exists() {
+        sh.change_dir(riscv_arch_dir);
+
+        // Read the arch_test.h file
+        let arch_test_content =
+            std::fs::read_to_string(&arch_header).context("Failed to read arch_test.h")?;
+
+        // Replace all .option rvc with .option norvc
+        let patched_content = arch_test_content.replace(".option rvc", ".option norvc");
+
+        // Write back the patched file
+        std::fs::write(&arch_header, patched_content)
+            .context("Failed to write patched arch_test.h")?;
+
+        // Create stamp file to avoid re-patching
+        cmd!(sh, "touch {patch_stamp}").run()?;
+
+        println!("cargo:warning=Patched arch_test.h to disable compressed instructions");
     }
 
     let suites = [("I", "rv32i_zicsr"), ("M", "rv32im_zicsr")];

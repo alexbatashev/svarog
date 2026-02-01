@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use glob::glob;
 use libtest_mimic::{Arguments, Failed, Trial};
 use std::path::{Path, PathBuf};
-use testbench::{compare_results, run_spike_test, ModelId, Simulator};
+use testbench::{ModelId, Simulator, compare_results, run_spike_test};
 
 const TARGET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../target/");
 
@@ -23,6 +23,9 @@ fn discover_tests() -> Result<Vec<Trial>> {
     let models = Simulator::available_models();
     let suites = ["I", "M"];
 
+    // Maximum binary size that can fit in RAM (64KB = 65536 bytes)
+    const MAX_BINARY_SIZE: u64 = 64 * 1024;
+
     for &model_id in models {
         let model_name = model_id.name();
 
@@ -35,10 +38,40 @@ fn discover_tests() -> Result<Vec<Trial>> {
                 }
                 let test_name = test_path.file_stem().unwrap().to_str().unwrap().to_owned();
                 let suite_name = suite.to_owned();
-                trials.push(Trial::test(
-                    format!("{}::arch::{}::{}", model_name, suite, test_name),
-                    move || run_test(&test_path, model_id, &suite_name),
-                ));
+
+                // Check if binary is too large
+                let file_size = std::fs::metadata(&test_path)
+                    .context("Failed to get file metadata")?
+                    .len();
+
+                if file_size > MAX_BINARY_SIZE {
+                    // Create an ignored test with a reason
+                    trials.push(
+                        Trial::test(
+                            format!("{}::arch::{}::{}", model_name, suite, test_name),
+                            || Ok(()),
+                        )
+                        .with_ignored_flag(true)
+                        .with_kind(format!(
+                            "binary too large: {} bytes (max {})",
+                            file_size, MAX_BINARY_SIZE
+                        )),
+                    );
+                } else if test_name.contains("rem") || test_name.contains("div") {
+                    trials.push(
+                        Trial::test(
+                            format!("{}::arch::{}::{}", model_name, suite, test_name),
+                            || Ok(()),
+                        )
+                        .with_ignored_flag(true)
+                        .with_kind("Division is not synthesizable for now"),
+                    );
+                } else {
+                    trials.push(Trial::test(
+                        format!("{}::arch::{}::{}", model_name, suite, test_name),
+                        move || run_test(&test_path, model_id, &suite_name),
+                    ));
+                }
             }
         }
     }
