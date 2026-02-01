@@ -21,6 +21,34 @@ trait SimulatorImpl {
     fn isa(&self, hart: u32) -> &'static str;
     fn backend(&self) -> Backend;
     fn name(&self) -> &'static str;
+
+    fn set_clock(&mut self, value: u8);
+    fn set_reset(&mut self, value: u8);
+
+    fn set_debug_hart_in_id_valid(&mut self, value: u8);
+    fn set_debug_hart_in_id_bits(&mut self, value: u32);
+    fn set_debug_hart_in_bits_halt_valid(&mut self, value: u8);
+    fn set_debug_hart_in_bits_halt_bits(&mut self, value: u8);
+    fn set_debug_hart_in_bits_breakpoint_valid(&mut self, value: u8);
+    fn set_debug_hart_in_bits_breakpoint_bits_pc(&mut self, value: u32);
+    fn set_debug_hart_in_bits_watchpoint_valid(&mut self, value: u8);
+    fn set_debug_hart_in_bits_watchpoint_bits_addr(&mut self, value: u32);
+    fn set_debug_hart_in_bits_set_pc_valid(&mut self, value: u8);
+    fn set_debug_hart_in_bits_set_pc_bits_pc(&mut self, value: u32);
+    fn set_debug_hart_in_bits_register_valid(&mut self, value: u8);
+    fn set_debug_hart_in_bits_register_bits_reg(&mut self, value: u8);
+    fn set_debug_hart_in_bits_register_bits_write(&mut self, value: u8);
+    fn set_debug_hart_in_bits_register_bits_data(&mut self, value: u32);
+
+    fn set_debug_mem_in_valid(&mut self, value: u8);
+    fn set_debug_mem_in_bits_addr(&mut self, value: u32);
+    fn set_debug_mem_in_bits_write(&mut self, value: u8);
+    fn set_debug_mem_in_bits_data(&mut self, value: u32);
+    fn set_debug_mem_in_bits_req_width(&mut self, value: u8);
+    fn set_debug_mem_in_bits_instr(&mut self, value: u32);
+
+    fn set_debug_mem_res_ready(&mut self, value: u8);
+    fn set_debug_reg_res_ready(&mut self, value: u8);
 }
 
 pub struct Simulator {
