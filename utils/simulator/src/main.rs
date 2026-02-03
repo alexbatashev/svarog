@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use clap::Parser;
-use simulator::{ModelId, Simulator};
+use simulator::Simulator;
 
 #[derive(Parser)]
 #[command(name = "svarog-sim")]
@@ -60,84 +60,84 @@ fn parse_hex(s: &str) -> Result<u32, std::num::ParseIntError> {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    if args.list_models {
-        println!("Available models:");
-        for model in Simulator::available_models() {
-            println!("  - {}", model.name());
-        }
-        return Ok(());
-    }
+    // if args.list_models {
+    //     println!("Available models:");
+    //     for model in Simulator::available_models() {
+    //         println!("  - {}", model.name());
+    //     }
+    //     return Ok(());
+    // }
 
-    let binary = args
-        .binary
-        .ok_or_else(|| anyhow::anyhow!("BINARY argument is required"))?;
+    // let binary = args
+    //     .binary
+    //     .ok_or_else(|| anyhow::anyhow!("BINARY argument is required"))?;
 
-    // Determine which model to use
-    let model_id = if let Some(model_name) = &args.model {
-        ModelId::from_name(model_name)
-            .ok_or_else(|| anyhow::anyhow!("Unknown model: {}", model_name))?
-    } else {
-        // Use default model (first one)
-        ModelId::default()
-    };
+    // // Determine which model to use
+    // let model_id = if let Some(model_name) = &args.model {
+    //     ModelId::from_name(model_name)
+    //         .ok_or_else(|| anyhow::anyhow!("Unknown model: {}", model_name))?
+    // } else {
+    //     // Use default model (first one)
+    //     ModelId::default()
+    // };
 
-    println!("Using model: {}", model_id.name());
+    // println!("Using model: {}", model_id.name());
 
-    // Create simulator
-    let sim = Simulator::new(model_id).context("Failed to create simulator")?;
+    // // Create simulator
+    // let sim = Simulator::new(model_id).context("Failed to create simulator")?;
 
-    // Enable UART console if requested
-    if let Some(uart_index) = args.uart_console {
-        sim.enable_uart_console(uart_index);
-    }
+    // // Enable UART console if requested
+    // if let Some(uart_index) = args.uart_console {
+    //     sim.enable_uart_console(uart_index);
+    // }
 
-    // Detect file type and load appropriately
-    let is_raw_binary = binary.extension().map(|ext| ext == "bin").unwrap_or(false);
+    // // Detect file type and load appropriately
+    // let is_raw_binary = binary.extension().map(|ext| ext == "bin").unwrap_or(false);
 
-    let entry_point = if is_raw_binary {
-        // Raw binary file
-        let load_addr = args.load_addr.unwrap_or(0x80000000);
-        println!("Loading raw binary: {}", binary);
-        println!("  Load address: 0x{:08x}", load_addr);
+    // let entry_point = if is_raw_binary {
+    //     // Raw binary file
+    //     let load_addr = args.load_addr.unwrap_or(0x80000000);
+    //     println!("Loading raw binary: {}", binary);
+    //     println!("  Load address: 0x{:08x}", load_addr);
 
-        let entry = sim
-            .load_raw_binary(&binary, load_addr, args.entry_point, args.watchpoint_addr)
-            .context("Failed to load raw binary")?;
+    //     let entry = sim
+    //         .load_raw_binary(&binary, load_addr, args.entry_point, args.watchpoint_addr)
+    //         .context("Failed to load raw binary")?;
 
-        println!("  Entry point:  0x{:08x}", entry);
-        entry
-    } else {
-        // ELF file
-        println!("Loading ELF binary: {}", binary);
-        sim.load_binary(&binary, args.watchpoint.as_deref())
-            .context("Failed to load ELF binary")?;
-        0x80000000 // Default entry point for ELF
-    };
+    //     println!("  Entry point:  0x{:08x}", entry);
+    //     entry
+    // } else {
+    //     // ELF file
+    //     println!("Loading ELF binary: {}", binary);
+    //     sim.load_binary(&binary, args.watchpoint.as_deref())
+    //         .context("Failed to load ELF binary")?;
+    //     0x80000000 // Default entry point for ELF
+    // };
 
-    // Run simulation
-    println!("Running simulation (max {} cycles)...", args.max_cycles);
-    let result = sim
-        .run_with_entry_point(args.vcd.as_std_path(), args.max_cycles, entry_point)
-        .context("Simulation failed")?;
+    // // Run simulation
+    // println!("Running simulation (max {} cycles)...", args.max_cycles);
+    // let result = sim
+    //     .run_with_entry_point(args.vcd.as_std_path(), args.max_cycles, entry_point)
+    //     .context("Simulation failed")?;
 
-    println!("\nSimulation complete!");
-    println!("VCD trace: {}", args.vcd);
+    // println!("\nSimulation complete!");
+    // println!("VCD trace: {}", args.vcd);
 
-    if let Some(exit_code) = result.exit_code {
-        println!("Exit code: {}", exit_code);
+    // if let Some(exit_code) = result.exit_code {
+    //     println!("Exit code: {}", exit_code);
 
-        // Dump register file
-        println!("\nRegister state:");
-        for i in 0..32 {
-            let val = result.regs.get(i);
-            if val != 0 {
-                println!("  x{:2} = 0x{:08x}", i, val);
-            }
-        }
+    //     // Dump register file
+    //     println!("\nRegister state:");
+    //     for i in 0..32 {
+    //         let val = result.regs.get(i);
+    //         if val != 0 {
+    //             println!("  x{:2} = 0x{:08x}", i, val);
+    //         }
+    //     }
 
-        // Exit with the same code as the simulation
-        std::process::exit(exit_code as i32);
-    }
+    //     // Exit with the same code as the simulation
+    //     std::process::exit(exit_code as i32);
+    // }
 
     Ok(())
 }

@@ -33,3 +33,21 @@ pub struct Config {
     io: Vec<Io>,
     memories: Vec<Memory>,
 }
+
+impl Config {
+    pub fn isa(&self) -> Option<&str> {
+        self.clusters.first().map(|cluster| cluster.isa.as_str())
+    }
+
+    pub fn xlen(&self) -> u8 {
+        match self.isa() {
+            Some(isa) if isa.contains("rv64") => 64,
+            Some(_) => 32,
+            None => 32,
+        }
+    }
+
+    pub fn num_uarts(&self) -> usize {
+        self.io.iter().filter(|io| io.ty == "uart").count()
+    }
+}
