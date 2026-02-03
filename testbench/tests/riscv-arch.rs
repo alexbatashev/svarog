@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use glob::glob;
 use libtest_mimic::{Arguments, Failed, Trial};
 use std::path::{Path, PathBuf};
-use testbench::{ModelId, Simulator, compare_results, run_spike_test};
+use testbench::{compare_results, run_spike_test, Backend, Simulator};
 
 const TARGET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../target/");
 
@@ -20,15 +20,14 @@ fn main() -> Result<()> {
 fn discover_tests() -> Result<Vec<Trial>> {
     let mut trials = Vec::new();
 
-    let models = Simulator::available_models();
+    let backend = Backend::Verilator;
+    let models = Simulator::available_models(backend);
     let suites = ["I", "M"];
 
     // Maximum binary size that can fit in RAM (64KB = 65536 bytes)
     const MAX_BINARY_SIZE: u64 = 64 * 1024;
 
-    for &model_id in models {
-        let model_name = model_id.name();
-
+    for &model_name in models {
         for suite in suites {
             let pattern = format!("{TARGET_PATH}/riscv-arch-test/rv32i_m/{suite}/*.elf");
             for test_path in glob(&pattern)? {
@@ -69,7 +68,7 @@ fn discover_tests() -> Result<Vec<Trial>> {
                 } else {
                     trials.push(Trial::test(
                         format!("{}::arch::{}::{}", model_name, suite, test_name),
-                        move || run_test(&test_path, model_id, &suite_name),
+                        move || run_test(&test_path, backend, model_name, &suite_name),
                     ));
                 }
             }
@@ -80,22 +79,31 @@ fn discover_tests() -> Result<Vec<Trial>> {
 }
 
 /// Run a single test case.
-fn run_test(test_path: &Path, model_id: ModelId, suite: &str) -> Result<(), Failed> {
-    match run_test_impl(test_path, model_id, suite) {
+fn run_test(
+    test_path: &Path,
+    backend: Backend,
+    model_name: &'static str,
+    suite: &str,
+) -> Result<(), Failed> {
+    match run_test_impl(test_path, backend, model_name, suite) {
         Ok(()) => Ok(()),
         Err(e) => Err(format!("{:#}", e).into()),
     }
 }
 
-fn run_test_impl(test_path: &Path, model_id: ModelId, suite: &str) -> Result<()> {
+fn run_test_impl(
+    test_path: &Path,
+    backend: Backend,
+    model_name: &'static str,
+    suite: &str,
+) -> Result<()> {
     let test_name = test_path.file_stem().unwrap().to_str().unwrap().to_owned();
-    let model_name = model_id.name();
     let vcd_path = PathBuf::from(format!(
         "{}/vcd/arch_{}_{}_{}.vcd",
         TARGET_PATH, model_name, suite, test_name
     ));
 
-    let simulator = Simulator::new(model_id)
+    let simulator = Simulator::new(backend, model_name)
         .map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
 
     let tohost_addr = simulator

@@ -1,5 +1,7 @@
 use std::{
-    fs::File, io::Write, path::{Path, PathBuf}
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
 };
 
 use quote::{format_ident, quote, TokenStreamExt};
@@ -9,8 +11,9 @@ use crate::config::Config;
 
 pub struct GeneratedVerilator {
     pub model_name: String,
+    pub wrapper_name: String,
     pub rust: proc_macro2::TokenStream,
-    pub verilator_output: PathBuf
+    pub verilator_output: PathBuf,
 }
 
 pub fn generate_verilator(config_path: &Path) -> anyhow::Result<GeneratedVerilator> {
@@ -26,7 +29,9 @@ pub fn generate_verilator(config_path: &Path) -> anyhow::Result<GeneratedVerilat
     let model_identifier = model_name.replace("-", "_");
     let struct_name = format_ident!("{}Wrapper", to_pascal_case(model_name));
     let header_name = format!("verilator_{}_wrapper.h", model_identifier);
-    let header_path = PathBuf::from(std::env::var("OUT_DIR")?).join("verilator").join(header_name);
+    let header_path = PathBuf::from(std::env::var("OUT_DIR")?)
+        .join("verilator")
+        .join(header_name);
     let include_path = header_path.to_str();
     let namespace = format!("svarog::{}", model_identifier);
     let xlen = config.xlen();
@@ -495,13 +500,19 @@ pub fn generate_verilator(config_path: &Path) -> anyhow::Result<GeneratedVerilat
 
     Ok(GeneratedVerilator {
         model_name: model_name.to_string(),
+        wrapper_name: struct_name.to_string(),
         rust: tokens,
-        verilator_output
+        verilator_output,
     })
 }
 
 fn build_verilator(config_path: &Path) -> anyhow::Result<PathBuf> {
-    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?).parent().unwrap().parent().unwrap().to_owned();
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_owned();
     let out_path = PathBuf::from(std::env::var("OUT_DIR")?).join("verilator");
     let model_name = config_path
         .file_stem()
@@ -562,7 +573,7 @@ fn generate_cpp_header(model_identifier: &str, num_uarts: usize) -> String {
 #include "verilated.h"
 #include "verilated_vcd_c.h"
 
-#include "VSvarogSoC_{model_identifier}.h"
+#include "{model_identifier}.h"
 
 inline double sc_time_stamp() {{
     return 0;
@@ -574,7 +585,7 @@ class VerilatorModel {{
 public:
     VerilatorModel()
         : context_(std::make_unique<VerilatedContext>()),
-          model_(std::make_unique<VSvarogSoC_{model_identifier}>(context_.get())) {{
+          model_(std::make_unique<::{model_identifier}>(context_.get())) {{
         context_->commandArgs(0, static_cast<const char **>(nullptr));
         context_->traceEverOn(true);
     }}
@@ -683,7 +694,7 @@ public:
 
 {uart_accessors}private:
     std::unique_ptr<VerilatedContext> context_;
-    std::unique_ptr<VSvarogSoC_{model_identifier}> model_;
+    std::unique_ptr<::{model_identifier}> model_;
     std::unique_ptr<VerilatedVcdC> vcd_;
 }};
 

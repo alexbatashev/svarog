@@ -386,6 +386,7 @@ dependencies = [
  "camino",
  "clap",
  "cxx",
+ "cxx-build",
  "elf",
  "glob",
  "prettyplease",

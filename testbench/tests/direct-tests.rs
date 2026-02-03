@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use glob::glob;
 use libtest_mimic::{Arguments, Failed, Trial};
 use std::path::{Path, PathBuf};
-use testbench::{ModelId, Simulator};
+use testbench::{Backend, Simulator};
 
 const TARGET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../target/");
 
@@ -26,12 +26,11 @@ fn discover_tests() -> Result<Vec<Trial>> {
     let mut trials = Vec::new();
 
     // Get all available models
-    let models = Simulator::available_models();
+    let backend = Backend::Verilator;
+    let models = Simulator::available_models(backend);
 
     // For each model, create tests
-    for &model_id in models {
-        let model_name = model_id.name();
-
+    for &model_name in models {
         // Discover built test binaries
         let pattern = format!("{TARGET_PATH}/direct-tests/rv32/*");
         for test_path in glob(&pattern)? {
@@ -51,7 +50,7 @@ fn discover_tests() -> Result<Vec<Trial>> {
 
             trials.push(Trial::test(
                 format!("{}::{}", model_name, test_name),
-                move || run_test(&test_path, model_id),
+                move || run_test(&test_path, backend, model_name),
             ));
         }
     }
@@ -60,23 +59,22 @@ fn discover_tests() -> Result<Vec<Trial>> {
 }
 
 /// Run a single test case
-fn run_test(test_path: &Path, model_id: ModelId) -> Result<(), Failed> {
-    match run_test_impl(test_path, model_id) {
+fn run_test(test_path: &Path, backend: Backend, model_name: &'static str) -> Result<(), Failed> {
+    match run_test_impl(test_path, backend, model_name) {
         Ok(()) => Ok(()),
         Err(e) => Err(format!("{:#}", e).into()),
     }
 }
 
-fn run_test_impl(test_path: &Path, model_id: ModelId) -> Result<()> {
+fn run_test_impl(test_path: &Path, backend: Backend, model_name: &'static str) -> Result<()> {
     let test_name = test_path.file_name().unwrap().to_str().unwrap().to_owned();
-    let model_name = model_id.name();
     let vcd_path = PathBuf::from(format!(
         "{}/vcd/direct_{}_{}.vcd",
         TARGET_PATH, model_name, test_name
     ));
 
     // Create simulator with specified model
-    let simulator = Simulator::new(model_id)
+    let simulator = Simulator::new(backend, model_name)
         .map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
 
     // Load the ELF binary with watchpoint on 'tohost' symbol
