@@ -13,6 +13,7 @@ MABI ?= ilp32
 VARIANT ?= ram
 OUTPUT_PATH ?= $(PROJECT_ROOT)/target/benchmarks/coremark
 RTC_HZ ?= 50000000
+ITERATIONS ?= 1000
 
 ifeq ($(origin PATH),command line)
 OUTPUT_PATH := $(PATH)
@@ -36,7 +37,7 @@ WARN ?= -Wall -Wextra
 CFLAGS_COMMON = $(OPT) $(WARN) -ffreestanding -fno-builtin \
 	-ffunction-sections -fdata-sections \
 	-I$(SRC_DIR) -I$(PORT_DIR) \
-	-DMAIN_HAS_NOARGC=1 -DITERATIONS=1000
+	-DMAIN_HAS_NOARGC=1 -DITERATIONS=$(ITERATIONS)
 
 LDFLAGS_COMMON = -nostartfiles -nostdlib -Wl,--gc-sections
 
@@ -117,6 +118,7 @@ help:
 	@echo "  MARCH=$(MARCH)"
 	@echo "  MABI=$(MABI)"
 	@echo "  VARIANT=$(VARIANT) (ram or bootloader)"
+	@echo "  ITERATIONS=$(ITERATIONS)"
 	@echo "  OUTPUT_PATH=$(OUTPUT_PATH) (or PATH=... on command line)"
 	@echo ""
 	@echo "Output directory: $(OUTPUT_DIR)/"

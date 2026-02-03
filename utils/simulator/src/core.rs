@@ -34,6 +34,7 @@ impl Backend {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) trait SimulatorImpl {
     fn xlen(&self) -> u8;
     fn isa(&self) -> &'static str;
