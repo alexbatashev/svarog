@@ -385,19 +385,20 @@ impl Simulator {
         }
     }
 
-    pub fn run(&self, vcd_path: &Path, max_cycles: usize) -> Result<TestResult> {
+    pub fn run(&self, vcd_path: Option<&Path>, max_cycles: usize) -> Result<TestResult> {
         self.run_with_entry_point(vcd_path, max_cycles, 0x80000000)
     }
 
     pub fn run_with_entry_point(
         &self,
-        vcd_path: &Path,
+        vcd_path: Option<&Path>,
         max_cycles: usize,
         entry_point: u32,
     ) -> Result<TestResult> {
-        // Open VCD trace
-        self.model.borrow().open_vcd(vcd_path.to_str().unwrap());
-        *self.vcd_open.borrow_mut() = true;
+        if vcd_path.is_some() {
+            self.model.borrow().open_vcd(vcd_path.unwrap().to_str().unwrap());
+            *self.vcd_open.borrow_mut() = true;
+        }
 
         // Toggle reset while dumping a couple of baseline cycles so the trace captures
         // the CPU at the architectural reset vector before we let the pipeline run.
@@ -445,7 +446,7 @@ impl Simulator {
         eprintln!("After release+10cycles: halted={}", halted);
 
         for cycle in 0..max_cycles {
-            self.tick(true);
+            self.tick(vcd_path.is_some());
 
             // Sample UART TX if console monitoring is enabled
             if let Some((uart_index, decoder)) = &mut *self.uart_decoder.borrow_mut() {
@@ -469,15 +470,16 @@ impl Simulator {
                 eprintln!("\nCPU halted at cycle {}, watchpoint triggered", cycle);
                 // Run a few more cycles to let the pipeline settle
                 for _ in 0..5 {
-                    self.tick(true);
+                    self.tick(vcd_path.is_some());
                 }
                 break;
             }
         }
 
-        // Close VCD
-        self.model.borrow().close_vcd();
-        *self.vcd_open.borrow_mut() = false;
+        if vcd_path.is_some() {
+            self.model.borrow().close_vcd();
+            *self.vcd_open.borrow_mut() = false;
+        }
 
         let regs = self.capture_registers()?;
         let exit_code = regs.get(3); // x3/gp holds test result

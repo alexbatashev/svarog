@@ -21,8 +21,8 @@ struct Args {
     model: Option<String>,
 
     /// VCD output file
-    #[arg(long, default_value = "trace.vcd")]
-    vcd: Utf8PathBuf,
+    #[arg(long)]
+    vcd: Option<Utf8PathBuf>,
 
     /// Maximum simulation cycles
     #[arg(long, default_value = "100000")]
@@ -129,11 +129,10 @@ fn main() -> Result<()> {
     // Run simulation
     println!("Running simulation (max {} cycles)...", args.max_cycles);
     let result = sim
-        .run_with_entry_point(args.vcd.as_std_path(), args.max_cycles, entry_point)
+        .run_with_entry_point(args.vcd.as_ref().map(|p| p.as_std_path()), args.max_cycles, entry_point)
         .context("Simulation failed")?;
 
     println!("\nSimulation complete!");
-    println!("VCD trace: {}", args.vcd);
 
     if let Some(exit_code) = result.exit_code {
         println!("Exit code: {}", exit_code);
