@@ -25,9 +25,7 @@ fn main() -> Result<()> {
 fn discover_tests() -> Result<Vec<Trial>> {
     let mut trials = Vec::new();
 
-    // Get all available models
-    let backend = Backend::Verilator;
-    let models = Simulator::available_models(backend);
+    let models = Simulator::available_models(Backend::VerilatorMonitored);
 
     // For each model, create tests
     for &model_name in models {
@@ -50,7 +48,7 @@ fn discover_tests() -> Result<Vec<Trial>> {
 
             trials.push(Trial::test(
                 format!("{}::{}", model_name, test_name),
-                move || run_test(&test_path, backend, model_name),
+                move || run_test(&test_path, model_name),
             ));
         }
     }
@@ -59,14 +57,14 @@ fn discover_tests() -> Result<Vec<Trial>> {
 }
 
 /// Run a single test case
-fn run_test(test_path: &Path, backend: Backend, model_name: &'static str) -> Result<(), Failed> {
-    match run_test_impl(test_path, backend, model_name) {
+fn run_test(test_path: &Path, model_name: &'static str) -> Result<(), Failed> {
+    match run_test_impl(test_path, model_name) {
         Ok(()) => Ok(()),
         Err(e) => Err(format!("{:#}", e).into()),
     }
 }
 
-fn run_test_impl(test_path: &Path, backend: Backend, model_name: &'static str) -> Result<()> {
+fn run_test_impl(test_path: &Path, model_name: &'static str) -> Result<()> {
     let test_name = test_path.file_name().unwrap().to_str().unwrap().to_owned();
     let vcd_path = PathBuf::from(format!(
         "{}/vcd/direct_{}_{}.vcd",
@@ -74,7 +72,7 @@ fn run_test_impl(test_path: &Path, backend: Backend, model_name: &'static str) -
     ));
 
     // Create simulator with specified model
-    let simulator = Simulator::new(backend, model_name)
+    let simulator = Simulator::new(Backend::VerilatorMonitored, model_name)
         .map_err(|e| anyhow::anyhow!("Failed to create simulator: {}", e))?;
 
     // Load the ELF binary with watchpoint on 'tohost' symbol

@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct Cluster {
     #[serde(rename = "coreType")]
     core_type: String,
@@ -10,6 +11,7 @@ pub struct Cluster {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct Io {
     #[serde(rename = "type")]
     ty: String,
@@ -19,6 +21,7 @@ pub struct Io {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct Memory {
     #[serde(rename = "type")]
     ty: String,
@@ -28,6 +31,7 @@ pub struct Memory {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 pub struct Config {
     clusters: Vec<Cluster>,
     io: Vec<Io>,

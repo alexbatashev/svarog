@@ -140,6 +140,7 @@ fn main() -> Result<()> {
     if let Some(include_path) = verilator_include_path() {
         build.include(include_path);
     }
+    build.flag_if_supported("-w");
     for include_path in include_paths {
         build.include(include_path);
     }
