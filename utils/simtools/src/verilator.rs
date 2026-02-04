@@ -4,8 +4,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use quote::{format_ident, quote, TokenStreamExt};
-use xshell::{cmd, Shell};
+use quote::{TokenStreamExt, format_ident, quote};
+use xshell::{Shell, cmd};
 
 use crate::config::Config;
 

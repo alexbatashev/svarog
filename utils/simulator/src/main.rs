@@ -129,7 +129,11 @@ fn main() -> Result<()> {
     // Run simulation
     println!("Running simulation (max {} cycles)...", args.max_cycles);
     let result = sim
-        .run_with_entry_point(args.vcd.as_ref().map(|p| p.as_std_path()), args.max_cycles, entry_point)
+        .run_with_entry_point(
+            args.vcd.as_ref().map(|p| p.as_std_path()),
+            args.max_cycles,
+            entry_point,
+        )
         .context("Simulation failed")?;
 
     println!("\nSimulation complete!");

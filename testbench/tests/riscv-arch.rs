@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use glob::glob;
 use libtest_mimic::{Arguments, Failed, Trial};
 use std::path::{Path, PathBuf};
-use testbench::{compare_results, run_spike_test, Backend, Simulator};
+use testbench::{Backend, Simulator, compare_results, run_spike_test};
 
 const TARGET_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../target/");
 

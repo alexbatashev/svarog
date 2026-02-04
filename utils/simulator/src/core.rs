@@ -3,7 +3,7 @@ use std::{cell::RefCell, convert::TryInto, path::Path};
 
 use anyhow::{Context, Result};
 use elf::abi::{SHF_ALLOC, SHT_NOBITS};
-use elf::{endian::AnyEndian, ElfBytes};
+use elf::{ElfBytes, endian::AnyEndian};
 
 use crate::uart::UartDecoder;
 use crate::{RegisterFile, TestResult};

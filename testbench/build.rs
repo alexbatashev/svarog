@@ -18,8 +18,14 @@ fn main() -> Result<()> {
     let riscv_tests_dir = cur_dir.join("target/riscv-tests");
     let riscv_arch_dir = cur_dir.join("target/riscv-arch-test");
 
-    simtools::clone_repo("https://github.com/riscv-software-src/riscv-tests", &riscv_tests_dir)?;
-    simtools::clone_repo("https://github.com/riscv-non-isa/riscv-arch-test.git", &riscv_arch_dir)?;
+    simtools::clone_repo(
+        "https://github.com/riscv-software-src/riscv-tests",
+        &riscv_tests_dir,
+    )?;
+    simtools::clone_repo(
+        "https://github.com/riscv-non-isa/riscv-arch-test.git",
+        &riscv_arch_dir,
+    )?;
 
     sh.change_dir(&riscv_tests_dir);
 
@@ -67,7 +73,8 @@ fn main() -> Result<()> {
 /// Build handwritten assembly tests from testbench/direct-tests/
 fn build_direct_tests(sh: &Shell, workspace_dir: &Path) -> Result<()> {
     let direct_tests_src = workspace_dir.join("direct-tests/rv32");
-    let direct_tests_out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("target/direct-tests/rv32");
+    let direct_tests_out =
+        PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("target/direct-tests/rv32");
     let common_dir = direct_tests_src.join("common");
 
     // Create output directory
@@ -124,8 +131,7 @@ fn build_riscv_arch_tests(sh: &Shell, riscv_arch_dir: &Path) -> Result<()> {
     let patched_content = arch_test_content.replace(".option rvc", ".option norvc");
 
     // Write back the patched file
-    std::fs::write(&arch_header, patched_content)
-        .context("Failed to write patched arch_test.h")?;
+    std::fs::write(&arch_header, patched_content).context("Failed to write patched arch_test.h")?;
 
     let suites = [("I", "rv32i_zicsr"), ("M", "rv32im_zicsr")];
     for (suite, march) in suites {

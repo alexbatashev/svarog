@@ -10,11 +10,7 @@ impl RegisterFile {
     }
 
     pub fn get(&self, idx: u8) -> u32 {
-        if idx < 32 {
-            self.regs[idx as usize]
-        } else {
-            0
-        }
+        if idx < 32 { self.regs[idx as usize] } else { 0 }
     }
 
     pub fn set(&mut self, idx: u8, value: u32) {
