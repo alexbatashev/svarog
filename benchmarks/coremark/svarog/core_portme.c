@@ -84,42 +84,38 @@ barebones_clock()
 static CORETIMETYPE start_time_val, stop_time_val;
 static ee_u64 cycle_start, cycle_end;
 static ee_u64 instret_start, instret_end;
+static ee_u64 branches_start, branches_end;
+static ee_u64 branch_miss_start, branch_miss_end;
+static ee_u64 hazard_stall_start, hazard_stall_end;
 
-static ee_u64 read_cycle_counter(void)
-{
 #if __riscv_xlen == 32
-    ee_u32 hi1, lo, hi2;
-    do
-    {
-        asm volatile("rdcycleh %0" : "=r"(hi1));
-        asm volatile("rdcycle %0" : "=r"(lo));
-        asm volatile("rdcycleh %0" : "=r"(hi2));
-    } while (hi1 != hi2);
-    return ((ee_u64)hi1 << 32) | lo;
+#define DECLARE_READ_COUNTER64(name, low_csr, high_csr)                            \
+    static ee_u64 name(void)                                                       \
+    {                                                                               \
+        ee_u32 hi1, lo, hi2;                                                       \
+        do                                                                          \
+        {                                                                           \
+            asm volatile("csrr %0, " #high_csr : "=r"(hi1));                       \
+            asm volatile("csrr %0, " #low_csr : "=r"(lo));                         \
+            asm volatile("csrr %0, " #high_csr : "=r"(hi2));                       \
+        } while (hi1 != hi2);                                                      \
+        return ((ee_u64)hi1 << 32) | lo;                                           \
+    }
 #else
-    ee_u64 val;
-    asm volatile("rdcycle %0" : "=r"(val));
-    return val;
+#define DECLARE_READ_COUNTER64(name, low_csr, high_csr)                            \
+    static ee_u64 name(void)                                                       \
+    {                                                                               \
+        ee_u64 val;                                                                 \
+        asm volatile("csrr %0, " #low_csr : "=r"(val));                            \
+        return val;                                                                 \
+    }
 #endif
-}
 
-static ee_u64 read_instret_counter(void)
-{
-#if __riscv_xlen == 32
-    ee_u32 hi1, lo, hi2;
-    do
-    {
-        asm volatile("rdinstreth %0" : "=r"(hi1));
-        asm volatile("rdinstret %0" : "=r"(lo));
-        asm volatile("rdinstreth %0" : "=r"(hi2));
-    } while (hi1 != hi2);
-    return ((ee_u64)hi1 << 32) | lo;
-#else
-    ee_u64 val;
-    asm volatile("rdinstret %0" : "=r"(val));
-    return val;
-#endif
-}
+DECLARE_READ_COUNTER64(read_cycle_counter, 0xC00, 0xC80)
+DECLARE_READ_COUNTER64(read_instret_counter, 0xC02, 0xC82)
+DECLARE_READ_COUNTER64(read_branches_counter, 0xC03, 0xC83)
+DECLARE_READ_COUNTER64(read_branch_miss_counter, 0xC04, 0xC84)
+DECLARE_READ_COUNTER64(read_hazard_stall_counter, 0xC05, 0xC85)
 
 /* Function : start_time
         This function will be called right before starting the timed portion of
@@ -208,6 +204,9 @@ portable_init(core_portable *p, int *argc, char *argv[])
 
     cycle_start = read_cycle_counter();
     instret_start = read_instret_counter();
+    branches_start = read_branches_counter();
+    branch_miss_start = read_branch_miss_counter();
+    hazard_stall_start = read_hazard_stall_counter();
 }
 /* Function : portable_fini
         Target specific final code
@@ -219,9 +218,15 @@ portable_fini(core_portable *p)
 
     cycle_end = read_cycle_counter();
     instret_end = read_instret_counter();
+    branches_end = read_branches_counter();
+    branch_miss_end = read_branch_miss_counter();
+    hazard_stall_end = read_hazard_stall_counter();
 
     ee_printf("CoreMark cycle count  : %llu\n", cycle_end - cycle_start);
     ee_printf("CoreMark instret count: %llu\n", instret_end - instret_start);
+    ee_printf("CoreMark branches retired: %llu\n", branches_end - branches_start);
+    ee_printf("CoreMark branch misses   : %llu\n", branch_miss_end - branch_miss_start);
+    ee_printf("CoreMark hazard stalls   : %llu\n", hazard_stall_end - hazard_stall_start);
 }
 
 void *

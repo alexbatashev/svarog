@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use clap::Parser;
 use simulator::{Backend, Simulator};
+use std::io::Write;
 
 #[derive(Parser)]
 #[command(name = "svarog-sim")]
@@ -59,6 +60,35 @@ fn parse_hex(s: &str) -> Result<u32, std::num::ParseIntError> {
     } else {
         s.parse()
     }
+}
+
+fn draw_progress(current: usize, max: usize) {
+    let bar_width = 40usize;
+    let capped = current.min(max);
+    let filled = if max == 0 {
+        bar_width
+    } else {
+        capped.saturating_mul(bar_width) / max
+    };
+    let percent = if max == 0 {
+        100usize
+    } else {
+        capped.saturating_mul(100) / max
+    };
+
+    let mut bar = String::with_capacity(bar_width);
+    for idx in 0..bar_width {
+        bar.push(if idx < filled { '#' } else { '-' });
+    }
+
+    eprint!(
+        "\r[{bar}] {capped:>7}/{max:>7} cycles {percent:>3}%",
+        bar = bar,
+        capped = capped,
+        max = max,
+        percent = percent
+    );
+    std::io::stderr().flush().ok();
 }
 
 fn main() -> Result<()> {
@@ -128,13 +158,36 @@ fn main() -> Result<()> {
 
     // Run simulation
     println!("Running simulation (max {} cycles)...", args.max_cycles);
+    let show_progress = args.uart_console.is_none();
+    let mut last_seen_cycle = 0usize;
+    let mut last_drawn_cycle = 0usize;
+    if show_progress {
+        draw_progress(0, args.max_cycles);
+    }
+
     let result = sim
-        .run_with_entry_point(
+        .run_with_entry_point_and_progress(
             args.vcd.as_ref().map(|p| p.as_std_path()),
             args.max_cycles,
             entry_point,
+            |cycle| {
+                if !show_progress {
+                    return;
+                }
+                last_seen_cycle = cycle;
+                if cycle == args.max_cycles || cycle.saturating_sub(last_drawn_cycle) >= 256 {
+                    draw_progress(cycle, args.max_cycles);
+                    last_drawn_cycle = cycle;
+                }
+            },
         )
         .context("Simulation failed")?;
+    if show_progress {
+        if last_drawn_cycle != last_seen_cycle {
+            draw_progress(last_seen_cycle, args.max_cycles);
+        }
+        eprintln!();
+    }
 
     println!("\nSimulation complete!");
 
