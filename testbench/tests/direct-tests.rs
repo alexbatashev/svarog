@@ -88,7 +88,7 @@ fn run_test_impl(test_path: &Path, model_name: &'static str) -> Result<()> {
 
     println!("Simulating {} on model {}...", test_name, model_name);
     let result = simulator
-        .run(&vcd_path, max_cycles)
+        .run(Some(&vcd_path), max_cycles)
         .context("Simulation failed")?;
     println!("Simulation complete");
 

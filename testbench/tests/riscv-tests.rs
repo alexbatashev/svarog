@@ -82,7 +82,7 @@ fn run_test_impl(test_path: &Path, backend: Backend, model_name: &'static str) -
 
     println!("Simulating {} on model {}...", test_name, model_name);
     let verilator_result = simulator
-        .run(&vcd_path, max_cycles)
+        .run(Some(&vcd_path), max_cycles)
         .context("Verilator simulation failed")?;
     println!("Simulation complete, capturing registers");
 
