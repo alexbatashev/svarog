@@ -21,26 +21,37 @@ fn main() -> Result<()> {
 
     let pattern = workspace_root.join("configs/*.yaml");
     let mut verilator = vec![];
+    let mut verilator_monitored = vec![];
     let mut model_names = Vec::new();
     let mut verilator_constructors = Vec::new();
+    let mut verilator_monitored_constructors = Vec::new();
+    let mut include_paths = Vec::new();
     for entry in glob::glob(pattern.to_str().unwrap())? {
         let path = entry?;
 
         let model_info = simtools::generate_verilator(&path)?;
+        let monitored_info = simtools::generate_verilator_with_monitors(&path)?;
         let simtools::GeneratedVerilator {
             model_name,
+            model_identifier,
             wrapper_name,
             rust,
             verilator_output,
         } = model_info;
 
-        let model_identifier = model_name.replace('-', "_");
         println!(
             "cargo:rustc-link-search=native={}",
             verilator_output.display()
         );
         println!("cargo:rustc-link-lib=static={}", model_identifier);
         println!("cargo:rustc-link-lib=static=verilated");
+        include_paths.push(
+            verilator_output
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("Missing verilator output parent"))?
+                .to_path_buf(),
+        );
+        include_paths.push(verilator_output.clone());
 
         verilator.push(rust);
         let model_name_lit = LitStr::new(&model_name, Span::call_site());
@@ -51,11 +62,47 @@ fn main() -> Result<()> {
                 verilator::#wrapper_ident::new(),
             ))),
         });
+
+        let simtools::GeneratedVerilator {
+            model_identifier: monitored_identifier,
+            wrapper_name: monitored_wrapper_name,
+            rust: monitored_rust,
+            verilator_output: monitored_output,
+            ..
+        } = monitored_info;
+        println!(
+            "cargo:rustc-link-search=native={}",
+            monitored_output.display()
+        );
+        println!("cargo:rustc-link-lib=static={}", monitored_identifier);
+        println!("cargo:rustc-link-lib=static=verilated");
+        include_paths.push(
+            monitored_output
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("Missing monitored output parent"))?
+                .to_path_buf(),
+        );
+        include_paths.push(monitored_output.clone());
+
+        verilator_monitored.push(monitored_rust);
+        let monitored_wrapper_ident = format_ident!("{}", monitored_wrapper_name);
+        verilator_monitored_constructors.push(quote! {
+            #model_name_lit => Some(std::rc::Rc::new(std::cell::RefCell::new(
+                verilator_monitored::#monitored_wrapper_ident::new(),
+            ))),
+        });
     }
+
+    include_paths.sort();
+    include_paths.dedup();
 
     let tokens = quote! {
         pub mod verilator {
             #(#verilator)*
+        }
+
+        pub mod verilator_monitored {
+            #(#verilator_monitored)*
         }
 
         pub const VERILATOR_MODELS: &[&str] = &[#(#model_names),*];
@@ -65,6 +112,15 @@ fn main() -> Result<()> {
         ) -> Option<std::rc::Rc<std::cell::RefCell<dyn crate::core::SimulatorImpl>>> {
             match model_name {
                 #(#verilator_constructors)*
+                _ => None,
+            }
+        }
+
+        pub fn create_verilator_monitored(
+            model_name: &str,
+        ) -> Option<std::rc::Rc<std::cell::RefCell<dyn crate::core::SimulatorImpl>>> {
+            match model_name {
+                #(#verilator_monitored_constructors)*
                 _ => None,
             }
         }
@@ -84,8 +140,9 @@ fn main() -> Result<()> {
     if let Some(include_path) = verilator_include_path() {
         build.include(include_path);
     }
-    build.include(out_dir.join("verilator"));
-    build.include(out_dir.join("verilator").join("verilated"));
+    for include_path in include_paths {
+        build.include(include_path);
+    }
     build.file(&sc_time_path);
     build.std("c++14").compile("simulator-cxx");
 

@@ -1,5 +1,5 @@
-use std::path::Path;
 use anyhow::Context;
+use std::path::Path;
 use xshell::{cmd, Shell};
 
 pub fn clone_repo(url: &str, dest: &Path) -> anyhow::Result<()> {

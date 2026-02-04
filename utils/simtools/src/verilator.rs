@@ -11,29 +11,65 @@ use crate::config::Config;
 
 pub struct GeneratedVerilator {
     pub model_name: String,
+    pub model_identifier: String,
     pub wrapper_name: String,
     pub rust: proc_macro2::TokenStream,
     pub verilator_output: PathBuf,
 }
 
 pub fn generate_verilator(config_path: &Path) -> anyhow::Result<GeneratedVerilator> {
-    let verilator_output = build_verilator(config_path)?;
+    generate_verilator_with_options(
+        config_path,
+        VerilatorOptions {
+            with_monitors: false,
+        },
+    )
+}
 
-    let file = File::open(config_path)?;
-    let config: Config = yaml_serde::from_reader(file)?;
+pub fn generate_verilator_with_monitors(config_path: &Path) -> anyhow::Result<GeneratedVerilator> {
+    generate_verilator_with_options(
+        config_path,
+        VerilatorOptions {
+            with_monitors: true,
+        },
+    )
+}
 
+struct VerilatorOptions {
+    with_monitors: bool,
+}
+
+fn generate_verilator_with_options(
+    config_path: &Path,
+    options: VerilatorOptions,
+) -> anyhow::Result<GeneratedVerilator> {
     let model_name = config_path
         .file_stem()
         .and_then(|stem| stem.to_str())
         .ok_or_else(|| anyhow::anyhow!("Invalid config filename: {config_path:?}"))?;
-    let model_identifier = model_name.replace("-", "_");
-    let struct_name = format_ident!("{}Wrapper", to_pascal_case(model_name));
+    let wrapper_suffix = if options.with_monitors {
+        "-monitored"
+    } else {
+        ""
+    };
+    let wrapper_model_name = format!("{model_name}{wrapper_suffix}");
+    let model_identifier = wrapper_model_name.replace("-", "_");
+    let verilator_output = build_verilator(config_path, &model_identifier, options.with_monitors)?;
+
+    let file = File::open(config_path)?;
+    let config: Config = yaml_serde::from_reader(file)?;
+
+    let wrapper_pascal = to_pascal_case(&wrapper_model_name);
+    let struct_name = format_ident!("{}Wrapper", wrapper_pascal);
+    let verilator_type = format_ident!("VerilatorModel{}", wrapper_pascal);
+    let factory_fn = format_ident!("create_verilator_model_{}", model_identifier);
     let header_name = format!("verilator_{}_wrapper.h", model_identifier);
     let header_path = PathBuf::from(std::env::var("OUT_DIR")?)
         .join("verilator")
         .join(header_name);
     let include_path = header_path.to_str();
     let namespace = format!("svarog::{}", model_identifier);
+    let ffi_ident = format_ident!("ffi_{}", model_identifier);
     let xlen = config.xlen();
     let isa = config.isa().unwrap_or("rv32i").to_string();
     let num_uarts = config.num_uarts();
@@ -44,7 +80,7 @@ pub fn generate_verilator(config_path: &Path) -> anyhow::Result<GeneratedVerilat
         let set_uart = format_ident!("set_uart_{}_rxd", i);
         uart_bridge.append_all(quote! {
             fn #get_uart(&self) -> u8;
-            fn #set_uart(self: Pin<&mut VerilatorModel>, value: u8);
+            fn #set_uart(self: Pin<&mut #verilator_type>, value: u8);
         });
     }
 
@@ -77,84 +113,84 @@ pub fn generate_verilator(config_path: &Path) -> anyhow::Result<GeneratedVerilat
         use crate::core::SimulatorImpl;
 
         #[cxx::bridge(namespace = #namespace)]
-        pub mod ffi {
+        pub mod #ffi_ident {
             #[allow(dead_code)]
             unsafe extern "C++" {
                 include!(#include_path);
 
-                type VerilatorModel;
+                type #verilator_type;
 
-                fn create_verilator_model() -> UniquePtr<VerilatorModel>;
+                fn #factory_fn() -> UniquePtr<#verilator_type>;
 
-                fn open_vcd(self: Pin<&mut VerilatorModel>, path: &str);
-                fn dump_vcd(self: Pin<&mut VerilatorModel>, timestamp: u64);
-                fn close_vcd(self: Pin<&mut VerilatorModel>);
+                fn open_vcd(self: Pin<&mut #verilator_type>, path: &str);
+                fn dump_vcd(self: Pin<&mut #verilator_type>, timestamp: u64);
+                fn close_vcd(self: Pin<&mut #verilator_type>);
 
-                fn eval(self: Pin<&mut VerilatorModel>);
-                fn final_eval(self: Pin<&mut VerilatorModel>);
+                fn eval(self: Pin<&mut #verilator_type>);
+                fn final_eval(self: Pin<&mut #verilator_type>);
 
                 fn get_clock(&self) -> u8;
-                fn set_clock(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_clock(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_reset(&self) -> u8;
-                fn set_reset(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_reset(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_rtc_clock(&self) -> u8;
-                fn set_rtc_clock(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_rtc_clock(self: Pin<&mut #verilator_type>, value: u8);
 
                 fn get_debug_hart_in_id_valid(&self) -> u8;
-                fn set_debug_hart_in_id_valid(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_hart_in_id_valid(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_hart_in_id_bits(&self) -> u8;
-                fn set_debug_hart_in_id_bits(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_hart_in_id_bits(self: Pin<&mut #verilator_type>, value: u8);
 
                 fn get_debug_hart_in_bits_halt_valid(&self) -> u8;
-                fn set_debug_hart_in_bits_halt_valid(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_hart_in_bits_halt_valid(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_hart_in_bits_halt_bits(&self) -> u8;
-                fn set_debug_hart_in_bits_halt_bits(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_hart_in_bits_halt_bits(self: Pin<&mut #verilator_type>, value: u8);
 
                 fn get_debug_hart_in_bits_breakpoint_valid(&self) -> u8;
-                fn set_debug_hart_in_bits_breakpoint_valid(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_hart_in_bits_breakpoint_valid(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_hart_in_bits_breakpoint_bits_pc(&self) -> u32;
-                fn set_debug_hart_in_bits_breakpoint_bits_pc(self: Pin<&mut VerilatorModel>, value: u32);
+                fn set_debug_hart_in_bits_breakpoint_bits_pc(self: Pin<&mut #verilator_type>, value: u32);
 
                 fn get_debug_hart_in_bits_watchpoint_valid(&self) -> u8;
-                fn set_debug_hart_in_bits_watchpoint_valid(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_hart_in_bits_watchpoint_valid(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_hart_in_bits_watchpoint_bits_addr(&self) -> u32;
-                fn set_debug_hart_in_bits_watchpoint_bits_addr(self: Pin<&mut VerilatorModel>, value: u32);
+                fn set_debug_hart_in_bits_watchpoint_bits_addr(self: Pin<&mut #verilator_type>, value: u32);
 
                 fn get_debug_hart_in_bits_setPC_valid(&self) -> u8;
-                fn set_debug_hart_in_bits_setPC_valid(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_hart_in_bits_setPC_valid(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_hart_in_bits_setPC_bits_pc(&self) -> u32;
-                fn set_debug_hart_in_bits_setPC_bits_pc(self: Pin<&mut VerilatorModel>, value: u32);
+                fn set_debug_hart_in_bits_setPC_bits_pc(self: Pin<&mut #verilator_type>, value: u32);
 
                 fn get_debug_hart_in_bits_register_valid(&self) -> u8;
-                fn set_debug_hart_in_bits_register_valid(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_hart_in_bits_register_valid(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_hart_in_bits_register_bits_reg(&self) -> u8;
-                fn set_debug_hart_in_bits_register_bits_reg(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_hart_in_bits_register_bits_reg(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_hart_in_bits_register_bits_write(&self) -> u8;
-                fn set_debug_hart_in_bits_register_bits_write(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_hart_in_bits_register_bits_write(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_hart_in_bits_register_bits_data(&self) -> u32;
-                fn set_debug_hart_in_bits_register_bits_data(self: Pin<&mut VerilatorModel>, value: u32);
+                fn set_debug_hart_in_bits_register_bits_data(self: Pin<&mut #verilator_type>, value: u32);
 
                 fn get_debug_mem_in_valid(&self) -> u8;
-                fn set_debug_mem_in_valid(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_mem_in_valid(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_mem_in_ready(&self) -> u8;
                 fn get_debug_mem_in_bits_addr(&self) -> u32;
-                fn set_debug_mem_in_bits_addr(self: Pin<&mut VerilatorModel>, value: u32);
+                fn set_debug_mem_in_bits_addr(self: Pin<&mut #verilator_type>, value: u32);
                 fn get_debug_mem_in_bits_write(&self) -> u8;
-                fn set_debug_mem_in_bits_write(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_mem_in_bits_write(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_mem_in_bits_data(&self) -> u32;
-                fn set_debug_mem_in_bits_data(self: Pin<&mut VerilatorModel>, value: u32);
+                fn set_debug_mem_in_bits_data(self: Pin<&mut #verilator_type>, value: u32);
                 fn get_debug_mem_in_bits_reqWidth(&self) -> u8;
-                fn set_debug_mem_in_bits_reqWidth(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_mem_in_bits_reqWidth(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_mem_in_bits_instr(&self) -> u8;
-                fn set_debug_mem_in_bits_instr(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_mem_in_bits_instr(self: Pin<&mut #verilator_type>, value: u8);
 
                 fn get_debug_mem_res_ready(&self) -> u8;
-                fn set_debug_mem_res_ready(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_mem_res_ready(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_mem_res_valid(&self) -> u8;
                 fn get_debug_mem_res_bits(&self) -> u32;
 
                 fn get_debug_reg_res_ready(&self) -> u8;
-                fn set_debug_reg_res_ready(self: Pin<&mut VerilatorModel>, value: u8);
+                fn set_debug_reg_res_ready(self: Pin<&mut #verilator_type>, value: u8);
                 fn get_debug_reg_res_valid(&self) -> u8;
                 fn get_debug_reg_res_bits(&self) -> u32;
 
@@ -165,13 +201,13 @@ pub fn generate_verilator(config_path: &Path) -> anyhow::Result<GeneratedVerilat
         }
 
         pub struct #struct_name {
-            model: RefCell<UniquePtr<ffi::VerilatorModel>>,
+            model: RefCell<UniquePtr<#ffi_ident::#verilator_type>>,
         }
 
         impl #struct_name {
             pub fn new() -> Self {
                 Self {
-                    model: RefCell::new(ffi::create_verilator_model()),
+                    model: RefCell::new(#ffi_ident::#factory_fn()),
                 }
             }
         }
@@ -494,37 +530,47 @@ pub fn generate_verilator(config_path: &Path) -> anyhow::Result<GeneratedVerilat
         }
     };
 
-    let cpp_header = generate_cpp_header(&model_identifier, num_uarts);
+    let cpp_header = generate_cpp_header(
+        &model_identifier,
+        &verilator_type.to_string(),
+        &factory_fn.to_string(),
+        num_uarts,
+    );
     let mut cpp_header_file = File::create(header_path)?;
     cpp_header_file.write_all(cpp_header.as_bytes())?;
 
     Ok(GeneratedVerilator {
         model_name: model_name.to_string(),
+        model_identifier,
         wrapper_name: struct_name.to_string(),
         rust: tokens,
         verilator_output,
     })
 }
 
-fn build_verilator(config_path: &Path) -> anyhow::Result<PathBuf> {
+fn build_verilator(
+    config_path: &Path,
+    model_identifier: &str,
+    with_monitors: bool,
+) -> anyhow::Result<PathBuf> {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?)
         .parent()
         .unwrap()
         .parent()
         .unwrap()
         .to_owned();
-    let out_path = PathBuf::from(std::env::var("OUT_DIR")?).join("verilator");
-    let model_name = config_path
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .replace("-", "_");
+    let out_path = PathBuf::from(std::env::var("OUT_DIR")?)
+        .join("verilator")
+        .join(model_identifier);
 
     let sh = Shell::new().unwrap();
     sh.change_dir(manifest_dir);
 
-    cmd!(sh, "./mill -i svarog.runMain svarog.VerilogGenerator --simulator-debug-iface=true --target-dir={out_path} --config={config_path}").run()?;
+    if with_monitors {
+        cmd!(sh, "./mill -i svarog.runMain svarog.VerilogGenerator --simulator-debug-iface=true --with-monitors=true --target-dir={out_path} --config={config_path}").run()?;
+    } else {
+        cmd!(sh, "./mill -i svarog.runMain svarog.VerilogGenerator --simulator-debug-iface=true --target-dir={out_path} --config={config_path}").run()?;
+    }
 
     let verilog_file = out_path.join("SvarogSoC.sv");
     let verilator_output = out_path.join("verilated");
@@ -532,7 +578,7 @@ fn build_verilator(config_path: &Path) -> anyhow::Result<PathBuf> {
     cmd!(
         sh,
         "verilator
-        --prefix {model_name}
+        --prefix {model_identifier}
          -Wno-fatal
          -Wno-UNUSEDSIGNAL
          --cc
@@ -549,7 +595,12 @@ fn build_verilator(config_path: &Path) -> anyhow::Result<PathBuf> {
     Ok(verilator_output)
 }
 
-fn generate_cpp_header(model_identifier: &str, num_uarts: usize) -> String {
+fn generate_cpp_header(
+    model_identifier: &str,
+    class_name: &str,
+    factory_fn: &str,
+    num_uarts: usize,
+) -> String {
     let mut uart_accessors = String::new();
     for i in 0..num_uarts {
         uart_accessors.push_str(&format!(
@@ -575,22 +626,25 @@ fn generate_cpp_header(model_identifier: &str, num_uarts: usize) -> String {
 
 #include "{model_identifier}.h"
 
+#ifndef SVAROG_SC_TIME_STAMP_DEFINED
+#define SVAROG_SC_TIME_STAMP_DEFINED
 inline double sc_time_stamp() {{
     return 0;
 }}
+#endif
 
 namespace svarog::{model_identifier} {{
 
-class VerilatorModel {{
+class {class_name} {{
 public:
-    VerilatorModel()
+    {class_name}()
         : context_(std::make_unique<VerilatedContext>()),
           model_(std::make_unique<::{model_identifier}>(context_.get())) {{
         context_->commandArgs(0, static_cast<const char **>(nullptr));
         context_->traceEverOn(true);
     }}
 
-    ~VerilatorModel() {{
+    ~{class_name}() {{
         close_vcd();
         if (model_) {{
             model_->final();
@@ -698,8 +752,8 @@ public:
     std::unique_ptr<VerilatedVcdC> vcd_;
 }};
 
-inline std::unique_ptr<VerilatorModel> create_verilator_model() {{
-    return std::make_unique<VerilatorModel>();
+inline std::unique_ptr<{class_name}> {factory_fn}() {{
+    return std::make_unique<{class_name}>();
 }}
 
 }} // namespace svarog::{model_identifier}

@@ -396,7 +396,9 @@ impl Simulator {
         entry_point: u32,
     ) -> Result<TestResult> {
         if vcd_path.is_some() {
-            self.model.borrow().open_vcd(vcd_path.unwrap().to_str().unwrap());
+            self.model
+                .borrow()
+                .open_vcd(vcd_path.unwrap().to_str().unwrap());
             *self.vcd_open.borrow_mut() = true;
         }
 
@@ -643,9 +645,9 @@ impl Simulator {
 
 fn create_model(backend: Backend, model_name: &str) -> Result<Rc<RefCell<dyn SimulatorImpl>>> {
     match backend {
-        Backend::Verilator | Backend::VerilatorMonitored => {
-            crate::models::create_verilator(model_name)
-                .ok_or_else(|| anyhow::anyhow!("Unknown Verilator model: {}", model_name))
-        }
+        Backend::Verilator => crate::models::create_verilator(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown Verilator model: {}", model_name)),
+        Backend::VerilatorMonitored => crate::models::create_verilator_monitored(model_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown Verilator model: {}", model_name)),
     }
 }
