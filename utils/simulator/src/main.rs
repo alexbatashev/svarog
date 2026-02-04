@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
 use clap::Parser;
-use simulator::{ModelId, Simulator};
+use simulator::{Backend, Simulator};
 
 #[derive(Parser)]
 #[command(name = "svarog-sim")]
@@ -12,13 +12,17 @@ struct Args {
     #[arg(value_name = "BINARY")]
     binary: Option<Utf8PathBuf>,
 
+    /// Backend to use
+    #[arg(long, default_value = "verilator")]
+    backend: String,
+
     /// Model to use
     #[arg(short, long)]
     model: Option<String>,
 
     /// VCD output file
-    #[arg(long, default_value = "trace.vcd")]
-    vcd: Utf8PathBuf,
+    #[arg(long)]
+    vcd: Option<Utf8PathBuf>,
 
     /// Maximum simulation cycles
     #[arg(long, default_value = "100000")]
@@ -60,10 +64,13 @@ fn parse_hex(s: &str) -> Result<u32, std::num::ParseIntError> {
 fn main() -> Result<()> {
     let args = Args::parse();
 
+    let backend = Backend::from_name(&args.backend)
+        .ok_or_else(|| anyhow::anyhow!("Unknown backend: {}", args.backend))?;
+
     if args.list_models {
-        println!("Available models:");
-        for model in Simulator::available_models() {
-            println!("  - {}", model.name());
+        println!("Available models for backend {}:", backend.name());
+        for model in Simulator::available_models(backend) {
+            println!("  - {}", model);
         }
         return Ok(());
     }
@@ -72,19 +79,24 @@ fn main() -> Result<()> {
         .binary
         .ok_or_else(|| anyhow::anyhow!("BINARY argument is required"))?;
 
-    // Determine which model to use
-    let model_id = if let Some(model_name) = &args.model {
-        ModelId::from_name(model_name)
-            .ok_or_else(|| anyhow::anyhow!("Unknown model: {}", model_name))?
+    let model_name = if let Some(model_name) = &args.model {
+        model_name.clone()
     } else {
-        // Use default model (first one)
-        ModelId::default()
+        let models = Simulator::available_models(backend);
+        if models.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No models available for backend {}",
+                backend.name()
+            ));
+        }
+        models[0].to_string()
     };
 
-    println!("Using model: {}", model_id.name());
+    println!("Using backend: {}", backend.name());
+    println!("Using model: {}", model_name);
 
     // Create simulator
-    let sim = Simulator::new(model_id).context("Failed to create simulator")?;
+    let sim = Simulator::new(backend, &model_name).context("Failed to create simulator")?;
 
     // Enable UART console if requested
     if let Some(uart_index) = args.uart_console {
@@ -117,11 +129,14 @@ fn main() -> Result<()> {
     // Run simulation
     println!("Running simulation (max {} cycles)...", args.max_cycles);
     let result = sim
-        .run_with_entry_point(args.vcd.as_std_path(), args.max_cycles, entry_point)
+        .run_with_entry_point(
+            args.vcd.as_ref().map(|p| p.as_std_path()),
+            args.max_cycles,
+            entry_point,
+        )
         .context("Simulation failed")?;
 
     println!("\nSimulation complete!");
-    println!("VCD trace: {}", args.vcd);
 
     if let Some(exit_code) = result.exit_code {
         println!("Exit code: {}", exit_code);

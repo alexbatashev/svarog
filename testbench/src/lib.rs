@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Result};
 
 // Re-export simulator types
-pub use simulator::{ModelId, RegisterFile, Simulator, TestResult};
+pub use simulator::{Backend, RegisterFile, Simulator, TestResult};
 
 /// Run test in Spike and return register state
 pub fn run_spike_test(

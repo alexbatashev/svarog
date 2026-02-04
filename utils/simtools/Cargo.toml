@@ -1,0 +1,12 @@
+[package]
+name = "simtools"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+quote = "1.0.44"
+serde = { version = "1.0.228", features = [ "derive" ] }
+yaml_serde = "0.10.3"
+xshell = "0.2.7"
+anyhow = "1.0.100"
+proc-macro2 = "1.0"
