@@ -28,7 +28,13 @@ class CpuDebugSpec
       clusters = Seq(
         Cluster(
           coreType = Micro,
-          isa = ISA(xlen = xlen, mult = false, zmmul = false, zicsr = false),
+          isa = ISA(
+            xlen = xlen,
+            mult = false,
+            zmmul = false,
+            zicsr = false,
+            zicntr = false
+          ),
           numCores = 1
         )
       ),
