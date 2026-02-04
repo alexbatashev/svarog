@@ -152,7 +152,9 @@ class CounterCSRImp(outer: CounterCSR, xlen: Int) extends LazyModuleImp(outer) {
     )
   )
 
-  private val counters = RegInit(VecInit(Seq.fill(addressMap.length)(0.U(64.W))))
+  private val counters = RegInit(
+    VecInit(Seq.fill(addressMap.length)(0.U(64.W)))
+  )
 
   private val ticks = Seq(
     io.cycleTick,
@@ -180,8 +182,8 @@ class CounterCSRImp(outer: CounterCSR, xlen: Int) extends LazyModuleImp(outer) {
 
   private val addr = port.m2s.addr
 
-  private val readCases = counters.zip(addressMap).flatMap {
-    case (counter, map) =>
+  private val readCases =
+    counters.zip(addressMap).flatMap { case (counter, map) =>
       val lowCases = Seq(
         (addr === map.machineLow.U) -> readLow(counter),
         (addr === map.userLow.U) -> readLow(counter)
@@ -195,7 +197,7 @@ class CounterCSRImp(outer: CounterCSR, xlen: Int) extends LazyModuleImp(outer) {
       } else {
         lowCases
       }
-  }
+    }
 
   port.s2m.rdata := MuxCase(0.U(params.dataBits.W), readCases)
   port.s2m.hit := readCases.map(_._1).reduce(_ || _)
