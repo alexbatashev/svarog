@@ -21,7 +21,9 @@ impl UartDecoder {
             bit_samples: Vec::new(),
             cycles_since_start: 0,
             in_byte: false,
-            bit_period: 434, // Default baud rate divider
+            // UART advances when counter reaches divider value, so each serial bit
+            // lasts (divider + 1) core cycles.
+            bit_period: 435,
         }
     }
 
@@ -54,14 +56,14 @@ impl UartDecoder {
                 }
             }
 
-            // After collecting all 8 data bits, wait for the full byte to complete
-            // A byte is 10 bits total (start + 8 data + stop), so wait until cycle 10 * bit_period
-            if self.bit_samples.len() == 8 && self.cycles_since_start >= (self.bit_period * 10) {
+            // Finalize at the middle of stop bit so we are ready to catch
+            // the next falling edge immediately after stop.
+            let stop_sample_time = (self.bit_period * 9) + (self.bit_period / 2);
+            if self.bit_samples.len() == 8 && self.cycles_since_start >= stop_sample_time {
                 let byte = self.decode_bits();
                 self.in_byte = false;
                 self.bit_samples.clear();
                 self.cycles_since_start = 0;
-                self.prev_txd = txd_bit;
                 return Some(byte);
             }
         }

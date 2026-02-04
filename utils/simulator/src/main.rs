@@ -158,9 +158,12 @@ fn main() -> Result<()> {
 
     // Run simulation
     println!("Running simulation (max {} cycles)...", args.max_cycles);
+    let show_progress = args.uart_console.is_none();
     let mut last_seen_cycle = 0usize;
     let mut last_drawn_cycle = 0usize;
-    draw_progress(0, args.max_cycles);
+    if show_progress {
+        draw_progress(0, args.max_cycles);
+    }
 
     let result = sim
         .run_with_entry_point_and_progress(
@@ -168,6 +171,9 @@ fn main() -> Result<()> {
             args.max_cycles,
             entry_point,
             |cycle| {
+                if !show_progress {
+                    return;
+                }
                 last_seen_cycle = cycle;
                 if cycle == args.max_cycles || cycle.saturating_sub(last_drawn_cycle) >= 256 {
                     draw_progress(cycle, args.max_cycles);
@@ -176,10 +182,12 @@ fn main() -> Result<()> {
             },
         )
         .context("Simulation failed")?;
-    if last_drawn_cycle != last_seen_cycle {
-        draw_progress(last_seen_cycle, args.max_cycles);
+    if show_progress {
+        if last_drawn_cycle != last_seen_cycle {
+            draw_progress(last_seen_cycle, args.max_cycles);
+        }
+        eprintln!();
     }
-    eprintln!();
 
     println!("\nSimulation complete!");
 

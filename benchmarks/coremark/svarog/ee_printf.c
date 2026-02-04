@@ -687,8 +687,6 @@ uart_send_char(char c)
     while (((*uart_status) & SVAROG_UART_TX_READY_MASK) == 0)
         ;
     *uart_data = (ee_u32)c;
-    while (((*uart_status) & SVAROG_UART_TX_READY_MASK) == 0)
-        ;
 }
 
 int
@@ -704,10 +702,10 @@ ee_printf(const char *fmt, ...)
     p = buf;
     while (*p)
     {
-        uart_send_char(*p);
         if (*p == '\n') {
             uart_send_char('\r');
         }
+        uart_send_char(*p);
         n++;
         p++;
     }
