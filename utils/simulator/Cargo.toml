@@ -18,7 +18,10 @@ clap = { version = "4.5", features = ["derive"] }
 [build-dependencies]
 anyhow = "1.0.100"
 xshell = "0.2.7"
-cxx-build = "1.0"
 glob = "0.3.3"
-serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
+simtools = { path = "../simtools" }
+quote = "1.0"
+proc-macro2 = "1.0"
+prettyplease = "0.2.37"
+syn = "2.0.114"
+cxx-build = "1.0"
