@@ -395,6 +395,19 @@ impl Simulator {
         max_cycles: usize,
         entry_point: u32,
     ) -> Result<TestResult> {
+        self.run_with_entry_point_and_progress(vcd_path, max_cycles, entry_point, |_| {})
+    }
+
+    pub fn run_with_entry_point_and_progress<F>(
+        &self,
+        vcd_path: Option<&Path>,
+        max_cycles: usize,
+        entry_point: u32,
+        mut on_cycle: F,
+    ) -> Result<TestResult>
+    where
+        F: FnMut(usize),
+    {
         if vcd_path.is_some() {
             self.model
                 .borrow()
@@ -449,6 +462,7 @@ impl Simulator {
 
         for cycle in 0..max_cycles {
             self.tick(vcd_path.is_some());
+            on_cycle(cycle + 1);
 
             // Sample UART TX if console monitoring is enabled
             if let Some((uart_index, decoder)) = &mut *self.uart_decoder.borrow_mut() {

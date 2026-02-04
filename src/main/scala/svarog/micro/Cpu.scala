@@ -308,8 +308,26 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
     trapFlushHold || memory.io.hazard.valid
   writeback.io.halt := halt
 
+  private val retiredBranch = writeback.io.in.valid && (
+    writeback.io.in.bits.opType === OpType.BRANCH ||
+      writeback.io.in.bits.opType === OpType.JAL ||
+      writeback.io.in.bits.opType === OpType.JALR
+  )
+
+  // Frontend always follows the sequential path until EX resolves branch.
+  // Taken conditional branches therefore represent branch misses.
+  private val branchMiss =
+    execute.io.branch.valid &&
+      execute.io.res.fire &&
+      execute.io.res.bits.opType === OpType.BRANCH
+
+  private val hazardStallCycle = hazardUnit.io.stall || memory.io.hazard.valid
+
   outer.counterCSR.foreach { counter =>
     counter.module.io.cycleTick := true.B
     counter.module.io.instretTick := writeback.io.retired
+    counter.module.io.branchRetiredTick := retiredBranch
+    counter.module.io.branchMissTick := branchMiss
+    counter.module.io.hazardStallTick := hazardStallCycle
   }
 }
