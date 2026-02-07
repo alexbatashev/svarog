@@ -48,6 +48,7 @@ class Execute(isa: ISA) extends Module {
     val uop = Flipped(Decoupled(new MicroOp(xlen)))
     val res = Decoupled(new ExecuteResult(xlen))
     val branch = Valid(new BranchFeedback(xlen))
+    val branchUpdate = Valid(new BranchUpdate(xlen))
 
     val regFile = Flipped(new RegFileReadIO(xlen))
     val csrFile = new Bundle {
@@ -141,6 +142,17 @@ class Execute(isa: ISA) extends Module {
   // Branch/jump target address
   io.branch.bits.targetPC := 0.U
   io.branch.valid := false.B
+  io.branchUpdate.valid := false.B
+  io.branchUpdate.bits := 0.U.asTypeOf(new BranchUpdate(xlen))
+
+  val branchResolved = WireDefault(false.B)
+  val branchTaken = WireDefault(false.B)
+  val branchTarget = WireDefault(0.U)
+  val branchIsConditional = WireDefault(false.B)
+  val branchIsUncond = WireDefault(false.B)
+  val predictedTaken = activeUop.predictedTaken
+  val predictedTarget = activeUop.predictedTarget
+  val fallthroughPC = activeUop.pc + 4.U
 
   // Exception defaults
   io.exception.valid := false.B
@@ -264,17 +276,20 @@ class Execute(isa: ISA) extends Module {
         }
 
         when(acceptUop) {
-          io.branch.valid := taken
-          needFlush := taken
-          io.branch.bits.targetPC := activeUop.pc + activeUop.imm
+          branchResolved := true.B
+          branchIsConditional := true.B
+          branchTaken := taken
+          branchTarget := activeUop.pc + activeUop.imm
         }
       }
 
       is(OpType.JAL) {
         // Unconditional jump
         when(acceptUop) {
-          io.branch.valid := true.B
-          io.branch.bits.targetPC := activeUop.pc + activeUop.imm
+          branchResolved := true.B
+          branchIsUncond := true.B
+          branchTaken := true.B
+          branchTarget := activeUop.pc + activeUop.imm
           io.res.bits.gprResult := activeUop.pc + 4.U // Save return address
         }
       }
@@ -282,9 +297,11 @@ class Execute(isa: ISA) extends Module {
       is(OpType.JALR) {
         // Indirect jump
         when(acceptUop) {
-          io.branch.valid := true.B
           val target = io.regFile.readData1 + activeUop.imm
-          io.branch.bits.targetPC := Cat(target(31, 1), 0.U(1.W)) // Clear LSB
+          branchResolved := true.B
+          branchIsUncond := true.B
+          branchTaken := true.B
+          branchTarget := Cat(target(31, 1), 0.U(1.W)) // Clear LSB
           io.res.bits.gprResult := activeUop.pc + 4.U // Save return address
         }
       }
@@ -310,10 +327,36 @@ class Execute(isa: ISA) extends Module {
 
       is(OpType.MRET) {
         // Return from machine-mode trap handler
-        io.branch.valid := true.B
-        io.branch.bits.targetPC := io.mepc
-        io.mretFired := true.B
+        when(acceptUop) {
+          branchResolved := true.B
+          branchIsUncond := true.B
+          branchTaken := true.B
+          branchTarget := io.mepc
+          io.mretFired := true.B
+        }
       }
     }
+  }
+
+  val isControl = branchIsConditional || branchIsUncond
+  val mispredict = branchResolved && Mux(
+    branchTaken,
+    !predictedTaken || (predictedTarget =/= branchTarget),
+    predictedTaken
+  )
+
+  when(branchResolved && isControl) {
+    io.branchUpdate.valid := true.B
+    io.branchUpdate.bits.pc := activeUop.pc
+    io.branchUpdate.bits.targetPC := branchTarget
+    io.branchUpdate.bits.taken := branchTaken
+    io.branchUpdate.bits.isBranch := branchIsConditional
+    io.branchUpdate.bits.isUncond := branchIsUncond
+  }
+
+  when(mispredict) {
+    io.branch.valid := true.B
+    io.branch.bits.targetPC := Mux(branchTaken, branchTarget, fallthroughPC)
+    needFlush := true.B
   }
 }

@@ -13,6 +13,7 @@ class FetchIO(xlen: Int) extends Bundle {
   val branch = Flipped(Valid(new BranchFeedback(xlen)))
   val debugSetPC = Flipped(Valid(UInt(xlen.W))) // Debug interface to set PC
   val halt = Input(Bool()) // Stop fetching when halted
+  val predictorUpdate = Flipped(Valid(new BranchUpdate(xlen)))
 
   val mem = new MemoryIO(xlen, xlen)
 }
@@ -20,8 +21,8 @@ class FetchIO(xlen: Int) extends Bundle {
 class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   val io = IO(new FetchIO(xlen))
 
-  // For now we statically predict branches as not taken, so io.branch.valid is
-  // also the flush signal. In future we'll need to reconsider this decision.
+  // Fetch uses a simple branch predictor. io.branch.valid is a redirect on
+  // mispredict or exception/interrupt.
 
   private val resetVec = resetVector.U(xlen.W)
   val pc_reg = RegInit(resetVec)
@@ -30,12 +31,23 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   val respPending = RegInit(false.B)
   val respData = Reg(UInt(32.W))
   val respPC = Reg(UInt(xlen.W))
+  val respPredTaken = RegInit(false.B)
+  val respPredTarget = RegInit(0.U(xlen.W))
+
+  val predictor = Module(new BranchPredictor(xlen))
+  predictor.io.queryPC := pc_reg
+  predictor.io.update := io.predictorUpdate
 
   val pc_plus_4 = pc_reg + 4.U
+  val predictedNext = Mux(
+    predictor.io.predictedTaken,
+    predictor.io.predictedTarget,
+    pc_plus_4
+  )
   val next_pc = Mux(
     io.debugSetPC.valid,
     io.debugSetPC.bits,
-    Mux(io.branch.valid, io.branch.bits.targetPC, pc_plus_4)
+    Mux(io.branch.valid, io.branch.bits.targetPC, predictedNext)
   )
 
   val canRequest = !reqPending && !respPending && !io.halt
@@ -48,7 +60,9 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   when(io.mem.req.fire) {
     reqPending := true.B
     respPC := pc_reg
-    pc_reg := pc_plus_4
+    respPredTaken := predictor.io.predictedTaken
+    respPredTarget := predictor.io.predictedTarget
+    pc_reg := predictedNext
   }
 
   io.mem.resp.ready := true.B
@@ -66,6 +80,8 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
   io.inst_out.valid := respPending
   io.inst_out.bits.pc := respPC
   io.inst_out.bits.word := respData
+  io.inst_out.bits.predictedTaken := respPredTaken
+  io.inst_out.bits.predictedTarget := respPredTarget
 
   when(io.inst_out.fire) {
     respPending := false.B
@@ -76,11 +92,15 @@ class Fetch(xlen: Int, resetVector: BigInt = 0) extends Module {
     reqPending := false.B
     respPending := false.B
     dropResponse := false.B
+    respPredTaken := false.B
+    respPredTarget := 0.U
   }.elsewhen(io.branch.valid) {
     pc_reg := io.branch.bits.targetPC
     respPending := false.B
     val needDrop = reqPending && !io.mem.resp.valid
     dropResponse := needDrop
     reqPending := false.B
+    respPredTaken := false.B
+    respPredTarget := 0.U
   }
 }

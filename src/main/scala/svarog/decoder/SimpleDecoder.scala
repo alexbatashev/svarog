@@ -38,11 +38,12 @@ class SimpleDecoder(xlen: Int) extends Module {
   val mDecoder = Some(Module(new MInstructions(xlen)))
 
   // Start with base decoder result (which always provides valid PC even for INVALID instructions)
-  io.decoded.bits := baseDecoder.io.decoded
+  val selectedDecoded = Wire(new MicroOp(xlen))
+  selectedDecoded := baseDecoder.io.decoded
 
   // Override with more specific decoders if they match
   when(zicsrDecoder.io.decoded.opType =/= OpType.INVALID) {
-    io.decoded.bits := zicsrDecoder.io.decoded
+    selectedDecoded := zicsrDecoder.io.decoded
   }
 
   mDecoder.foreach { mDecoder =>
@@ -50,9 +51,13 @@ class SimpleDecoder(xlen: Int) extends Module {
     mDecoder.io.pc := io.inst.bits.pc
 
     when(mDecoder.io.decoded.opType =/= OpType.INVALID) {
-      io.decoded.bits := mDecoder.io.decoded
+      selectedDecoded := mDecoder.io.decoded
     }
   }
+
+  selectedDecoded.predictedTaken := io.inst.bits.predictedTaken
+  selectedDecoded.predictedTarget := io.inst.bits.predictedTarget
+  io.decoded.bits := selectedDecoded
 
   io.hazard.valid := io.inst.valid
   io.hazard.bits.rs1 := io.decoded.bits.rs1

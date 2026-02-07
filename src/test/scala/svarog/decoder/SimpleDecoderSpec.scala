@@ -97,10 +97,14 @@ class SimpleDecoderSpec extends AnyFlatSpec with Matchers with ChiselSim {
       dut.io.inst.valid.poke(false.B)
       dut.io.inst.bits.word.poke(0.U)
       dut.io.inst.bits.pc.poke(0.U)
+      dut.io.inst.bits.predictedTaken.poke(false.B)
+      dut.io.inst.bits.predictedTarget.poke(0.U)
 
       for (vector <- vectors) {
         dut.io.inst.bits.word.poke(vector.instruction.U)
         dut.io.inst.bits.pc.poke(vector.pc.U)
+        dut.io.inst.bits.predictedTaken.poke(false.B)
+        dut.io.inst.bits.predictedTarget.poke(0.U)
         dut.io.inst.valid.poke(true.B)
 
         dut.clock.step(1)

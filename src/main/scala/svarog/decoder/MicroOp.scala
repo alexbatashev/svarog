@@ -46,6 +46,8 @@ class MicroOp(val xlen: Int) extends Bundle {
   val regWrite = Output(Bool())
   val pc = Output(UInt(xlen.W))
   val csrAddr = Output(UInt(12.W))
+  val predictedTaken = Output(Bool())
+  val predictedTarget = Output(UInt(xlen.W))
 
   def illegal: Bool = opType === OpType.INVALID
 }
@@ -68,6 +70,8 @@ object MicroOp {
     invalid.regWrite := false.B
     invalid.pc := 0.U
     invalid.csrAddr := 0.U
+    invalid.predictedTaken := false.B
+    invalid.predictedTarget := 0.U
     invalid
   }
 }

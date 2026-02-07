@@ -106,6 +106,7 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
   // Connect memory interfaces (adapters are in MicroTile)
   fetch.io.mem <> io.instMem
   memory.mem <> io.dataMem
+  fetch.io.predictorUpdate := execute.io.branchUpdate
 
   // Register file connection - multiplex between normal execution and debug
   // Read side
@@ -314,8 +315,7 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
       writeback.io.in.bits.opType === OpType.JALR
   )
 
-  // Frontend always follows the sequential path until EX resolves branch.
-  // Taken conditional branches therefore represent branch misses.
+  // A conditional branch miss is counted when the predictor is wrong.
   private val branchMiss =
     execute.io.branch.valid &&
       execute.io.res.fire &&
