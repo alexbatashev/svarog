@@ -12,7 +12,7 @@ class SimpleDecodeHazardIO extends Bundle {
 
 class SimpleDecoder(xlen: Int) extends Module {
   val io = IO(new Bundle {
-    val inst = Flipped(Decoupled(new InstWord(xlen)))
+    val inst = Flipped(Decoupled(new DecoderInput(xlen, true)))
     val decoded = Decoupled(new MicroOp(xlen))
     val hazard = Valid(new SimpleDecodeHazardIO)
   })
@@ -28,12 +28,12 @@ class SimpleDecoder(xlen: Int) extends Module {
   // Decode the instruction
   val baseDecoder = Module(new BaseInstructions(xlen))
   baseDecoder.io.immGen <> immGen.io
-  baseDecoder.io.instruction := io.inst.bits.word
-  baseDecoder.io.pc := io.inst.bits.pc
+  baseDecoder.io.instruction := io.inst.bits.data.word
+  baseDecoder.io.pc := io.inst.bits.data.pc
 
   val zicsrDecoder = Module(new ZicsrInstructions(xlen))
-  zicsrDecoder.io.instruction := io.inst.bits.word
-  zicsrDecoder.io.pc := io.inst.bits.pc
+  zicsrDecoder.io.instruction := io.inst.bits.data.word
+  zicsrDecoder.io.pc := io.inst.bits.data.pc
 
   val mDecoder = Some(Module(new MInstructions(xlen)))
 
@@ -47,16 +47,16 @@ class SimpleDecoder(xlen: Int) extends Module {
   }
 
   mDecoder.foreach { mDecoder =>
-    mDecoder.io.instruction := io.inst.bits.word
-    mDecoder.io.pc := io.inst.bits.pc
+    mDecoder.io.instruction := io.inst.bits.data.word
+    mDecoder.io.pc := io.inst.bits.data.pc
 
     when(mDecoder.io.decoded.opType =/= OpType.INVALID) {
       selectedDecoded := mDecoder.io.decoded
     }
   }
 
-  selectedDecoded.predictedTaken := io.inst.bits.predictedTaken
-  selectedDecoded.predictedTarget := io.inst.bits.predictedTarget
+  selectedDecoded.predictedTaken := io.inst.bits.prediction.taken
+  selectedDecoded.predictedTarget := io.inst.bits.prediction.target
   io.decoded.bits := selectedDecoded
 
   io.hazard.valid := io.inst.valid
