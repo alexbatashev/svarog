@@ -14,6 +14,7 @@ import svarog.debug.HartDebugModule
 import svarog.decoder.InstWord
 import svarog.decoder.MicroOp
 import svarog.decoder.OpType
+import svarog.decoder.DecoderInput
 import svarog.decoder.SimpleDecoder
 import svarog.memory.MemoryIO
 import svarog.memory.MemoryRequest
@@ -195,7 +196,7 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
 
   // IF -> ID
   val fetchDecodeQueue = Module(
-    new Queue(new InstWord(xlen), 1, pipe = true, hasFlush = true)
+    new Queue(new DecoderInput(xlen), 1, pipe = true, hasFlush = true)
   )
 
   fetchDecodeQueue.io.enq <> fetch.io.inst_out

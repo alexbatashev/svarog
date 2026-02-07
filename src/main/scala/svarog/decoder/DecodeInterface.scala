@@ -9,7 +9,7 @@ class InstWord(xlen: Int) extends Bundle {
   val pc = Output(UInt(xlen.W))
 }
 
-class DecoderInput(xlen: Int, predictors: Boolean) extends Bundle {
+class DecoderInput(xlen: Int) extends Bundle {
   val data = new InstWord(xlen)
   val prediction = new Prediction(xlen)
 }

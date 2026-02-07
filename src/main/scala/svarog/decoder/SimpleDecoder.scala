@@ -12,7 +12,7 @@ class SimpleDecodeHazardIO extends Bundle {
 
 class SimpleDecoder(xlen: Int) extends Module {
   val io = IO(new Bundle {
-    val inst = Flipped(Decoupled(new DecoderInput(xlen, true)))
+    val inst = Flipped(Decoupled(new DecoderInput(xlen)))
     val decoded = Decoupled(new MicroOp(xlen))
     val hazard = Valid(new SimpleDecodeHazardIO)
   })
