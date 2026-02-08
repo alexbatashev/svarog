@@ -16,7 +16,6 @@ import svarog.decoder.MicroOp
 import svarog.decoder.OpType
 import svarog.decoder.SimpleDecoder
 import svarog.memory.MemoryIO
-import svarog.memory.MemoryRequest
 import svarog.MicroCoreConfig
 import svarog.config.Cluster
 import svarog.csr.{
@@ -30,8 +29,6 @@ import svarog.csr.{
 import svarog.interrupt.CoreLocalInterrupter
 
 class CpuIO(xlen: Int) extends Bundle {
-  // Memory interfaces (TileLink adapters are in MicroTile)
-  val instMem = new MemoryIO(xlen, xlen)
   val dataMem = new MemoryIO(xlen, xlen)
   // Debug and control
   val debug = Flipped(new HartDebugIO(xlen))
@@ -50,6 +47,9 @@ class Cpu(
     extends LazyModule {
 
   private val xlen = config.isa.xlen
+
+  // Fetch stage - native TileLink client
+  val fetch = LazyModule(new Fetch(xlen, startAddress))
 
   // CSR diplomatic subsystem - core-local
   val csrAdapter = LazyModule(new CSRBusAdapter)
@@ -95,7 +95,7 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
   val regFile = Module(new RegFile(xlen))
 
   // Stages
-  val fetch = Module(new Fetch(xlen, startAddress))
+  private val fetchIo = outer.fetch.module.io
   val decode = Module(new SimpleDecoder(xlen))
   val execute = Module(new Execute(config.isa))
   val memory = Module(new Memory(xlen))
@@ -103,8 +103,7 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
 
   val hazardUnit = Module(new HazardUnit)
 
-  // Connect memory interfaces (adapters are in MicroTile)
-  fetch.io.mem <> io.instMem
+  // Connect data memory interface (adapter is in MicroTile; fetch uses native TileLink)
   memory.mem <> io.dataMem
 
   // Register file connection - multiplex between normal execution and debug
@@ -197,14 +196,21 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
     new Queue(new InstWord(xlen), 1, pipe = true, hasFlush = true)
   )
 
-  fetchDecodeQueue.io.enq <> fetch.io.inst_out
+  fetchDecodeQueue.io.enq <> fetchIo.instOut
   decode.io.inst <> fetchDecodeQueue.io.deq
 
   // ID -> EX
   val decodeExecQueue = Module(
     new Queue(new MicroOp(xlen), 1, pipe = true, hasFlush = true)
   )
-  decodeExecQueue.io.enq <> decode.io.decoded
+  // Gate the Decode→Execute queue with the hazard stall.  The hazard stall
+  // must block Decode from enqueuing (not Execute from dequeuing), otherwise a
+  // dependent instruction in Decode prevents Execute from completing the very
+  // instruction it depends on — a deadlock that surfaces when the faster native
+  // TileLink Fetch fills the pipeline more aggressively.
+  decodeExecQueue.io.enq.bits := decode.io.decoded.bits
+  decodeExecQueue.io.enq.valid := decode.io.decoded.valid && !hazardUnit.io.stall
+  decode.io.decoded.ready := decodeExecQueue.io.enq.ready && !hazardUnit.io.stall
   execute.io.uop <> decodeExecQueue.io.deq
 
   // EX -> MEM
@@ -268,8 +274,8 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
 
   // Combine branch and exception redirects for Fetch
   // Exception takes priority if both occur on same cycle (shouldn't happen normally)
-  fetch.io.branch.valid := execFetchPipe.io.deq.valid || exceptionRedirectPipe.io.deq.valid
-  fetch.io.branch.bits.targetPC := Mux(
+  fetchIo.branch.valid := execFetchPipe.io.deq.valid || exceptionRedirectPipe.io.deq.valid
+  fetchIo.branch.bits.targetPC := Mux(
     exceptionRedirectPipe.io.deq.valid,
     exceptionRedirectPipe.io.deq.bits.targetPC,
     execFetchPipe.io.deq.bits.targetPC
@@ -290,8 +296,8 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
   // Debug connections
   debug.io.wbPC <> writeback.io.debugPC
   debug.io.memStore <> writeback.io.debugStore
-  fetch.io.debugSetPC <> debug.io.setPCOut
-  fetch.io.halt := halt
+  fetchIo.debugSetPC <> debug.io.setPCOut
+  fetchIo.halt := halt
 
   // Determine which source registers are actually used by the instruction currently in decode.
   // Hazard signals
@@ -304,7 +310,7 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
   hazardUnit.io.wbCsr := writeback.io.csrHazard
   hazardUnit.io.watchpointHit := debug.io.watchpointTriggered
 
-  execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold ||
+  execute.io.stall := halt || branchFlushHold ||
     trapFlushHold || memory.io.hazard.valid
   writeback.io.halt := halt
 

@@ -18,7 +18,6 @@ class MicroTile(
     val hartBase: Int,
     val cluster: Cluster,
     val startAddress: Long,
-    val instSourceIds: Seq[IdRange],
     val dataSourceIds: Seq[IdRange]
 )(override implicit val p: Parameters)
     extends LazyModule {
@@ -37,20 +36,7 @@ class MicroTile(
       supportsPutPartial = TransferSizes(1, beatBytes)
     )
 
-  // TileLink nodes stay in MicroTile for proper diplomatic resolution
-  val instNodes = instSourceIds.zipWithIndex.map { case (id, idx) =>
-    TLClientNode(
-      Seq(TLMasterPortParameters.v1(Seq(clientParams(s"inst_$idx", id))))
-    )
-  }
-
-  val dataNodes = dataSourceIds.zipWithIndex.map { case (id, idx) =>
-    TLClientNode(
-      Seq(TLMasterPortParameters.v1(Seq(clientParams(s"data_$idx", id))))
-    )
-  }
-
-  // Instantiate Cpu LazyModules - CSR subsystem is inside each Cpu
+  // Instantiate Cpu LazyModules - CSR subsystem and Fetch TL node are inside each Cpu
   val cpus = Seq.tabulate(numCores) { i =>
     LazyModule(
       new Cpu(
@@ -58,6 +44,15 @@ class MicroTile(
         config = cluster,
         startAddress = startAddress
       )
+    )
+  }
+
+  // Instruction TileLink nodes come from Fetch inside each Cpu (native TL)
+  val instNodes = cpus.map(_.fetch.node)
+
+  val dataNodes = dataSourceIds.zipWithIndex.map { case (id, idx) =>
+    TLClientNode(
+      Seq(TLMasterPortParameters.v1(Seq(clientParams(s"data_$idx", id))))
     )
   }
 
@@ -79,21 +74,12 @@ class MicroTileImp(outer: MicroTile) extends LazyModuleImp(outer) {
   require(outer.instNodes.length == numCores, "instNodes must match numCores")
   require(outer.dataNodes.length == numCores, "dataNodes must match numCores")
 
-  // Connect each Cpu with TileLink adapters
+  // Connect each Cpu with TileLink adapters (data only; fetch uses native TL)
   outer.cpus.zipWithIndex.foreach { case (cpu, i) =>
-    val (instOut, instEdge) = outer.instNodes(i).out(0)
     val (dataOut, dataEdge) = outer.dataNodes(i).out(0)
 
-    // Create TileLink adapters
-    val instAdapter = Module(new MemoryIOTileLinkBundleAdapter(instEdge, xlen))
     val dataAdapter = Module(new MemoryIOTileLinkBundleAdapter(dataEdge, xlen))
-
-    // Connect TileLink bundles to adapter
-    instOut <> instAdapter.tl
     dataOut <> dataAdapter.tl
-
-    // Connect adapter's MemoryIO to Cpu
-    cpu.module.io.instMem <> instAdapter.mem
     cpu.module.io.dataMem <> dataAdapter.mem
 
     // Connect external IO

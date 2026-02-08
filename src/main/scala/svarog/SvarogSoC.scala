@@ -36,10 +36,9 @@ class SvarogSoC(
   private val tiles = config.clusters.zipWithIndex.map {
     case (cluster, clusterIdx) if cluster.coreType == Micro =>
       val hartBase = config.clusters.take(clusterIdx).map(_.numCores).sum
-      val instIds = Seq.fill(cluster.numCores)(allocSourceId())
       val dataIds = Seq.fill(cluster.numCores)(allocSourceId())
       LazyModule(
-        new MicroTile(hartBase, cluster, startAddress, instIds, dataIds)
+        new MicroTile(hartBase, cluster, startAddress, dataIds)
       )
     case _ =>
       sys.error("Only Micro tiles are supported in the TileLink SoC for now.")
