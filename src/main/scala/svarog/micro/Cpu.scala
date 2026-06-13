@@ -40,6 +40,8 @@ class CpuIO(xlen: Int) extends Bundle {
   // Interrupt inputs
   val timerInterrupt = Input(Bool())
   val softwareInterrupt = Input(Bool())
+  // Formal retirement interface.
+  val rvfi = Output(new svarog.formal.RvfiPort(xlen))
 }
 
 class Cpu(
@@ -307,6 +309,7 @@ class CpuImp(outer: Cpu) extends LazyModuleImp(outer) {
   execute.io.stall := hazardUnit.io.stall || halt || branchFlushHold ||
     trapFlushHold || memory.io.hazard.valid
   writeback.io.halt := halt
+  io.rvfi := writeback.io.rvfi
 
   private val retiredBranch = writeback.io.in.valid && (
     writeback.io.in.bits.opType === OpType.BRANCH ||
