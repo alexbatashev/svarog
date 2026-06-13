@@ -33,6 +33,12 @@ private class MemLatch(xlen: Int) extends Bundle {
   val isStore = Bool()
   val opWidth = MemWidth.Type()
   val unsigned = Bool()
+  // Retirement taps must travel with the latched instruction; otherwise the
+  // replayed result reports the fields of whatever is currently at Execute.
+  val insn = UInt(32.W)
+  val rs1Val = UInt(xlen.W)
+  val rs2Val = UInt(xlen.W)
+  val nextPc = UInt(xlen.W)
 }
 
 class Memory(xlen: Int) extends Module {
@@ -92,6 +98,10 @@ class Memory(xlen: Int) extends Module {
     inst.isStore := io.ex.bits.opType === OpType.STORE
     inst.opWidth := io.ex.bits.memWidth
     inst.unsigned := io.ex.bits.memUnsigned
+    inst.insn := io.ex.bits.insn
+    inst.rs1Val := io.ex.bits.rs1Val
+    inst.rs2Val := io.ex.bits.rs2Val
+    inst.nextPc := io.ex.bits.nextPc
 
     pendingInst := inst
   }
@@ -193,6 +203,10 @@ class Memory(xlen: Int) extends Module {
     io.res.bits.isStore := pendingInst.isStore
     io.res.bits.opType := Mux(pendingInst.isStore, OpType.STORE, OpType.LOAD)
     io.res.bits.gprWrite := !pendingInst.isStore
+    io.res.bits.insn := pendingInst.insn
+    io.res.bits.rs1Val := pendingInst.rs1Val
+    io.res.bits.rs2Val := pendingInst.rs2Val
+    io.res.bits.nextPc := pendingInst.nextPc
 
     val (_, offset) = MemoryUtils.alignAddress(pendingInst.storeAddr, wordSize)
     io.res.bits.gprData := extractData(
