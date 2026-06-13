@@ -34,12 +34,12 @@ class FormalTop(hartId: Int, cluster: Cluster, startAddress: Long)(implicit p: P
     val next_pc = IO(Output(UInt(xlen.W)))
     val valid = IO(Output(Bool()))
 
-    // Abstract memory: surface the core's ports so responses are free inputs
-    // and requests are observable outputs.
-    val instMem = IO(chiselTypeOf(cpu.module.io.instMem))
-    val dataMem = IO(chiselTypeOf(cpu.module.io.dataMem))
-    instMem <> cpu.module.io.instMem
-    dataMem <> cpu.module.io.dataMem
+    // Protocol-correct memory with free contents: BMC explores every program
+    // while the fetch unit never sees a phantom response.
+    val imem = Module(new FormalMemory(xlen, xlen))
+    val dmem = Module(new FormalMemory(xlen, xlen))
+    imem.io <> cpu.module.io.instMem
+    dmem.io <> cpu.module.io.dataMem
 
     cpu.module.io.timerInterrupt := false.B
     cpu.module.io.softwareInterrupt := false.B
