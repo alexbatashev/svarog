@@ -30,6 +30,12 @@ class ExecuteResult(xlen: Int) extends Bundle {
   val storeData = Output(UInt(xlen.W))
 
   val pc = Output(UInt(xlen.W))
+
+  // Formal retirement interface taps.
+  val insn = Output(UInt(32.W))
+  val rs1Val = Output(UInt(xlen.W))
+  val rs2Val = Output(UInt(xlen.W))
+  val nextPc = Output(UInt(xlen.W))
 }
 
 class BranchFeedback(xlen: Int) extends Bundle {
@@ -171,6 +177,13 @@ class Execute(isa: ISA) extends Module {
 
   io.res.bits.rd := activeUop.rd
   io.res.bits.gprWrite := activeUop.regWrite
+
+  // Retirement taps: source values as read this cycle, sequential next PC by
+  // default (overridden below when a branch is taken).
+  io.res.bits.insn := activeUop.insn
+  io.res.bits.rs1Val := io.regFile.readData1
+  io.res.bits.rs2Val := io.regFile.readData2
+  io.res.bits.nextPc := activeUop.pc + 4.U
 
   // CSR defaults
   io.res.bits.csrAddr := activeUop.csrAddr
@@ -314,6 +327,11 @@ class Execute(isa: ISA) extends Module {
         io.branch.bits.targetPC := io.mepc
         io.mretFired := true.B
       }
+    }
+
+    // A taken branch/jump redirects the retired next PC to the resolved target.
+    when(io.branch.valid) {
+      io.res.bits.nextPc := io.branch.bits.targetPC
     }
   }
 }

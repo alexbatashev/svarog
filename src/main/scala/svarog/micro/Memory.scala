@@ -18,6 +18,12 @@ class MemResult(xlen: Int) extends Bundle {
   val pc = Output(UInt(xlen.W))
   val storeAddr = Output(UInt(xlen.W)) // Store address for watchpoint
   val isStore = Output(Bool()) // Flag indicating if this was a store
+
+  // Formal retirement interface taps.
+  val insn = Output(UInt(32.W))
+  val rs1Val = Output(UInt(xlen.W))
+  val rs2Val = Output(UInt(xlen.W))
+  val nextPc = Output(UInt(xlen.W))
 }
 
 private class MemLatch(xlen: Int) extends Bundle {
@@ -66,6 +72,10 @@ class Memory(xlen: Int) extends Module {
   io.res.bits.pc := io.ex.bits.pc
   io.res.bits.storeAddr := 0.U
   io.res.bits.isStore := false.B
+  io.res.bits.insn := io.ex.bits.insn
+  io.res.bits.rs1Val := io.ex.bits.rs1Val
+  io.res.bits.rs2Val := io.ex.bits.rs2Val
+  io.res.bits.nextPc := io.ex.bits.nextPc
 
   private val pendingRequest = RegInit(false.B)
   private val pendingInst = RegInit(0.U.asTypeOf(new MemLatch(xlen)))

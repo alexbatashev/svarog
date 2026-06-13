@@ -5,6 +5,7 @@ import chisel3.util._
 import svarog.bits.RegFileWriteIO
 import svarog.bits.CSRWriteIO
 import svarog.decoder.OpType
+import svarog.formal.RvfiPort
 
 class Writeback(xlen: Int) extends Module {
   val io = IO(new Bundle {
@@ -17,7 +18,18 @@ class Writeback(xlen: Int) extends Module {
     val debugStore = Valid(UInt(xlen.W)) // For watchpoint support
     val halt = Input(Bool())
     val retired = Output(Bool())
+    val rvfi = Output(new RvfiPort(xlen))
   })
+
+  io.rvfi.valid := io.in.valid
+  io.rvfi.insn := io.in.bits.insn
+  io.rvfi.pc := io.in.bits.pc
+  io.rvfi.rs1Val := io.in.bits.rs1Val
+  io.rvfi.rs2Val := io.in.bits.rs2Val
+  io.rvfi.rdAddr := io.in.bits.rd
+  io.rvfi.rdWe := io.in.bits.gprWrite
+  io.rvfi.rdVal := io.in.bits.gprData
+  io.rvfi.nextPc := io.in.bits.nextPc
 
   // Always ready - don't backpressure based on halt
   // Halt is handled by not writing registers (below)

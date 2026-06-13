@@ -54,6 +54,10 @@ class SimpleDecoder(xlen: Int) extends Module {
     }
   }
 
+  // Carry the raw word for the formal retirement interface, regardless of
+  // which decoder matched.
+  io.decoded.bits.insn := io.inst.bits.word
+
   io.hazard.valid := io.inst.valid
   io.hazard.bits.rs1 := io.decoded.bits.rs1
   io.hazard.bits.rs2 := io.decoded.bits.rs2
