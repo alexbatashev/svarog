@@ -88,6 +88,7 @@ SVAROG_MAX_CYCLES=50000 cargo test
 - **[Architecture](docs/micro/architecture.md)** - Pipeline and microarchitecture details
 - **[Development](docs/micro/development.md)** - Testing and contributing guide
 - **[Configuration](docs/micro/configuration.md)** - SoC configuration options
+- **[VLIW DSP Extension](docs/dsp/vliw-dsp.md)** - Prototype VLIW DSP block (experimental)
 
 ## Svarog Micro Features
 
